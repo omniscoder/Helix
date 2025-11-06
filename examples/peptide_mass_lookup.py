@@ -1,9 +1,7 @@
-"""Compute simple peptide masses using Helix's amino acid table.
+"""Compute simple peptide masses using Helix's amino acid table."""
+from __future__ import annotations
 
-Run with:
-    python examples/peptide_mass_lookup.py PEPTIDE
-"""
-import sys
+import argparse
 from typing import Iterable
 
 from amino_acids import mass_index_table
@@ -19,17 +17,27 @@ def peptide_mass(sequence: str) -> int:
         raise ValueError(f"Unknown residue '{unknown}'") from exc
 
 
-def main(argv: list[str]) -> None:
-    if len(argv) < 2:
-        print("Usage: python examples/peptide_mass_lookup.py PEPTIDE")
-        print("Example: python examples/peptide_mass_lookup.py GAVLIM")
-        sys.exit(1)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Add up monoisotopic masses for a peptide.")
+    parser.add_argument(
+        "peptides",
+        nargs="+",
+        help="One or more peptide sequences (e.g. GAVLIM).",
+    )
+    return parser.parse_args()
 
-    peptide = argv[1]
-    mass = peptide_mass(peptide)
-    print(f"Peptide: {peptide}")
-    print(f"Total mass: {mass} Da")
+
+def main() -> None:
+    args = parse_args()
+
+    for peptide in args.peptides:
+        try:
+            mass = peptide_mass(peptide)
+        except ValueError as err:
+            print(f"{peptide}\tERROR: {err}")
+            continue
+        print(f"{peptide}\t{mass} Da")
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    main()

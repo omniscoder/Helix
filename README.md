@@ -11,8 +11,8 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - Offer a bridge to OGN by keeping APIs compatible and providing off-ramps when users need industrial-scale tooling.
 
 ## Highlights
-- **DNA and motif experiments** (`bioinformatics.py`): quick-and-dirty k-mer counting, GC skew plots, and small FASTA helpers.
-- **Translation and mass lookups** (`codon.py`, `amino_acids.py`): basic codon translator scaffolding plus peptide mass utilities.
+- **DNA and motif experiments** (`bioinformatics.py`): quick-and-dirty k-mer counting, SNP-tolerant motif clustering, GC skew plots, and small FASTA helpers.
+- **Translation and mass lookups** (`codon.py`, `amino_acids.py`): resilient codon translation, bidirectional ORF scanning, frameshift heuristics, and peptide mass utilities.
 - **Peptide spectrum sandbox** (`cyclospectrum.py`): entry point for building leaderboard scoring and spectrum analysis.
 - **RNA secondary structure sketches** (`nussinov_algorithm.py`): an annotated Nussinov dynamic-programming prototype.
 - **Protein helpers** (`protein.py`): friendly wrappers around Biopython for peeking at sequences and structures.
@@ -25,7 +25,7 @@ Helix complements our production platform OGN rather than competing with it. Whe
 ├── ann.py                  # single-layer neural network example
 ├── bioinformatics.py       # DNA utilities + GC skew plotting
 ├── bioinformatics.c        # scratch file (currently placeholder)
-├── codon.py                # WIP codon translator
+├── codon.py                # codon translation helpers
 ├── cyclospectrum.py        # future peptide spectrum tool
 ├── input/dna/human.txt     # example labeled DNA sequences
 ├── nussinov_algorithm.py   # Nussinov algorithm skeleton
@@ -41,6 +41,7 @@ Helix complements our production platform OGN rather than competing with it. Whe
 Optional extras:
 - A matplotlib backend capable of rendering windows (GC skew plots).
 - Network access for fetching PDB or AlphaFold structures on the fly.
+- pytest (if you want to run the test suite).
 
 ### Installation
 ```bash
@@ -55,12 +56,34 @@ pip install numpy pandas matplotlib biopython
   python bioinformatics.py
   ```
   Edit the constants at the top of `bioinformatics.py` to point at different sequences and tweak window sizes.
+  For quick clustering with exports, try `python examples/kmer_counter.py --max-diff 1 --csv clusters.csv --plot-top 10`.
 
 - **Neural net demo**
   ```bash
   python ann.py
   ```
   Prints training progress and final weights for a tiny XOR-style problem.
+
+- **Translate a sequence**
+  ```bash
+  python examples/translate_sequence.py AUGGCCUUU
+  ```
+  Add `--no-stop` to continue through stop codons or point to a file with `--input`.
+
+- **Find ORFs**
+  ```bash
+  python examples/find_orfs.py --min-length 90 --include-partial --detect-frameshifts --input your_sequence.fna --orf-fasta peptides.faa --orf-csv orfs.csv --frameshift-csv shifts.csv
+  ```
+  Prints coordinates, frames, strands, optional frameshift candidates, and can export FASTA/CSV artifacts.
+
+- **Triage report CLI**
+  ```bash
+  python examples/triage_report.py --input your_sequence.fna --output triage.png --clusters-csv clusters.csv --orfs-csv orfs.csv
+  ```
+  Generates a composite plot plus optional CSV/FASTA exports for quick daily snapshots.
+
+- **Notebook triage dashboard**
+  Open `notebooks/triage_dashboard.ipynb` to plot GC skew, ORFs, and k-mer hotspots side-by-side for a quick daily scan.
 
 - **Protein sequence peek**
   ```python
@@ -69,14 +92,25 @@ pip install numpy pandas matplotlib biopython
   ```
   Requires the target structure file in the working directory (or adjust the loader).
 
-`input/dna/human.txt` ships a toy labeled dataset for quick experiments with pandas or sklearn.
+Browse task-specific quickstarts in `examples/README.md`. `input/dna/human.txt` ships a toy labeled dataset for quick experiments with pandas or sklearn.
+
+### Run Tests
+```bash
+pytest
+```
+Pytest powers translator and k-mer regression checks; feel free to add more as you create new helpers.
 
 ## Weekend Project Ideas
 - Plot the GC skew for a bacterial plasmid and compare predicted origins to literature.
-- Extend `codon.py` with full translation plus frame-shift handling, then test on viral genomes.
+- Extend the ORF scanner to sweep reverse complements and test on viral genomes.
+- Compare frameshift candidates against known gene models to flag likely sequencing errors.
+- Pair the ORF scanner with the GC skew plot to compare predicted origins and coding regions.
+- Use the CSV/plot outputs from `examples/kmer_counter.py` to highlight SNP hotspots and share charts with the community.
+- Customize `notebooks/triage_dashboard.ipynb` with your own sequences and publish the visuals for lab updates.
 - Hook `cyclospectrum.py` into a simple leaderboard scorer and visualize the mass differences.
 - Swap the activation function in `ann.py`, log loss curves, and document what changes.
 - Build a notebook that fetches a PDB entry, prints its sequence via `protein.py`, and sketches the secondary structure counts.
+- Chain `examples/translate_sequence.py` with `peptide_mass_lookup.py` to score translated open reading frames.
 
 Browse ready-to-run snippets in `examples/README.md`, and share your results in `examples/` (add new files freely) or link to gist/notebook URLs in issues so others can remix.
 
@@ -87,7 +121,7 @@ Browse ready-to-run snippets in `examples/README.md`, and share your results in 
 - **Prototype-to-production bridge**: helper scripts should make it easy to migrate successful ideas into OGN when the time comes.
 
 ## Roadmap
-1. Round out the codon translator with error handling and unit tests.
+1. Bundle a CLI command/notebook for combining GC skew, ORFs, and motif clusters into shareable reports.
 2. Implement scoring for cyclo-spectrum experiments and publish a walkthrough notebook.
 3. Finish the Nussinov traceback to output secondary structure strings and diagrams.
 4. Add small CLIs (argparse or Typer) for swapping inputs without editing source files.

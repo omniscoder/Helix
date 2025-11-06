@@ -1,3 +1,4 @@
+from collections import Counter, defaultdict
 import numpy as np
 from ctypes import *
 import matplotlib.pyplot as plt
@@ -20,60 +21,82 @@ base_pairs = {'G': 'C', 'C': 'G', 'T': 'A', 'A': 'T'}
 
 #refactor this to return starting locations in genome as well
 def find_kmers(dna, filter_size: int):
+    dna = "".join(dna.upper().split())
     dna_len = len(dna)
     print(f'sequencing dna of length {dna_len}')
-    seq_list = []
-    kmer_list = dict()
-    for i in range(0, (dna_len-filter_size)):
-        segment = dna[i:i+filter_size]
-        if(seq_list.count(segment) > 0):
-            if(kmer_list.get(segment)):
-                kmer_list[segment] = kmer_list[segment] + 1
-            #once it appears a second time we add it to the kmer list with a count of 2
-            else:
-                kmer_list[segment] = 2
-        #since we havent sequenced this yet we will add it to the list
-        else:
-            seq_list.append(segment)
-            
-    #kind of shit until i feel like making a temporary dictionary to put sequences that only appear once
-    for key in kmer_list:
-        if(kmer_list[key] < 2):
-            del kmer_list[key]
-            
-    return kmer_list
+    counts = Counter(dna[i:i+filter_size] for i in range(0, dna_len - filter_size + 1))
+    return {segment: freq for segment, freq in counts.items() if freq >= 2}
 
-#find kmers with a variability of max_diff SNPs
+def _hamming_distance(a: str, b: str) -> int:
+    return sum(ch1 != ch2 for ch1, ch2 in zip(a, b))
+
+
 def find_kmers_with_differences(dna, filter_size: int, max_diff: int):
-    dna_len = len(dna)
-    print(f'sequencing dna of length {dna_len}')
-    seq_list = []
-    kmer_list = dict()
-    for i in range(0, (dna_len-filter_size)):
+    dna = "".join(dna.upper().split())
+    kmer_positions = defaultdict(list)
+    for i in range(0, len(dna) - filter_size + 1):
         segment = dna[i:i+filter_size]
-        if(seq_list.count(segment) > 0):
-            if(kmer_list.get(segment)):
-                kmer_list[segment] = kmer_list[segment] + 1
-            #once it appears a second time we add it to the kmer list with a count of 2
-            else:
-                kmer_list[segment] = 2
-        #since we havent sequenced this yet we will add it to the list
+        kmer_positions[segment].append(i)
+
+    if max_diff <= 0:
+        return {
+            kmer: {
+                "count": len(positions),
+                "positions": positions,
+                "patterns": [kmer],
+            }
+            for kmer, positions in kmer_positions.items()
+            if len(positions) >= 2
+        }
+
+    kmers = list(kmer_positions.keys())
+    parent = {kmer: kmer for kmer in kmers}
+
+    def find_parent(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        root_a, root_b = find_parent(a), find_parent(b)
+        if root_a == root_b:
+            return
+        if root_a < root_b:
+            parent[root_b] = root_a
         else:
-            seq_list.append(segment)
-            
-    #kind of shit until i feel like making a temporary dictionary to put sequences that only appear once
-    for key in kmer_list:
-        if(kmer_list[key] < 2):
-            del kmer_list[key]
-            
-    return kmer_list
+            parent[root_a] = root_b
+
+    for i, kmer_a in enumerate(kmers):
+        for kmer_b in kmers[i+1:]:
+            if _hamming_distance(kmer_a, kmer_b) <= max_diff:
+                union(kmer_a, kmer_b)
+
+    clusters = defaultdict(lambda: {"patterns": [], "positions": []})
+    for kmer, positions in kmer_positions.items():
+        root = find_parent(kmer)
+        clusters[root]["patterns"].append(kmer)
+        clusters[root]["positions"].extend(positions)
+
+    results = {}
+    for root, data in clusters.items():
+        total = len(data["positions"])
+        if total < 2:
+            continue
+        canonical = min(data["patterns"])
+        results[canonical] = {
+            "count": total,
+            "positions": sorted(data["positions"]),
+            "patterns": sorted(data["patterns"]),
+        }
+    return results
 
     
 
 def compliment(kmer):
     compliment = ""
-    for i in range(0, len(kmer)):
-        compliment += base_pairs[kmer]
+    for base in kmer.upper():
+        compliment += base_pairs[base]
     return compliment
 
 def reverse_compliment(kmer):
