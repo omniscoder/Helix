@@ -17,7 +17,7 @@ def load_sequence(source: Path | None = None) -> str:
         raw = bioinformatics.seq
     else:
         raw = source.read_text()
-    return "".join(raw.upper().split())
+    return bioinformatics.normalize_sequence(raw)
 
 
 def compute_skew_profile(genome: str) -> Iterable[int]:

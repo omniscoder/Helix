@@ -11,11 +11,12 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - Offer a bridge to OGN by keeping APIs compatible and providing off-ramps when users need industrial-scale tooling.
 
 ## Highlights
-- **DNA and motif experiments** (`bioinformatics.py`): quick-and-dirty k-mer counting, SNP-tolerant motif clustering, GC skew plots, and small FASTA helpers.
+- **DNA and motif experiments** (`bioinformatics.py`): quick-and-dirty k-mer counting, SNP-tolerant motif clustering, GC skew plots, FASTA cleaning, and a CLI for summarizing GC/cluster hotspots.
 - **Translation and mass lookups** (`codon.py`, `amino_acids.py`): resilient codon translation, bidirectional ORF scanning, frameshift heuristics, and peptide mass utilities.
-- **Peptide spectrum sandbox** (`cyclospectrum.py`): entry point for building leaderboard scoring and spectrum analysis.
-- **RNA secondary structure sketches** (`nussinov_algorithm.py`): an annotated Nussinov dynamic-programming prototype.
-- **Protein helpers** (`protein.py`): friendly wrappers around Biopython for peeking at sequences and structures.
+- **Peptide spectrum sandbox** (`cyclospectrum.py`): linear + cyclic theoretical spectra, scoring helpers, and a leaderboard CLI for reconstructing peptides.
+- **RNA secondary structure sketches** (`nussinov_algorithm.py`): an annotated Nussinov dynamic-programming prototype with dot-bracket output + tracing CLI.
+- **Protein helpers** (`protein.py`): sequence-first summaries (weight, charge, hydropathy windows) with FASTA loading, visualization, and a friendly CLI wrapper.
+- **Workflows + API** (`helix_cli.py`, `helix_workflows.py`, `helix_api.py`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts.
 - **Neural net doodles** (`ann.py`): minimal NumPy-only network for experimenting with small bio datasets.
 
 ## Repo Layout
@@ -23,13 +24,18 @@ Helix complements our production platform OGN rather than competing with it. Whe
 .
 ├── amino_acids.py          # peptide mass lookup table
 ├── ann.py                  # single-layer neural network example
-├── bioinformatics.py       # DNA utilities + GC skew plotting
+├── bioinformatics.py       # DNA utilities + GC skew plotting + CLI
 ├── bioinformatics.c        # scratch file (currently placeholder)
 ├── codon.py                # codon translation helpers
-├── cyclospectrum.py        # future peptide spectrum tool
+├── cyclospectrum.py        # peptide spectra + leaderboard helpers
 ├── input/dna/human.txt     # example labeled DNA sequences
-├── nussinov_algorithm.py   # Nussinov algorithm skeleton
-└── protein.py              # Biopython-powered protein helpers
+├── nussinov_algorithm.py   # Nussinov folding with traceback helpers
+├── protein.py              # protein summaries + hydropathy CLI
+├── helix_cli.py            # unified CLI (DNA, spectrum, RNA, protein, triage, viz, workflows)
+├── helix_api.py            # Python helpers mirroring the CLI
+├── helix_workflows.py      # YAML workflow runner
+├── input/dna/plasmid_demo.fna
+└── input/protein/demo_protein.faa
 ```
 
 ## Getting Started
@@ -53,9 +59,9 @@ pip install numpy pandas matplotlib biopython
 ### Run a Script
 - **K-mer + skew analysis**
   ```bash
-  python bioinformatics.py
+  python bioinformatics.py --plot-skew --window 400 --max-diff 1
   ```
-  Edit the constants at the top of `bioinformatics.py` to point at different sequences and tweak window sizes.
+  Point at a FASTA with `--input`, change the GC window/step, or disable plotting for headless runs.
   For quick clustering with exports, try `python examples/kmer_counter.py --max-diff 1 --csv clusters.csv --plot-top 10`.
 
 - **Neural net demo**
@@ -76,6 +82,51 @@ pip install numpy pandas matplotlib biopython
   ```
   Prints coordinates, frames, strands, optional frameshift candidates, and can export FASTA/CSV artifacts.
 
+- **Cyclo-spectrum playground**
+  ```bash
+  python examples/cyclospectrum_demo.py --peptide NQEL --spectrum "0,113,114,128,227,242,242,355,356,370,371,484"
+  ```
+  Print linear/cyclic spectra, score against an experiment, or recover candidate peptides with the leaderboard search.
+
+- **RNA folding trace**
+  ```bash
+  python examples/nussinov_trace.py --input hairpin.fasta --min-loop 4
+  ```
+  Outputs the dot-bracket structure, base-pair list, and optional file export using the upgraded Nussinov implementation.
+
+- **Protein summary**
+  ```bash
+  python protein.py --input protein.fasta --window 11 --top 8
+  ```
+  Computes molecular weight, charge, hydropathy windows, and more. Works with inline sequences or FASTA files.
+
+- **Unified Helix CLI**
+  ```bash
+  python helix_cli.py dna --sequence ACGTACGT --k 4
+  python helix_cli.py spectrum --peptide NQEL --spectrum "0,113,114,128,227,242,242,355,356,370,371,484"
+  python helix_cli.py rna --sequence GGGAAACCC --min-loop 0
+  ```
+  The `helix_cli.py` entry point wraps the DNA, spectrum, RNA, protein, and triage helpers into one dispatcher so you can run ad-hoc analyses without hunting for individual scripts.
+
+- **Workflow runner**
+  ```bash
+  python helix_cli.py workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs
+  ```
+  Chains multiple subcommands from YAML, captures per-step logs, and writes artifacts to structured run directories.
+
+- **Visualization helpers**
+  ```bash
+  python helix_cli.py viz triage --json triage.json --output triage.png
+  python helix_cli.py viz hydropathy --input input/protein/demo_protein.faa --window 11
+  ```
+  Render plots directly from CLI artifacts (triage JSON, hydropathy windows). Requires matplotlib; hydropathy also needs Biopython.
+
+- **Python API demo**
+  ```bash
+  python examples/helix_api_demo.py
+  ```
+  Showcases the `helix_api` module for notebook-friendly access to DNA summaries, triage reports, spectra, RNA folding, and (optionally) protein metrics.
+
 - **Triage report CLI**
   ```bash
   python examples/triage_report.py --input your_sequence.fna --output triage.png --clusters-csv clusters.csv --orfs-csv orfs.csv
@@ -92,7 +143,7 @@ pip install numpy pandas matplotlib biopython
   ```
   Requires the target structure file in the working directory (or adjust the loader).
 
-Browse task-specific quickstarts in `examples/README.md`. `input/dna/human.txt` ships a toy labeled dataset for quick experiments with pandas or sklearn.
+Browse task-specific quickstarts in `examples/README.md`. `input/dna/human.txt` plus the new `input/dna/plasmid_demo.fna` and `input/protein/demo_protein.faa` ship toy datasets for quick experiments with pandas, sklearn, and hydropathy charts.
 
 ### Run Tests
 ```bash

@@ -13,7 +13,7 @@ def clean_sequence(source: Path | None = None) -> str:
         raw = bioinformatics.seq
     else:
         raw = source.read_text()
-    return "".join(raw.upper().split())
+    return bioinformatics.normalize_sequence(raw)
 
 
 def parse_args() -> argparse.Namespace:

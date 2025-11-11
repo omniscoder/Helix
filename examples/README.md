@@ -38,7 +38,37 @@ Welcome to the growing scrapbook of Helix weekend projects. Each example favors 
 - Try it: `python examples/triage_report.py --input sample.fna --output triage.png --clusters-csv clusters.csv --orfs-fasta peptides.faa`
 - Remix ideas: schedule the script to drop a daily report, or tweak the plotting code to annotate known genes.
 
+## Cyclo-spectrum Candidate Finder
+- File: `examples/cyclospectrum_demo.py`
+- What it does: prints linear/cyclic spectra, scores peptides against an experimental spectrum, and runs the leaderboard-based cyclo-peptide sequencing search.
+- Try it: `python examples/cyclospectrum_demo.py --peptide NQEL --spectrum "0,113,114,128,227,242,242,355,356,370,371,484"`
+- Remix ideas: benchmark how fast the leaderboard converges for your dataset, or feed the hits into downstream BLAST/proteomics workflows.
+
+## Nussinov Traceback Explorer
+- File: `examples/nussinov_trace.py`
+- What it does: folds RNA/DNA into dot-bracket notation, prints the base-pair list, and optionally saves the secondary structure string.
+- Try it: `python examples/nussinov_trace.py --input hairpin.fasta --min-loop 4`
+- Remix ideas: compare wobble vs canonical pairing, overlay the dot-bracket string on a reference alignment, or batch-fold viral genomes for dashboarding.
+
+## Helix API Demo
+- File: `examples/helix_api_demo.py`
+- What it does: calls `helix_api` to fetch DNA summaries, triage reports, RNA folds, peptide leaderboard hits, and protein metrics without shelling out.
+- Try it: `python examples/helix_api_demo.py` (installs optional Biopython if you want the protein section).
+- Remix ideas: drop the snippets into notebooks or wrap them inside Streamlit dashboards for quick exploratory reports.
+
 ## Share Your Remix
 - Drop your notebook, script, or write-up in this directory (or link it in an issue) so other hobbyists can learn from it.
 - Format tip: prepend your files with a short description, e.g., `rna_folding_traceback.ipynb`.
 - If a prototype grows into something sturdier, open a discussion about porting it into OGN.
+
+## Bonus: Unified CLI
+- File: `helix_cli.py`
+- What it does: exposes the DNA (GC + k-mers), spectrum leaderboard, RNA folding, protein summary, and triage report workflows from a single command.
+- Try it: `python helix_cli.py dna --sequence ACGTACGT --k 4 --max-diff 1`
+- Remix ideas: script repeatable analyses (e.g., `helix_cli.py triage --input plasmid.fna --json report.json`) or wire the CLI into notebooks via `subprocess.run`.
+
+## Workflow Runner
+- File: `workflows/plasmid_screen.yaml`
+- What it does: chains the unified CLI to run DNA summaries, triage reports, spectrum scoring, and RNA folding with one config.
+- Try it: `python helix_cli.py workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs`
+- Remix ideas: add `viz` steps for hydropathy plots, or point at your own FASTA files to produce per-sample dashboards overnight.

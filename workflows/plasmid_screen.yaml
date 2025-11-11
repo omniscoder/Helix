@@ -1,0 +1,32 @@
+workflows:
+  - name: plasmid_screen
+    steps:
+      - command: dna
+        args:
+          input: input/dna/plasmid_demo.fna
+          window: 120
+          step: 30
+          k: 5
+          max_diff: 1
+          top: 5
+        stdout: dna_summary.txt
+      - command: triage
+        args:
+          input: input/dna/plasmid_demo.fna
+          k: 4
+          max_diff: 1
+          min_orf_length: 60
+          json: plasmid_triage.json
+          top: 3
+        stdout: triage_summary.txt
+      - command: spectrum
+        args:
+          peptide: NQEL
+          spectrum: "0,113,114,128,227,242,242,355,356,370,371,484"
+          leaderboard: 3
+        stdout: spectrum_hits.txt
+      - command: rna
+        args:
+          sequence: AUGGCCUUUUAA
+          min_loop: 0
+        stdout: rna_fold.txt

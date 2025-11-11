@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 from typing import Optional
 
-import csv
-from typing import Optional, List
-
+import bioinformatics
 from codon import (
     detect_frameshifts,
     frameshifts_to_csv,
@@ -24,9 +23,9 @@ def load_sequence(sequence: Optional[str], path: Optional[Path]) -> str:
         raise ValueError("Provide either a sequence or --input file, not both.")
     if path:
         contents = path.read_text(encoding="utf-8")
-        return "".join(contents.split())
+        return bioinformatics.normalize_sequence(contents)
     if sequence:
-        return sequence
+        return bioinformatics.normalize_sequence(sequence)
     raise ValueError("No sequence provided. Use positional argument or --input.")
 
 

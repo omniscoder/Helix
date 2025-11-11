@@ -24,10 +24,6 @@ class TriageReport:
     orfs: List[Orf]
 
 
-def _normalize_sequence(raw: str) -> str:
-    return "".join(raw.upper().split())
-
-
 def compute_triage_report(
     sequence: str,
     *,
@@ -36,14 +32,15 @@ def compute_triage_report(
     min_orf_length: int = 90,
 ) -> TriageReport:
     """Return GC skew, k-mer clusters, and ORF data for a sequence."""
-    normalized = _normalize_sequence(sequence)
+    normalized = bioinformatics.normalize_sequence(sequence)
+    display_sequence = normalized.replace("T", "U")
     skew_array = bioinformatics.skew(normalized)
     clusters_dict = bioinformatics.find_kmers_with_differences(normalized, k, max_diff)
     clusters = [
         KmerCluster(
-            canonical=name,
+            canonical=name.replace("T", "U"),
             count=info["count"],
-            patterns=tuple(info["patterns"]),
+            patterns=tuple(pattern.replace("T", "U") for pattern in info["patterns"]),
             positions=tuple(info["positions"]),
         )
         for name, info in clusters_dict.items()
@@ -53,7 +50,7 @@ def compute_triage_report(
     orfs = find_orfs(normalized, min_length=min_orf_length)
 
     return TriageReport(
-        sequence=normalized,
+        sequence=display_sequence,
         skew=skew_array.tolist(),
         clusters=clusters,
         orfs=orfs,

@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
+import bioinformatics
 from codon import translate_rna
 
 
@@ -13,9 +14,9 @@ def load_sequence(sequence: Optional[str], path: Optional[Path]) -> str:
         raise ValueError("Provide either a sequence or --input file, not both.")
     if path:
         contents = path.read_text(encoding="utf-8")
-        return "".join(contents.split())
+        return bioinformatics.normalize_sequence(contents)
     if sequence:
-        return sequence
+        return bioinformatics.normalize_sequence(sequence)
     raise ValueError("No sequence provided. Use positional argument or --input.")
 
 
