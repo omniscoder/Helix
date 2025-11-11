@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
-from . import bioinformatics, cyclospectrum, nussinov_algorithm, triage
+from . import bioinformatics, cyclospectrum, triage
 from .io import read_fasta
 from .string import fm as string_fm
 from .string import edit as string_edit
@@ -23,6 +23,11 @@ from .graphs import (
     export_graphml as graph_export_graphml,
     build_colored_dbg,
 )
+from .sketch import compute_minhash, mash_distance, compute_hll, union_hll
+from .motif import discover_motifs
+from .motif import discover_motifs
+from .viz import motif as viz_motif
+from .rna import mfe_dotbracket, partition_posteriors, mea_structure, centroid_structure
 
 try:
     from . import protein as protein_module
@@ -118,52 +123,57 @@ def command_spectrum(args: argparse.Namespace) -> None:
         raise SystemExit("Provide at least --peptide or --spectrum/--spectrum-file.")
 
 
-def command_rna_fold(args: argparse.Namespace) -> None:
-    raw = _load_sequence_arg(args.sequence, args.input, default="GGGAAACCC")
-    result = nussinov_algorithm.nussinov(
-        raw,
-        min_loop_length=args.min_loop,
-        allow_wobble_pairs=not args.no_wobble,
-    )
-    print(f"Sequence ({len(result.sequence)} nt): {result.sequence}")
-    print(f"Structure score: {result.score()} pairs")
-    print(f"Dot-bracket:\n{result.structure}")
-    if args.dot_output:
-        args.dot_output.write_text(result.structure, encoding="utf-8")
-        print(f"Dot-bracket saved to {args.dot_output}")
-
-    if result.pairs:
-        print("\nBase pairs (0-indexed):")
-        for i, j in result.pairs:
-            print(f"{i:>4} - {j:<4} ({result.sequence[i]}-{result.sequence[j]})")
-
-
-def command_rna_mea(args: argparse.Namespace) -> None:
-    from .rna import mccaskill
-    from .viz import rna as viz_rna
-
+def command_rna_mfe(args: argparse.Namespace) -> None:
     records = read_fasta(args.fasta)
     if not records:
         raise SystemExit(f"No sequences found in {args.fasta}")
     header, seq = records[0]
-    partition_result = mccaskill.partition(seq)
-    posterior = partition_result["posterior"]
-    mea_result = mccaskill.mea(seq, posterior, gamma=args.gamma)
-
-    output = {
+    result = mfe_dotbracket(seq)
+    payload = {
         "sequence_id": header,
-        "partition_function": partition_result["partition_function"],
-        "free_energy": partition_result["free_energy"],
-        "structure": mea_result["structure"],
-        "score": mea_result["score"],
+        "dotbracket": result["dotbracket"],
+        "energy": result["energy"],
+        "pairs": result["pairs"],
+    }
+    text_json = json.dumps(payload, indent=2)
+    print(text_json)
+    if args.json:
+        args.json.write_text(text_json + "\n", encoding="utf-8")
+    if args.dotbracket:
+        Path(args.dotbracket).write_text(result["dotbracket"] + "\n", encoding="utf-8")
+        print(f"Dot-bracket saved to {args.dotbracket}")
+
+
+
+def command_rna_ensemble(args: argparse.Namespace) -> None:
+    records = read_fasta(args.fasta)
+    if not records:
+        raise SystemExit(f"No sequences found in {args.fasta}")
+    header, seq = records[0]
+    ensemble = partition_posteriors(seq)
+    posterior = ensemble["P"]
+    mea = mea_structure(seq, posterior, gamma=args.gamma)
+    centroid = centroid_structure(seq, posterior)
+    payload = {
+        "sequence_id": header,
+        "partition_function": ensemble["Q"],
+        "entropy": ensemble["entropy"],
+        "p_unpaired": ensemble["p_unpaired"],
+        "mea_structure": mea,
+        "centroid_structure": centroid,
         "gamma": args.gamma,
     }
-    text = json.dumps(output, indent=2)
-    print(text)
+    text_json = json.dumps(payload, indent=2)
+    print(text_json)
     if args.json:
-        args.json.write_text(text + "\n", encoding="utf-8")
-    if args.plot:
-        viz_rna.plot_dotplot(posterior, Path(args.plot), title=f"{header} dot-plot")
+        args.json.write_text(text_json + "\n", encoding="utf-8")
+    if args.dotplot:
+        viz_rna.plot_dotplot(posterior, Path(args.dotplot), title=f"{header} posterior dot-plot")
+    if args.arc:
+        viz_rna.plot_arc(mea["dotbracket"], Path(args.arc), title=f"MEA structure ({header})")
+    if args.entropy_plot:
+        viz_rna.plot_entropy(ensemble["entropy"], Path(args.entropy_plot), title=f"Entropy ({header})")
+
 
 
 def command_protein(args: argparse.Namespace) -> None:
@@ -422,6 +432,89 @@ def command_dbg_color(args: argparse.Namespace) -> None:
     print(f"Colored graph written to {args.out}")
 
 
+def command_sketch_build(args: argparse.Namespace) -> None:
+    records = read_fasta(args.fasta)
+    if not records:
+        raise SystemExit(f"No sequences found in {args.fasta}")
+    header, seq = records[0]
+    if args.method == "minhash":
+        sketch = compute_minhash(seq, k=args.k, sketch_size=args.size)
+        payload = {
+            "sequence_id": header,
+            "method": "minhash",
+            "sketch": sketch.to_dict(),
+        }
+    else:
+        sketch = compute_hll(seq, k=args.k, p=args.precision)
+        payload = {
+            "sequence_id": header,
+            "method": "hll",
+            "sketch": sketch.to_dict(),
+        }
+    text = json.dumps(payload, indent=2)
+    print(text)
+    if args.json:
+        args.json.write_text(text + "\n", encoding="utf-8")
+
+
+def command_sketch_compare(args: argparse.Namespace) -> None:
+    records_a = read_fasta(args.fasta_a)
+    records_b = read_fasta(args.fasta_b)
+    if not records_a or not records_b:
+        raise SystemExit("Both FASTA inputs must contain sequences.")
+    if args.method == "minhash":
+        sketch_a = compute_minhash(records_a[0][1], k=args.k, sketch_size=args.size)
+        sketch_b = compute_minhash(records_b[0][1], k=args.k, sketch_size=args.size)
+        distance = mash_distance(sketch_a, sketch_b)
+        payload = {
+            "method": "minhash",
+            "distance": distance,
+            "sketch_a": sketch_a.to_dict(),
+            "sketch_b": sketch_b.to_dict(),
+        }
+    else:
+        sketch_a = compute_hll(records_a[0][1], k=args.k, p=args.precision)
+        sketch_b = compute_hll(records_b[0][1], k=args.k, p=args.precision)
+        union = union_hll(sketch_a, sketch_b)
+        est_a = sketch_a.estimate()
+        est_b = sketch_b.estimate()
+        est_union = union.estimate()
+        inter = max(0.0, est_a + est_b - est_union)
+        jaccard = inter / est_union if est_union else 0.0
+        payload = {
+            "method": "hll",
+            "jaccard": jaccard,
+            "cardinality_a": est_a,
+            "cardinality_b": est_b,
+            "cardinality_union": est_union,
+        }
+    text = json.dumps(payload, indent=2)
+    print(text)
+    if args.json:
+        args.json.write_text(text + "\n", encoding="utf-8")
+
+
+def command_motif_find(args: argparse.Namespace) -> None:
+    records = read_fasta(args.fasta)
+    if not records:
+        raise SystemExit(f"No sequences found in {args.fasta}")
+    sequences = [seq for _, seq in records]
+    kwargs = {"iterations": args.iterations}
+    if args.solver == "steme":
+        kwargs["restarts"] = args.restarts
+    if args.solver == "online":
+        kwargs["learning_rate"] = args.learning_rate
+        kwargs["passes"] = args.passes
+    result = discover_motifs(sequences, width=args.width, solver=args.solver, **kwargs)
+    payload = result.as_json()
+    text = json.dumps(payload, indent=2)
+    print(text)
+    if args.json:
+        args.json.write_text(text + "\n", encoding="utf-8")
+    if args.plot:
+        viz_motif.plot_pwm(result.pwm, Path(args.plot), title=f"Motif consensus {payload['consensus']}")
+
+
 def command_workflows(args: argparse.Namespace) -> None:
     from helix_workflows import run_workflow_config
 
@@ -537,20 +630,20 @@ def build_parser() -> argparse.ArgumentParser:
     rna = subparsers.add_parser("rna", help="RNA folding + ensemble helpers.")
     rna_sub = rna.add_subparsers(dest="rna_command", required=True)
 
-    rna_fold = rna_sub.add_parser("fold", help="Fold RNA/DNA using the Nussinov prototype.")
-    rna_fold.add_argument("--sequence", help="Inline RNA/DNA string (defaults to a demo hairpin).")
-    rna_fold.add_argument("--input", type=Path, help="Path to a FASTA/text file.")
-    rna_fold.add_argument("--min-loop", type=int, default=3, help="Minimum loop length (default: 3).")
-    rna_fold.add_argument("--no-wobble", action="store_true", help="Disable wobble base pairs.")
-    rna_fold.add_argument("--dot-output", type=Path, help="Optional path to write the dot-bracket string.")
-    rna_fold.set_defaults(func=command_rna_fold)
+    rna_mfe = rna_sub.add_parser("mfe", help="Zuker-style MFE folding.")
+    rna_mfe.add_argument("--fasta", type=Path, required=True, help="FASTA file containing a single sequence.")
+    rna_mfe.add_argument("--json", type=Path, help="Optional JSON output path.")
+    rna_mfe.add_argument("--dotbracket", type=Path, help="Optional file to save dot-bracket.")
+    rna_mfe.set_defaults(func=command_rna_mfe)
 
-    rna_mea = rna_sub.add_parser("mea", help="Partition function + MEA structure (McCaskill).")
-    rna_mea.add_argument("--fasta", type=Path, required=True, help="FASTA file containing a single sequence.")
-    rna_mea.add_argument("--gamma", type=float, default=1.0, help="MEA gamma parameter (default: 1.0).")
-    rna_mea.add_argument("--json", type=Path, help="Optional output JSON path.")
-    rna_mea.add_argument("--plot", type=Path, help="Optional dot-plot path (requires matplotlib).")
-    rna_mea.set_defaults(func=command_rna_mea)
+    rna_ensemble = rna_sub.add_parser("ensemble", help="Partition function + MEA/centroid structures.")
+    rna_ensemble.add_argument("--fasta", type=Path, required=True, help="FASTA file containing a single sequence.")
+    rna_ensemble.add_argument("--gamma", type=float, default=1.0, help="MEA gamma parameter (default: 1.0).")
+    rna_ensemble.add_argument("--json", type=Path, help="Optional JSON output path.")
+    rna_ensemble.add_argument("--dotplot", type=Path, help="Optional dot-plot path (requires matplotlib).")
+    rna_ensemble.add_argument("--arc", type=Path, help="Optional arc diagram path (requires matplotlib).")
+    rna_ensemble.add_argument("--entropy-plot", type=Path, help="Optional entropy plot path (requires matplotlib).")
+    rna_ensemble.set_defaults(func=command_rna_ensemble)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
     protein.add_argument("--sequence", help="Inline amino-acid string.")
@@ -669,6 +762,41 @@ def build_parser() -> argparse.ArgumentParser:
     dbg_color.add_argument("--k", type=int, required=True, help="k-mer size.")
     dbg_color.add_argument("--out", type=Path, required=True, help="Output colored graph JSON.")
     dbg_color.set_defaults(func=command_dbg_color)
+
+    sketch_cmd = subparsers.add_parser("sketch", help="Sketch-based genome similarity helpers.")
+    sketch_sub = sketch_cmd.add_subparsers(dest="sketch_command", required=True)
+    sketch_build = sketch_sub.add_parser("build", help="Compute a MinHash or HLL sketch for a FASTA sequence.")
+    sketch_build.add_argument("--method", choices=["minhash", "hll"], default="minhash")
+    sketch_build.add_argument("--fasta", type=Path, required=True, help="Input FASTA.")
+    sketch_build.add_argument("--k", type=int, default=21, help="k-mer size (default: 21).")
+    sketch_build.add_argument("--size", type=int, default=1000, help="Sketch size (minhash only).")
+    sketch_build.add_argument("--precision", type=int, default=10, help="HLL precision p (default: 10).")
+    sketch_build.add_argument("--json", type=Path, help="Optional output path.")
+    sketch_build.set_defaults(func=command_sketch_build)
+
+    sketch_compare = sketch_sub.add_parser("compare", help="Compare two sequences using MinHash or HLL.")
+    sketch_compare.add_argument("--method", choices=["minhash", "hll"], default="minhash")
+    sketch_compare.add_argument("--fasta-a", type=Path, required=True)
+    sketch_compare.add_argument("--fasta-b", type=Path, required=True)
+    sketch_compare.add_argument("--k", type=int, default=21)
+    sketch_compare.add_argument("--size", type=int, default=1000, help="Sketch size (minhash).")
+    sketch_compare.add_argument("--precision", type=int, default=10, help="Precision for HLL.")
+    sketch_compare.add_argument("--json", type=Path, help="Optional output path.")
+    sketch_compare.set_defaults(func=command_sketch_compare)
+
+    motif_cmd = subparsers.add_parser("motif", help="Motif discovery helpers.")
+    motif_sub = motif_cmd.add_subparsers(dest="motif_command", required=True)
+    motif_find = motif_sub.add_parser("find", help="Discover motifs via EM/STEME/online.")
+    motif_find.add_argument("--fasta", type=Path, required=True, help="FASTA file with sequences.")
+    motif_find.add_argument("--width", type=int, required=True, help="Motif width (k).")
+    motif_find.add_argument("--solver", choices=["em", "steme", "online"], default="em", help="Solver to use (default: em).")
+    motif_find.add_argument("--iterations", type=int, default=50, help="Iterations (EM/STEME).")
+    motif_find.add_argument("--restarts", type=int, default=5, help="STEME random restarts (default: 5).")
+    motif_find.add_argument("--learning-rate", type=float, default=0.3, help="Online learning rate (default: 0.3).")
+    motif_find.add_argument("--passes", type=int, default=3, help="Online passes over the data (default: 3).")
+    motif_find.add_argument("--json", type=Path, help="Optional JSON output path.")
+    motif_find.add_argument("--plot", type=Path, help="Optional PWM plot path (requires matplotlib).")
+    motif_find.set_defaults(func=command_motif_find)
 
     return parser
 

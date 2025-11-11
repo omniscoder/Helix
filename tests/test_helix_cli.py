@@ -52,10 +52,11 @@ def test_cli_spectrum_leaderboard():
     assert "Leaderboard" in result.stdout
 
 
-def test_cli_rna_nussinov():
-    result = run_cli("rna", "fold", "--sequence", "GGGAAACCC", "--min-loop", "0")
-    assert "Dot-bracket" in result.stdout
-    assert "(" in result.stdout
+def test_cli_rna_mfe(tmp_path: Path):
+    fasta = tmp_path / "test.fna"
+    fasta.write_text(">seq1\nGGGAAACCC\n", encoding="utf-8")
+    result = run_cli("rna", "mfe", "--fasta", str(fasta), "--dotbracket", str(tmp_path / "out.dbn"))
+    assert "dotbracket" in result.stdout
 
 
 def test_cli_triage_json(tmp_path: Path):
@@ -151,10 +152,19 @@ def test_cli_viz_hydropathy(tmp_path: Path):
     assert "Hydropathy chart saved" in result.stdout
 
 
-def test_cli_rna_mea(tmp_path: Path):
+def test_cli_rna_ensemble(tmp_path: Path):
     fasta = tmp_path / "test.fna"
     fasta.write_text(">seq1\nAUGCUA\n", encoding="utf-8")
     output = tmp_path / "mea.json"
-    result = run_cli("rna", "mea", "--fasta", str(fasta), "--gamma", "1.0", "--json", str(output))
+    result = run_cli(
+        "rna",
+        "ensemble",
+        "--fasta",
+        str(fasta),
+        "--gamma",
+        "1.0",
+        "--json",
+        str(output),
+    )
     assert output.exists()
     assert "structure" in result.stdout

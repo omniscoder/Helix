@@ -14,12 +14,13 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - **DNA and motif experiments** (`helix.bioinformatics`): quick-and-dirty k-mer counting, SNP-tolerant motif clustering, GC skew plots, FASTA cleaning, and a CLI for summarizing GC/cluster hotspots.
 - **Translation and mass lookups** (`helix.codon`, `helix.amino_acids`): resilient codon translation, bidirectional ORF scanning, frameshift heuristics, and peptide mass utilities.
 - **Peptide spectrum sandbox** (`helix.cyclospectrum`): linear + cyclic theoretical spectra, scoring helpers, and a leaderboard CLI for reconstructing peptides.
-- **RNA secondary structure sketches** (`helix.nussinov_algorithm`): an annotated Nussinov dynamic-programming prototype with dot-bracket output + tracing CLI.
+- **RNA folding + ensembles** (`helix.rna`): Zuker-style MFE plus McCaskill partition/MEA/centroid helpers with dot-plots and entropy tracks.
 - **Protein helpers** (`helix.protein`): sequence-first summaries (weight, charge, hydropathy windows) with FASTA loading, visualization, and a friendly CLI wrapper.
 - **Workflows + API** (`helix.cli`, `helix.workflows`, `helix.api`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts.
 - **Seeding + seed-and-extend** (`helix.seed`): deterministic minimizers/syncmers and banded seed-extend helpers for toy mappers and density visualizations.
 - **String/search helpers** (`helix.string`): FM-index construction, exact pattern search, and Myers bit-vector edit-distance for CLI/API explorations.
 - **Graphs & DBG tooling** (`helix.graphs`): build/clean De Bruijn graphs, serialize to JSON/GraphML, and prep for colored/pseudoalignment experiments.
+- **Motif discovery** (`helix.motif`): EM-based PWM inference (baseline MEME) with CLI/API symmetry and optional PWM plots.
 - **Neural net doodles** (`ann.py`): minimal NumPy-only network for experimenting with small bio datasets.
 
 ## Repo Layout
@@ -107,8 +108,8 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   ```bash
   helix dna --sequence ACGTACGT --k 4
   helix spectrum --peptide NQEL --spectrum "0,113,114,128,227,242,242,355,356,370,371,484"
-  helix rna fold --sequence GGGAAACCC --min-loop 0
-  helix rna mea --fasta src/helix/datasets/dna/plasmid_demo.fna --gamma 1.0 --plot dotplot.png
+  helix rna mfe --fasta src/helix/datasets/dna/plasmid_demo.fna --dotbracket mfe.dbn
+  helix rna ensemble --fasta src/helix/datasets/dna/plasmid_demo.fna --gamma 1.0 --dotplot dotplot.png --entropy entropy.png
   ```
   The `helix` entry point wraps the DNA, spectrum, RNA, protein, triage, viz, and workflow helpers so you can run ad-hoc analyses without hunting for scripts.
 
@@ -217,3 +218,15 @@ Happy hacking!
   helix dbg color --reads sample1.fna sample2.fna --labels case control --k 31 --out colored.json
   ```
   Builds/cleans JSON + GraphML de Bruijn graphs and produces colored DBG presence tables ready for pseudoalignment experiments.
+
+- **Motif discovery**
+  ```bash
+  helix motif find --fasta promoters.fasta --width 8 --solver steme --iterations 40 --json motif.json --plot pwm.png
+  ```
+  Runs EM/STEME/online solvers to infer PWMs/log-likelihoods and renders optional probability heatmaps.
+- **Sketching (MinHash/HLL)**
+  ```bash
+  helix sketch build --method minhash --fasta seq.fna --k 21 --size 1000
+  helix sketch compare --method hll --fasta-a a.fna --fasta-b b.fna --precision 12
+  ```
+  Quickly approximate genome distances via Mash-style MinHash or HLL cardinality/Jaccard estimates.
