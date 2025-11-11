@@ -22,6 +22,7 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - **Graphs & DBG tooling** (`helix.graphs`): build/clean De Bruijn graphs, serialize to JSON/GraphML, and prep for colored/pseudoalignment experiments.
 - **Motif discovery** (`helix.motif`): EM-based PWM inference (baseline MEME) with CLI/API symmetry and optional PWM plots.
 - **Neural net doodles** (`ann.py`): minimal NumPy-only network for experimenting with small bio datasets.
+- **Schema + provenance tooling** (`helix.schema`, `helix viz --schema`, `helix schema diff/manifest`, `helix workflows --with-schema`): every JSON artifact and PNG knows its schema kind, spec version, and SHA-256 for audit-ready reproducibility.
 
 ## Repo Layout
 ```
@@ -166,8 +167,8 @@ Pytest powers translator and k-mer regression checks; feel free to add more as y
 - Each plot footer stamps `Helix vX.Y • viz-kind • spec=1.x • key params • timestamp • input_sha256` so shared figures always carry their provenance and the SHA-256 of the original JSON payload.
 - The viz-spec JSON captures counts, quantiles, bounds, and the `input_sha256` used for hashing; regressions assert against that structured payload instead of brittle pixel hashes.
 - You can feed those viz-specs (plus the original JSON inputs) into docs/notebooks to explain how a figure was produced and which parameters generated it.
-- Explore or inspect schemas with `helix viz schema --kind ...`, diff manifests with `helix schema diff --base old.json`, export everything via `helix schema manifest --out schemas.json`, or render ready-to-plot payloads via `helix demo viz`.
-- Workflows can enforce schemas per step and print provenance tables with `helix workflows ... --with-schema`.
+- Explore or inspect schemas with `helix viz --schema`, diff manifests with `helix schema diff --base old.json`, export everything via `helix schema manifest --out schemas.json`, or render ready-to-plot payloads via `helix demo viz`.
+- Workflows can enforce schemas per step and print provenance tables/JSON with `helix workflows ... --with-schema [--as-json]`.
 - Every saved plot writes `<image>.provenance.json` next to the PNG, capturing `{schema_kind, spec_version, input_sha256, viz_spec_sha256, image_sha256, helix_version, command}` for chain-of-custody.
 - Full schemas, screenshots, and sample payloads live under [docs/viz.md](docs/viz.md) and the [Schema Reference](docs/schema.md).
 
