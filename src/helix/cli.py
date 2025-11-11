@@ -25,8 +25,15 @@ from .graphs import (
 )
 from .sketch import compute_minhash, mash_distance, compute_hll, union_hll
 from .motif import discover_motifs
-from .motif import discover_motifs
-from .viz import motif as viz_motif
+from .viz import rna as viz_rna
+from .viz import (
+    plot_alignment_ribbon,
+    plot_distance_heatmap,
+    plot_minimizer_density,
+    plot_motif_logo,
+    plot_seed_chain,
+    plot_rna_dotplot,
+)
 from .rna import mfe_dotbracket, partition_posteriors, mea_structure, centroid_structure
 
 try:
@@ -61,6 +68,14 @@ def _parse_spectrum(text: str | None) -> List[int]:
     if not tokens:
         return []
     return [int(token) for token in tokens]
+
+
+def _default_viz_spec_path(save: Path | None, provided: Path | None) -> Path | None:
+    if provided:
+        return provided
+    if save:
+        return save.with_name(f"{save.stem}.viz.json")
+    return None
 
 
 def command_dna(args: argparse.Namespace) -> None:
@@ -168,7 +183,13 @@ def command_rna_ensemble(args: argparse.Namespace) -> None:
     if args.json:
         args.json.write_text(text_json + "\n", encoding="utf-8")
     if args.dotplot:
-        viz_rna.plot_dotplot(posterior, Path(args.dotplot), title=f"{header} posterior dot-plot")
+        dot_path = str(args.dotplot)
+        spec_path = _default_viz_spec_path(args.dotplot, getattr(args, "save_viz_spec", None))
+        plot_rna_dotplot(
+            posterior=posterior,
+            save=dot_path,
+            save_viz_spec=str(spec_path) if spec_path else None,
+        )
     if args.arc:
         viz_rna.plot_arc(mea["dotbracket"], Path(args.arc), title=f"MEA structure ({header})")
     if args.entropy_plot:
@@ -363,6 +384,7 @@ def command_seed_map(args: argparse.Namespace) -> None:
         results.append(
             {
                 "read_id": header or "read",
+                "read_length": len(seq),
                 "seed_hits": len(matches),
                 "alignments": matches,
             }
@@ -371,6 +393,7 @@ def command_seed_map(args: argparse.Namespace) -> None:
     payload = {
         "meta": {
             "reference": ref_header,
+            "ref_length": len(ref_seq),
             "k": args.k,
             "window": args.window,
             "band": args.band,
@@ -512,7 +535,13 @@ def command_motif_find(args: argparse.Namespace) -> None:
     if args.json:
         args.json.write_text(text + "\n", encoding="utf-8")
     if args.plot:
-        viz_motif.plot_pwm(result.pwm, Path(args.plot), title=f"Motif consensus {payload['consensus']}")
+        spec_path = _default_viz_spec_path(args.plot, getattr(args, "plot_viz_spec", None))
+        plot_motif_logo(
+            pwm=result.pwm,
+            title=f"Motif consensus {payload['consensus']}",
+            save=str(args.plot),
+            save_viz_spec=str(spec_path) if spec_path else None,
+        )
 
 
 def command_workflows(args: argparse.Namespace) -> None:
@@ -605,6 +634,113 @@ def command_viz_hydropathy(args: argparse.Namespace) -> None:
     print(f"Hydropathy chart saved to {args.output}")
 
 
+def command_viz_minimizers(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    seq_len = int(payload["sequence_length"])
+    minimizers = payload.get("minimizers", [])
+    save = str(args.save) if args.save else None
+    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
+    plot_minimizer_density(
+        sequence_length=seq_len,
+        minimizers=minimizers,
+        bin_count=args.bins,
+        save=save,
+        save_viz_spec=str(spec_path) if spec_path else None,
+    )
+
+
+def command_viz_seed_chain(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    save = str(args.save) if args.save else None
+    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
+    plot_seed_chain(
+        ref_length=int(payload["ref_length"]),
+        qry_length=int(payload["qry_length"]),
+        chains=payload.get("chains", []),
+        save=save,
+        save_viz_spec=str(spec_path) if spec_path else None,
+    )
+
+
+def command_viz_rna_dotplot(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    save = str(args.save) if args.save else None
+    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
+    plot_rna_dotplot(
+        posterior=payload["posterior"],
+        vmin=args.vmin,
+        vmax=args.vmax,
+        save=save,
+        save_viz_spec=str(spec_path) if spec_path else None,
+    )
+
+
+def command_viz_alignment_ribbon(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    results = payload.get("results", [])
+    if not results:
+        raise SystemExit("No alignment results in payload.")
+    target = None
+    if args.read_id:
+        for entry in results:
+            if entry.get("read_id") == args.read_id:
+                target = entry
+                break
+        if target is None:
+            raise SystemExit(f"Read '{args.read_id}' not found in payload.")
+    else:
+        target = results[0]
+    alignments = target.get("alignments", [])
+    if not alignments:
+        raise SystemExit(f"No alignments for read '{target.get('read_id', 'read')}'.")
+    if args.alignment_index < 0 or args.alignment_index >= len(alignments):
+        raise SystemExit("alignment-index out of range for selected read.")
+    entry = alignments[args.alignment_index]
+    alignment = entry.get("alignment", entry)
+    ref_length = payload.get("meta", {}).get("ref_length", alignment.get("ref_end", 0))
+    qry_length = target.get("read_length", alignment.get("read_end", 0))
+    title = args.title or f"{target.get('read_id', 'read')} vs {payload.get('meta', {}).get('reference', 'reference')}"
+    save = str(args.save) if args.save else None
+    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
+    plot_alignment_ribbon(
+        ref_length=int(ref_length or 0),
+        qry_length=int(qry_length or 0),
+        alignment=alignment,
+        title=title,
+        save=save,
+        save_viz_spec=str(spec_path) if spec_path else None,
+    )
+
+
+def command_viz_distance_heatmap(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    if "matrix" not in payload or "labels" not in payload:
+        raise SystemExit("Distance payload must include 'matrix' and 'labels'.")
+    save = str(args.save) if args.save else None
+    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
+    plot_distance_heatmap(
+        matrix=payload["matrix"],
+        labels=payload["labels"],
+        method=payload.get("method", "minhash"),
+        save=save,
+        save_viz_spec=str(spec_path) if spec_path else None,
+    )
+
+
+def command_viz_motif_logo(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    if "pwm" not in payload:
+        raise SystemExit("Motif payload must include 'pwm'.")
+    save = str(args.save) if args.save else None
+    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
+    plot_motif_logo(
+        pwm=payload["pwm"],
+        title=args.title or payload.get("consensus", "Motif logo"),
+        save=save,
+        save_viz_spec=str(spec_path) if spec_path else None,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Helix unified CLI.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -643,6 +779,7 @@ def build_parser() -> argparse.ArgumentParser:
     rna_ensemble.add_argument("--dotplot", type=Path, help="Optional dot-plot path (requires matplotlib).")
     rna_ensemble.add_argument("--arc", type=Path, help="Optional arc diagram path (requires matplotlib).")
     rna_ensemble.add_argument("--entropy-plot", type=Path, help="Optional entropy plot path (requires matplotlib).")
+    rna_ensemble.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON for dot-plot.")
     rna_ensemble.set_defaults(func=command_rna_ensemble)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
@@ -704,6 +841,49 @@ def build_parser() -> argparse.ArgumentParser:
     )
     viz_hydro.add_argument("--show", action="store_true", help="Display interactively.")
     viz_hydro.set_defaults(func=command_viz_hydropathy)
+
+    viz_min = viz_subparsers.add_parser("minimizers", help="Plot minimizer density from a JSON payload.")
+    viz_min.add_argument("--input", type=Path, required=True, help="JSON with sequence_length and minimizers.")
+    viz_min.add_argument("--bins", type=int, default=200, help="Number of bins (default: 200).")
+    viz_min.add_argument("--save", type=Path, help="Optional output image path.")
+    viz_min.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_min.set_defaults(func=command_viz_minimizers)
+
+    viz_seed = viz_subparsers.add_parser("seed-chain", help="Plot chained seed anchors.")
+    viz_seed.add_argument("--input", type=Path, required=True, help="JSON with ref_length, qry_length, chains.")
+    viz_seed.add_argument("--save", type=Path, help="Optional output image path.")
+    viz_seed.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_seed.set_defaults(func=command_viz_seed_chain)
+
+    viz_rna_plot = viz_subparsers.add_parser("rna-dotplot", help="Plot RNA pairing posterior from JSON.")
+    viz_rna_plot.add_argument("--input", type=Path, required=True, help="JSON with posterior matrix.")
+    viz_rna_plot.add_argument("--vmin", type=float, default=0.0)
+    viz_rna_plot.add_argument("--vmax", type=float, default=1.0)
+    viz_rna_plot.add_argument("--save", type=Path, help="Optional output image path.")
+    viz_rna_plot.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_rna_plot.set_defaults(func=command_viz_rna_dotplot)
+
+    viz_align = viz_subparsers.add_parser("alignment-ribbon", help="Plot an alignment ribbon from mapping JSON.")
+    viz_align.add_argument("--input", type=Path, required=True, help="JSON output from 'helix seed map'.")
+    viz_align.add_argument("--read-id", help="Read ID to plot (defaults to the first entry).")
+    viz_align.add_argument("--alignment-index", type=int, default=0, help="Alignment index for the selected read.")
+    viz_align.add_argument("--title", help="Override plot title.")
+    viz_align.add_argument("--save", type=Path, help="Optional output image path.")
+    viz_align.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_align.set_defaults(func=command_viz_alignment_ribbon)
+
+    viz_dist = viz_subparsers.add_parser("distance-heatmap", help="Plot a distance matrix heatmap.")
+    viz_dist.add_argument("--input", type=Path, required=True, help="JSON with 'matrix' and 'labels'.")
+    viz_dist.add_argument("--save", type=Path, help="Optional output image path.")
+    viz_dist.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_dist.set_defaults(func=command_viz_distance_heatmap)
+
+    viz_motif = viz_subparsers.add_parser("motif-logo", help="Plot a motif logo from a PWM JSON payload.")
+    viz_motif.add_argument("--input", type=Path, required=True, help="JSON containing a 'pwm' entry.")
+    viz_motif.add_argument("--title", help="Optional plot title override.")
+    viz_motif.add_argument("--save", type=Path, help="Optional output image path.")
+    viz_motif.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_motif.set_defaults(func=command_viz_motif_logo)
 
     string_cmd = subparsers.add_parser("string", help="String / sequence search helpers.")
     string_sub = string_cmd.add_subparsers(dest="string_command", required=True)
@@ -796,6 +976,7 @@ def build_parser() -> argparse.ArgumentParser:
     motif_find.add_argument("--passes", type=int, default=3, help="Online passes over the data (default: 3).")
     motif_find.add_argument("--json", type=Path, help="Optional JSON output path.")
     motif_find.add_argument("--plot", type=Path, help="Optional PWM plot path (requires matplotlib).")
+    motif_find.add_argument("--plot-viz-spec", type=Path, help="Optional viz-spec JSON path for --plot.")
     motif_find.set_defaults(func=command_motif_find)
 
     return parser

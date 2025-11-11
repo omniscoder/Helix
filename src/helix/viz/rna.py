@@ -1,24 +1,54 @@
-"""RNA visualization helpers (dot-plots, entropy)."""
+"""RNA visualization helpers (dot-plots, arcs, entropy)."""
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from ._utils import VizSpec, apply_rc, finalize
 
 
-def plot_dotplot(posterior: List[List[float]], output: Path, title: str = "RNA dot-plot") -> None:
-    import matplotlib.pyplot as plt  # type: ignore
-    import numpy as np
+def plot_rna_dotplot(
+    *,
+    posterior: List[List[float]],
+    vmin: float = 0.0,
+    vmax: float = 1.0,
+    save: Optional[str] = None,
+    save_viz_spec: Optional[str] = None,
+):
+    apply_rc()
+    size = len(posterior)
+    if any(len(row) != size for row in posterior):
+        raise AssertionError("posterior must be square")
+    matrix = np.array(posterior, dtype=float)
+    assert matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1], "posterior must be square"
+    n = matrix.shape[0]
+    mask = np.tri(n, n, k=0, dtype=bool)
+    masked = np.ma.array(matrix, mask=mask)
+    fig, ax = plt.subplots(figsize=(4.5, 4.0))
+    im = ax.imshow(masked, origin="lower", interpolation="nearest", vmin=vmin, vmax=vmax)
+    ax.set_xlim(-0.5, n - 0.5)
+    ax.set_ylim(-0.5, n - 0.5)
+    ax.set_xlabel("j (base index)")
+    ax.set_ylabel("i (base index)")
+    ax.set_title("RNA pairing posterior (upper triangle)")
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("P(i,j)")
 
-    matrix = np.array(posterior)
-    fig, ax = plt.subplots(figsize=(5, 5))
-    im = ax.imshow(matrix, cmap="viridis", origin="lower", vmin=0, vmax=1)
-    fig.colorbar(im, ax=ax, label="P(i,j)")
-    ax.set_xlabel("j")
-    ax.set_ylabel("i")
-    ax.set_title(title)
-    fig.tight_layout()
-    fig.savefig(output)
-    plt.close(fig)
+    upper = matrix[np.triu_indices(n, k=1)]
+    q = np.quantile(upper, [0.0, 0.25, 0.5, 0.75, 0.95, 1.0]) if upper.size else np.zeros(6)
+
+    spec = VizSpec(
+        kind="rna_dotplot",
+        meta={"n": int(n), "vmin": float(vmin), "vmax": float(vmax)},
+        primitives={
+            "nonzero_pairs": int((upper > 0).sum()),
+            "quantiles": [float(x) for x in q.tolist()],
+        },
+    )
+    return finalize(fig, spec, save=save, save_viz_spec=save_viz_spec)
 
 
 def plot_arc(dotbracket: str, output: Path, title: str = "RNA arc diagram") -> None:
