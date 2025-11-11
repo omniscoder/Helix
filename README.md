@@ -1,4 +1,6 @@
 # Helix
+[![PyPI](https://img.shields.io/pypi/v/veri-helix.svg)](https://pypi.org/project/veri-helix/)
+[![Reproducible Viz (spec v1.0)](https://img.shields.io/badge/reproducible%20viz-spec%201.0-6f42c1)](docs/schema.md)
 
 Helix is a hobbyist-first playground for bioinformatics and computational biology. Think of it as a backpack full of lightweight tools, algorithms, and experiments you can remix on evenings, in classrooms, or between lab runs. We embrace rough edges and fast iteration so that ideas can leap from a notebook sketch to a runnable prototype quickly.
 
@@ -58,7 +60,7 @@ Stable release from PyPI (installs CLI + package):
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install "helix-bio[viz,protein,schema]"
+pip install "veri-helix[viz,protein,schema]"
 ```
 Need only the core library? Drop the extras (viz/matplotlib, protein/Biopython, schema/pydantic). For local development, clone the repo and run:
 ```bash

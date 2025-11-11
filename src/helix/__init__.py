@@ -6,7 +6,7 @@ from . import bioinformatics, codon, cyclospectrum, triage, string, seed, motif
 from .api import dna_summary, triage_report, fold_rna, spectrum_leaderboard, protein_summary
 
 try:  # pragma: no cover - metadata only at runtime
-    __version__ = metadata.version("helix-bio")
+    __version__ = metadata.version("veri-helix")
 except metadata.PackageNotFoundError:  # pragma: no cover - source tree / editable installs
     __version__ = "0.0.0"
 

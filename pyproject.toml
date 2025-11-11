@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel", "build"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "helix-bio"
+name = "veri-helix"
 version = "0.2.0"
 description = "Friendly, reproducible bioinformatics toolkit with schema-verified viz"
 readme = "README.md"

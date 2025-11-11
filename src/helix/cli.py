@@ -240,7 +240,7 @@ def _write_provenance(
 def _ensure_viz_available(feature: str = "visualization") -> None:
     if not VIZ_AVAILABLE:
         raise SystemExit(
-            f"{feature} requires the 'viz' extra. Install with `pip install \"helix-bio[viz]\"`."
+            f"{feature} requires the 'viz' extra. Install with `pip install \"veri-helix[viz]\"`."
         )
 
 
