@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from helix import datasets
 import helix_api
 
 
@@ -35,6 +36,7 @@ def test_spectrum_leaderboard_hits():
 def test_protein_summary_optional():
     if not helix_api.PROTEIN_AVAILABLE:
         pytest.skip("Biopython not installed")
-    summary = helix_api.protein_summary(input_path="input/protein/demo_protein.faa", window=11)
+    protein_path = datasets.get_path("protein/demo_protein.faa")
+    summary = helix_api.protein_summary(input_path=protein_path, window=11)
     assert summary["length"] > 0
     assert summary["hydropathy_profile"]

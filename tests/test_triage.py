@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from triage import compute_triage_report
+from helix.triage import compute_triage_report
 
 
 def test_compute_triage_report_basic():

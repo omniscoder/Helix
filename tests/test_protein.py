@@ -7,7 +7,7 @@ pytest.importorskip("Bio")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from protein import clean_sequence, hydropathy_profile, load_fasta_sequences, summarize_sequence
+from helix.protein import clean_sequence, hydropathy_profile, load_fasta_sequences, summarize_sequence
 
 
 def test_clean_sequence_handles_fasta_and_whitespace():

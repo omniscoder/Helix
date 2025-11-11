@@ -11,57 +11,60 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - Offer a bridge to OGN by keeping APIs compatible and providing off-ramps when users need industrial-scale tooling.
 
 ## Highlights
-- **DNA and motif experiments** (`bioinformatics.py`): quick-and-dirty k-mer counting, SNP-tolerant motif clustering, GC skew plots, FASTA cleaning, and a CLI for summarizing GC/cluster hotspots.
-- **Translation and mass lookups** (`codon.py`, `amino_acids.py`): resilient codon translation, bidirectional ORF scanning, frameshift heuristics, and peptide mass utilities.
-- **Peptide spectrum sandbox** (`cyclospectrum.py`): linear + cyclic theoretical spectra, scoring helpers, and a leaderboard CLI for reconstructing peptides.
-- **RNA secondary structure sketches** (`nussinov_algorithm.py`): an annotated Nussinov dynamic-programming prototype with dot-bracket output + tracing CLI.
-- **Protein helpers** (`protein.py`): sequence-first summaries (weight, charge, hydropathy windows) with FASTA loading, visualization, and a friendly CLI wrapper.
-- **Workflows + API** (`helix_cli.py`, `helix_workflows.py`, `helix_api.py`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts.
+- **DNA and motif experiments** (`helix.bioinformatics`): quick-and-dirty k-mer counting, SNP-tolerant motif clustering, GC skew plots, FASTA cleaning, and a CLI for summarizing GC/cluster hotspots.
+- **Translation and mass lookups** (`helix.codon`, `helix.amino_acids`): resilient codon translation, bidirectional ORF scanning, frameshift heuristics, and peptide mass utilities.
+- **Peptide spectrum sandbox** (`helix.cyclospectrum`): linear + cyclic theoretical spectra, scoring helpers, and a leaderboard CLI for reconstructing peptides.
+- **RNA secondary structure sketches** (`helix.nussinov_algorithm`): an annotated Nussinov dynamic-programming prototype with dot-bracket output + tracing CLI.
+- **Protein helpers** (`helix.protein`): sequence-first summaries (weight, charge, hydropathy windows) with FASTA loading, visualization, and a friendly CLI wrapper.
+- **Workflows + API** (`helix.cli`, `helix.workflows`, `helix.api`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts.
+- **Seeding + seed-and-extend** (`helix.seed`): deterministic minimizers/syncmers and banded seed-extend helpers for toy mappers and density visualizations.
+- **String/search helpers** (`helix.string`): FM-index construction, exact pattern search, and Myers bit-vector edit-distance for CLI/API explorations.
+- **Graphs & DBG tooling** (`helix.graphs`): build/clean De Bruijn graphs, serialize to JSON/GraphML, and prep for colored/pseudoalignment experiments.
 - **Neural net doodles** (`ann.py`): minimal NumPy-only network for experimenting with small bio datasets.
 
 ## Repo Layout
 ```
 .
-├── amino_acids.py          # peptide mass lookup table
-├── ann.py                  # single-layer neural network example
-├── bioinformatics.py       # DNA utilities + GC skew plotting + CLI
-├── bioinformatics.c        # scratch file (currently placeholder)
-├── codon.py                # codon translation helpers
-├── cyclospectrum.py        # peptide spectra + leaderboard helpers
-├── input/dna/human.txt     # example labeled DNA sequences
-├── nussinov_algorithm.py   # Nussinov folding with traceback helpers
-├── protein.py              # protein summaries + hydropathy CLI
-├── helix_cli.py            # unified CLI (DNA, spectrum, RNA, protein, triage, viz, workflows)
-├── helix_api.py            # Python helpers mirroring the CLI
-├── helix_workflows.py      # YAML workflow runner
-├── input/dna/plasmid_demo.fna
-└── input/protein/demo_protein.faa
+├── pyproject.toml              # packaging metadata + extras
+├── src/
+│   └── helix/
+│       ├── __init__.py         # user-facing namespace
+│       ├── amino_acids.py
+│       ├── bioinformatics.py
+│       ├── codon.py
+│       ├── cyclospectrum.py
+│       ├── datasets/           # bundled FASTA/FAA toy data
+│       ├── cli.py              # console entry point (`helix …`)
+│       ├── api.py              # notebook-friendly helpers
+│       ├── workflows.py        # YAML runner
+│       ├── nussinov_algorithm.py
+│       ├── protein.py
+│       └── triage.py
+├── examples/                   # runnable scripts + demos
+├── tests/                      # pytest suites
+└── README.md
 ```
 
 ## Getting Started
 ### Requirements
 - Python 3.10+ (3.11 tested)
 - pip or another package manager
-- NumPy, pandas, matplotlib, Biopython
-
-Optional extras:
-- A matplotlib backend capable of rendering windows (GC skew plots).
-- Network access for fetching PDB or AlphaFold structures on the fly.
-- pytest (if you want to run the test suite).
+- Optional extras: `matplotlib` for plotting, `biopython` for protein helpers, `pyyaml` for workflow configs (already included in base deps).
 
 ### Installation
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install numpy pandas matplotlib biopython
+pip install -e ".[viz,protein]"   # add extras as needed; omit for a lean install
 ```
+This exposes the `helix` console command and the `helix` Python package (`from helix import bioinformatics`).
 
 ### Run a Script
 - **K-mer + skew analysis**
   ```bash
-  python bioinformatics.py --plot-skew --window 400 --max-diff 1
+  helix dna --input path/to/sequence.fna --window 400 --step 50 --k 5 --plot-skew
   ```
-  Point at a FASTA with `--input`, change the GC window/step, or disable plotting for headless runs.
+  Change the GC window/step, filter top k-mers, or point at the bundled dataset `src/helix/datasets/dna/plasmid_demo.fna`.
   For quick clustering with exports, try `python examples/kmer_counter.py --max-diff 1 --csv clusters.csv --plot-top 10`.
 
 - **Neural net demo**
@@ -96,28 +99,29 @@ pip install numpy pandas matplotlib biopython
 
 - **Protein summary**
   ```bash
-  python protein.py --input protein.fasta --window 11 --top 8
+  helix protein --input src/helix/datasets/protein/demo_protein.faa --window 11 --top 8
   ```
-  Computes molecular weight, charge, hydropathy windows, and more. Works with inline sequences or FASTA files.
+  Computes molecular weight, charge, hydropathy windows, and more (requires the `protein` extra / Biopython).
 
 - **Unified Helix CLI**
   ```bash
-  python helix_cli.py dna --sequence ACGTACGT --k 4
-  python helix_cli.py spectrum --peptide NQEL --spectrum "0,113,114,128,227,242,242,355,356,370,371,484"
-  python helix_cli.py rna --sequence GGGAAACCC --min-loop 0
+  helix dna --sequence ACGTACGT --k 4
+  helix spectrum --peptide NQEL --spectrum "0,113,114,128,227,242,242,355,356,370,371,484"
+  helix rna fold --sequence GGGAAACCC --min-loop 0
+  helix rna mea --fasta src/helix/datasets/dna/plasmid_demo.fna --gamma 1.0 --plot dotplot.png
   ```
-  The `helix_cli.py` entry point wraps the DNA, spectrum, RNA, protein, and triage helpers into one dispatcher so you can run ad-hoc analyses without hunting for individual scripts.
+  The `helix` entry point wraps the DNA, spectrum, RNA, protein, triage, viz, and workflow helpers so you can run ad-hoc analyses without hunting for scripts.
 
 - **Workflow runner**
   ```bash
-  python helix_cli.py workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs
+  helix workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs
   ```
   Chains multiple subcommands from YAML, captures per-step logs, and writes artifacts to structured run directories.
 
 - **Visualization helpers**
   ```bash
-  python helix_cli.py viz triage --json triage.json --output triage.png
-  python helix_cli.py viz hydropathy --input input/protein/demo_protein.faa --window 11
+  helix viz triage --json triage.json --output triage.png
+  helix viz hydropathy --input src/helix/datasets/protein/demo_protein.faa --window 11
   ```
   Render plots directly from CLI artifacts (triage JSON, hydropathy windows). Requires matplotlib; hydropathy also needs Biopython.
 
@@ -143,7 +147,7 @@ pip install numpy pandas matplotlib biopython
   ```
   Requires the target structure file in the working directory (or adjust the loader).
 
-Browse task-specific quickstarts in `examples/README.md`. `input/dna/human.txt` plus the new `input/dna/plasmid_demo.fna` and `input/protein/demo_protein.faa` ship toy datasets for quick experiments with pandas, sklearn, and hydropathy charts.
+Browse task-specific quickstarts in `examples/README.md`. Tiny datasets ship inside the package (see `helix.datasets.available()`), including `dna/human.txt`, `dna/plasmid_demo.fna`, and `protein/demo_protein.faa` for quick experiments with pandas, sklearn, or hydropathy charts.
 
 ### Run Tests
 ```bash
@@ -194,3 +198,22 @@ We welcome ideas, experiments, and docs improvements. To keep things playful:
 - If you plan a larger refactor, start a discussion thread so we can pair-program or offer pointers.
 
 Happy hacking!
+- **String search**
+  ```bash
+  helix string search sequences.fna --pattern GATTACA --k 1 --json hits.json
+  ```
+  Uses the FM-index for exact matches (`k=0`) or Myers bit-vector streaming for ≤k edit-distance hits in FASTA/plaintext inputs.
+- **Seed + extend demo**
+  ```bash
+  helix seed index src/helix/datasets/dna/plasmid_demo.fna --method minimizer --k 15 --window 10 --plot seeds.png
+  helix seed map --ref src/helix/datasets/dna/plasmid_demo.fna --reads src/helix/datasets/dna/plasmid_demo.fna --k 15 --window 10 --band 64 --xdrop 10
+  ```
+  Generates deterministic minimizers (or syncmers) and a simple seed-and-extend JSON summary; `--plot` uses `helix.viz.seed` for density snapshots.
+
+- **DBG toolbox**
+  ```bash
+  helix dbg build --reads reads1.fna reads2.fna --k 31 --graph dbg.json --graphml dbg.graphml
+  helix dbg clean --graph dbg.json --out dbg_clean.json
+  helix dbg color --reads sample1.fna sample2.fna --labels case control --k 31 --out colored.json
+  ```
+  Builds/cleans JSON + GraphML de Bruijn graphs and produces colored DBG presence tables ready for pseudoalignment experiments.

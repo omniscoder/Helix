@@ -1,19 +1,30 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from helix import datasets
+
 ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
 
 
 def run_cli(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH", "")
+    path_entries = [str(SRC)]
+    if existing:
+        path_entries.append(existing)
+    env["PYTHONPATH"] = os.pathsep.join(path_entries)
     result = subprocess.run(
-        [sys.executable, "helix_cli.py", *args],
+        [sys.executable, "-m", "helix.cli", *args],
         cwd=ROOT,
         capture_output=True,
         text=True,
+        env=env,
     )
     if check and result.returncode != 0:
         raise AssertionError(f"Command failed: {result.stderr}")
@@ -42,7 +53,7 @@ def test_cli_spectrum_leaderboard():
 
 
 def test_cli_rna_nussinov():
-    result = run_cli("rna", "--sequence", "GGGAAACCC", "--min-loop", "0")
+    result = run_cli("rna", "fold", "--sequence", "GGGAAACCC", "--min-loop", "0")
     assert "Dot-bracket" in result.stdout
     assert "(" in result.stdout
 
@@ -125,11 +136,12 @@ workflows:
 def test_cli_viz_hydropathy(tmp_path: Path):
     pytest.importorskip("Bio")
     output = tmp_path / "hydro.png"
+    protein_path = datasets.get_path("protein/demo_protein.faa")
     result = run_cli(
         "viz",
         "hydropathy",
         "--input",
-        "input/protein/demo_protein.faa",
+        str(protein_path),
         "--window",
         "11",
         "--output",
@@ -137,3 +149,12 @@ def test_cli_viz_hydropathy(tmp_path: Path):
     )
     assert output.exists()
     assert "Hydropathy chart saved" in result.stdout
+
+
+def test_cli_rna_mea(tmp_path: Path):
+    fasta = tmp_path / "test.fna"
+    fasta.write_text(">seq1\nAUGCUA\n", encoding="utf-8")
+    output = tmp_path / "mea.json"
+    result = run_cli("rna", "mea", "--fasta", str(fasta), "--gamma", "1.0", "--json", str(output))
+    assert output.exists()
+    assert "structure" in result.stdout

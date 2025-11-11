@@ -62,13 +62,13 @@ Welcome to the growing scrapbook of Helix weekend projects. Each example favors 
 - If a prototype grows into something sturdier, open a discussion about porting it into OGN.
 
 ## Bonus: Unified CLI
-- File: `helix_cli.py`
-- What it does: exposes the DNA (GC + k-mers), spectrum leaderboard, RNA folding, protein summary, and triage report workflows from a single command.
-- Try it: `python helix_cli.py dna --sequence ACGTACGT --k 4 --max-diff 1`
-- Remix ideas: script repeatable analyses (e.g., `helix_cli.py triage --input plasmid.fna --json report.json`) or wire the CLI into notebooks via `subprocess.run`.
+- Command: `helix …`
+- What it does: exposes the DNA (GC + k-mers), spectrum leaderboard, RNA folding, protein summary, viz, and triage workflows from a single entry point.
+- Try it: `helix dna --sequence ACGTACGT --k 4 --max-diff 1`
+- Remix ideas: script repeatable analyses (e.g., `helix triage --input plasmid.fna --json report.json`) or wire the CLI into notebooks via `subprocess.run`.
 
 ## Workflow Runner
 - File: `workflows/plasmid_screen.yaml`
 - What it does: chains the unified CLI to run DNA summaries, triage reports, spectrum scoring, and RNA folding with one config.
-- Try it: `python helix_cli.py workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs`
+- Try it: `helix workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs`
 - Remix ideas: add `viz` steps for hydropathy plots, or point at your own FASTA files to produce per-sample dashboards overnight.

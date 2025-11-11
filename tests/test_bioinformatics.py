@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bioinformatics import (
+from helix.bioinformatics import (
     complement,
     find_kmers,
     find_kmers_with_differences,

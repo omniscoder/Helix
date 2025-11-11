@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "helix-bio"
+version = "0.1.0"
+description = "Helix: a hobbyist-first bioinformatics playground"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "Helix Contributors"}]
+dependencies = [
+    "numpy>=1.24",
+    "pandas>=1.5",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.7"]
+protein = ["biopython>=1.85"]
+dev = ["pytest>=8.0", "matplotlib>=3.7", "biopython>=1.85", "ruff>=0.6"]
+
+[project.scripts]
+helix = "helix.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+helix = ["datasets/**/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = "-ra"

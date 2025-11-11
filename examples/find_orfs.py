@@ -6,8 +6,8 @@ import csv
 from pathlib import Path
 from typing import Optional
 
-import bioinformatics
-from codon import (
+from helix import bioinformatics
+from helix.codon import (
     detect_frameshifts,
     frameshifts_to_csv,
     find_orfs,

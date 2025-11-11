@@ -1,0 +1,6 @@
+site_name: Helix Bioinformatics
+repo_url: https://example.com/helix
+nav:
+  - Home: index.md
+  - CLI: cli.md
+docs_dir: docs

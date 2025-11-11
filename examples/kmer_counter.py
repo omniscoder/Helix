@@ -5,7 +5,7 @@ import argparse
 import csv
 from pathlib import Path
 
-import bioinformatics
+from helix import bioinformatics
 
 
 def clean_sequence(source: Path | None = None) -> str:

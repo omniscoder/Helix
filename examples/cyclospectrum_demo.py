@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 from typing import Iterable, List
 
-from cyclospectrum import (
+from helix.cyclospectrum import (
     cyclic_spectrum,
     leaderboard_cyclopeptide_sequencing,
     linear_spectrum,

@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
-from nussinov_algorithm import nussinov
+from helix.nussinov_algorithm import nussinov
 
 DEFAULT_SEQUENCE = "GGGAAACCC"
 

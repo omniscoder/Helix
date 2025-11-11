@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cyclospectrum import (
+from helix.cyclospectrum import (
     cyclic_spectrum,
     leaderboard_cyclopeptide_sequencing,
     linear_spectrum,

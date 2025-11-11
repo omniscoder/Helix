@@ -3,7 +3,7 @@ workflows:
     steps:
       - command: dna
         args:
-          input: input/dna/plasmid_demo.fna
+          input: ../src/helix/datasets/dna/plasmid_demo.fna
           window: 120
           step: 30
           k: 5
@@ -12,7 +12,7 @@ workflows:
         stdout: dna_summary.txt
       - command: triage
         args:
-          input: input/dna/plasmid_demo.fna
+          input: ../src/helix/datasets/dna/plasmid_demo.fna
           k: 4
           max_diff: 1
           min_orf_length: 60

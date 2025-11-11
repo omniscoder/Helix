@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nussinov_algorithm import fold_to_dot_bracket, nussinov
+from helix.nussinov_algorithm import fold_to_dot_bracket, nussinov
 
 
 def test_nussinov_hairpin_pairs_correctly():

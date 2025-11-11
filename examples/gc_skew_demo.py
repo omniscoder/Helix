@@ -8,7 +8,7 @@ from typing import Iterable
 import matplotlib.pyplot as plt
 import numpy as np
 
-import bioinformatics
+from helix import bioinformatics
 
 
 def load_sequence(source: Path | None = None) -> str:

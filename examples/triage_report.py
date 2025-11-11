@@ -3,15 +3,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from codon import detect_frameshifts, frameshifts_to_csv, orfs_to_csv, orfs_to_fasta  # noqa: E402
-from triage import compute_triage_report, KmerCluster  # noqa: E402
+from helix.codon import detect_frameshifts, frameshifts_to_csv, orfs_to_csv, orfs_to_fasta
+from helix.triage import KmerCluster, compute_triage_report
 
 
 def parse_args() -> argparse.Namespace:

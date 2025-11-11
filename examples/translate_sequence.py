@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 import bioinformatics
-from codon import translate_rna
+from helix.codon import translate_rna
 
 
 def load_sequence(sequence: Optional[str], path: Optional[Path]) -> str:
