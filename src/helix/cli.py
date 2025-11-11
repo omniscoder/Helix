@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from . import bioinformatics, cyclospectrum, triage
 from .io import read_fasta
@@ -14,7 +15,6 @@ from .string import edit as string_edit
 from .seed import minimizers as seed_minimizers
 from .seed import syncmers as seed_syncmers
 from .seed.extend import SeedMatch, extend_alignment
-from .viz import seed as viz_seed
 from .graphs import (
     build_dbg as graph_build_dbg,
     clean_dbg as graph_clean_dbg,
@@ -25,15 +25,38 @@ from .graphs import (
 )
 from .sketch import compute_minhash, mash_distance, compute_hll, union_hll
 from .motif import discover_motifs
-from .viz import rna as viz_rna
-from .viz import (
-    plot_alignment_ribbon,
-    plot_distance_heatmap,
-    plot_minimizer_density,
-    plot_motif_logo,
-    plot_seed_chain,
-    plot_rna_dotplot,
+from .schema import (
+    SchemaError,
+    SPEC_VERSION,
+    describe_schema,
+    diff_manifests,
+    format_manifest_diff,
+    load_manifest,
+    manifest,
+    validate_viz_payload,
 )
+from . import __version__ as HELIX_VERSION
+
+try:  # optional viz imports (matplotlib)
+    from .viz import rna as viz_rna
+    from .viz import (
+        plot_alignment_ribbon,
+        plot_distance_heatmap,
+        plot_minimizer_density,
+        plot_motif_logo,
+        plot_seed_chain,
+        plot_rna_dotplot,
+    )
+    VIZ_AVAILABLE = True
+except ImportError:  # pragma: no cover - viz extra not installed
+    viz_rna = None  # type: ignore
+    plot_alignment_ribbon = None  # type: ignore
+    plot_distance_heatmap = None  # type: ignore
+    plot_minimizer_density = None  # type: ignore
+    plot_motif_logo = None  # type: ignore
+    plot_seed_chain = None  # type: ignore
+    plot_rna_dotplot = None  # type: ignore
+    VIZ_AVAILABLE = False
 from .rna import mfe_dotbracket, partition_posteriors, mea_structure, centroid_structure
 
 try:
@@ -70,12 +93,155 @@ def _parse_spectrum(text: str | None) -> List[int]:
     return [int(token) for token in tokens]
 
 
+def _payload_hash(payload: dict) -> str:
+    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(normalized).hexdigest()
+
+
+def _validate_payload_or_exit(kind: str, payload: dict) -> dict:
+    try:
+        return validate_viz_payload(kind, payload)
+    except SchemaError as exc:
+        raise SystemExit(str(exc))
+
+
+def _stamp_spec_version(payload: dict, *, to_meta: bool = True) -> dict:
+    if to_meta:
+        meta = payload.setdefault("meta", {})
+        meta.setdefault("spec_version", SPEC_VERSION)
+    else:
+        payload.setdefault("spec_version", SPEC_VERSION)
+    return payload
+
+
+def _input_meta(payload: dict) -> Dict[str, str]:
+    return {"input_sha256": _payload_hash(payload)}
+
+
+def _schema_sample(name: str) -> Optional[dict]:
+    entry = VIZ_DEMO_PAYLOADS.get(name)
+    if not entry:
+        return None
+    return json.loads(json.dumps(entry["data"]))
+
+
+def _print_schema_help(kind: str, sample_name: str | None = None) -> None:
+    print(describe_schema(kind))
+    if sample_name:
+        sample = _schema_sample(sample_name)
+        if sample:
+            print("\nSample payload:")
+            print(json.dumps(sample, indent=2))
+
+
+VIZ_DEMO_PAYLOADS: Dict[str, Dict[str, object]] = {
+    "minimizers": {
+        "kind": "viz_minimizers",
+        "data": {"sequence_length": 500, "minimizers": [5, [25, "AAA", 1], {"pos": 120}]},
+    },
+    "seed-chain": {
+        "kind": "viz_seed_chain",
+        "data": {
+            "ref_length": 400,
+            "qry_length": 380,
+            "chains": [
+                [{"ref_start": 10, "ref_end": 40, "qry_start": 12, "qry_end": 42}],
+                [{"ref_start": 80, "ref_end": 120, "qry_start": 78, "qry_end": 118}],
+            ],
+        },
+    },
+    "rna-dotplot": {
+        "kind": "viz_rna_dotplot",
+        "data": {"posterior": [[0.0, 0.6, 0.0], [0.6, 0.0, 0.4], [0.0, 0.4, 0.0]]},
+    },
+    "alignment-ribbon": {
+        "kind": "viz_alignment_ribbon",
+        "data": {
+            "ref_length": 300,
+            "qry_length": 290,
+            "ref_start": 20,
+            "qry_start": 18,
+            "cigar": "30M2I10M3D15M",
+            "metadata": {"name": "demo_read"},
+        },
+    },
+    "distance-heatmap": {
+        "kind": "viz_distance_heatmap",
+        "data": {"labels": ["A", "B", "C"], "matrix": [[0.0, 0.05, 0.1], [0.05, 0.0, 0.08], [0.1, 0.08, 0.0]]},
+    },
+    "motif-logo": {
+        "kind": "viz_motif_logo",
+        "data": {
+            "alphabet": ["A", "C", "G", "T"],
+            "pwm": [
+                [0.25, 0.25, 0.25, 0.25],
+                [0.05, 0.05, 0.85, 0.05],
+                [0.6, 0.1, 0.1, 0.2],
+            ],
+            "background": [0.25, 0.25, 0.25, 0.25],
+        },
+    },
+}
+
+
 def _default_viz_spec_path(save: Path | None, provided: Path | None) -> Path | None:
     if provided:
         return provided
     if save:
         return save.with_name(f"{save.stem}.viz.json")
     return None
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _current_command_str() -> str:
+    return "helix " + " ".join(sys.argv[1:])
+
+
+def _write_provenance(
+    image_path: Optional[Path],
+    *,
+    schema_kind: str,
+    spec: Dict[str, Any],
+    input_sha: Optional[str],
+    command: str,
+    viz_spec_path: Optional[Path],
+) -> None:
+    if not image_path:
+        return
+    img_path = Path(image_path)
+    if not img_path.exists():
+        return
+    image_sha = _file_sha256(img_path)
+    if viz_spec_path and Path(viz_spec_path).exists():
+        viz_spec_sha = _file_sha256(Path(viz_spec_path))
+    else:
+        viz_spec_sha = _payload_hash(spec)
+    spec_version = spec.get("spec_version") or spec.get("meta", {}).get("spec_version")
+    provenance = {
+        "schema_kind": schema_kind,
+        "spec_version": spec_version,
+        "input_sha256": input_sha,
+        "viz_spec_sha256": viz_spec_sha,
+        "image_sha256": image_sha,
+        "helix_version": HELIX_VERSION,
+        "command": command,
+    }
+    prov_path = img_path.with_name(img_path.stem + ".provenance.json")
+    prov_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
+
+
+def _ensure_viz_available(feature: str = "visualization") -> None:
+    if not VIZ_AVAILABLE:
+        raise SystemExit(
+            f"{feature} requires the 'viz' extra. Install with `pip install \"helix-bio[viz]\"`."
+        )
 
 
 def command_dna(args: argparse.Namespace) -> None:
@@ -183,16 +349,30 @@ def command_rna_ensemble(args: argparse.Namespace) -> None:
     if args.json:
         args.json.write_text(text_json + "\n", encoding="utf-8")
     if args.dotplot:
+        _ensure_viz_available("RNA ensemble dot-plot")
         dot_path = str(args.dotplot)
         spec_path = _default_viz_spec_path(args.dotplot, getattr(args, "save_viz_spec", None))
-        plot_rna_dotplot(
+        dot_payload = _validate_payload_or_exit("viz_rna_dotplot", {"posterior": posterior})
+        extra_meta = _input_meta(dot_payload)
+        _, spec = plot_rna_dotplot(
             posterior=posterior,
             save=dot_path,
             save_viz_spec=str(spec_path) if spec_path else None,
+            extra_meta=extra_meta,
+        )
+        _write_provenance(
+            Path(dot_path),
+            schema_kind="viz_rna_dotplot",
+            spec=spec,
+            input_sha=extra_meta.get("input_sha256"),
+            command=_current_command_str(),
+            viz_spec_path=spec_path,
         )
     if args.arc:
+        _ensure_viz_available("RNA ensemble arc plotting")
         viz_rna.plot_arc(mea["dotbracket"], Path(args.arc), title=f"MEA structure ({header})")
     if args.entropy_plot:
+        _ensure_viz_available("RNA ensemble entropy plotting")
         viz_rna.plot_entropy(ensemble["entropy"], Path(args.entropy_plot), title=f"Entropy ({header})")
 
 
@@ -346,6 +526,9 @@ def command_seed_index(args: argparse.Namespace) -> None:
         }
         all_results.append(payload)
         if args.plot:
+            _ensure_viz_available("helix seed index plotting")
+            from .viz import seed as viz_seed  # local import to defer matplotlib
+
             if len(records) == 1:
                 output = args.plot
             else:
@@ -401,6 +584,8 @@ def command_seed_map(args: argparse.Namespace) -> None:
         },
         "results": results,
     }
+    payload = _stamp_spec_version(payload)
+    payload = _validate_payload_or_exit("viz_alignment_ribbon", payload)
     text = json.dumps(payload, indent=2)
     print(text)
     if args.json:
@@ -489,11 +674,18 @@ def command_sketch_compare(args: argparse.Namespace) -> None:
         sketch_a = compute_minhash(records_a[0][1], k=args.k, sketch_size=args.size)
         sketch_b = compute_minhash(records_b[0][1], k=args.k, sketch_size=args.size)
         distance = mash_distance(sketch_a, sketch_b)
+        labels = [records_a[0][0] or "seq_a", records_b[0][0] or "seq_b"]
+        matrix = [
+            [0.0, float(distance)],
+            [float(distance), 0.0],
+        ]
         payload = {
             "method": "minhash",
             "distance": distance,
             "sketch_a": sketch_a.to_dict(),
             "sketch_b": sketch_b.to_dict(),
+            "labels": labels,
+            "matrix": matrix,
         }
     else:
         sketch_a = compute_hll(records_a[0][1], k=args.k, p=args.precision)
@@ -504,13 +696,23 @@ def command_sketch_compare(args: argparse.Namespace) -> None:
         est_union = union.estimate()
         inter = max(0.0, est_a + est_b - est_union)
         jaccard = inter / est_union if est_union else 0.0
+        labels = [records_a[0][0] or "seq_a", records_b[0][0] or "seq_b"]
+        distance = 1.0 - jaccard
+        matrix = [
+            [0.0, float(distance)],
+            [float(distance), 0.0],
+        ]
         payload = {
             "method": "hll",
             "jaccard": jaccard,
             "cardinality_a": est_a,
             "cardinality_b": est_b,
             "cardinality_union": est_union,
+            "labels": labels,
+            "matrix": matrix,
         }
+    payload = _stamp_spec_version(payload, to_meta=False)
+    _validate_payload_or_exit("viz_distance_heatmap", payload)
     text = json.dumps(payload, indent=2)
     print(text)
     if args.json:
@@ -530,6 +732,8 @@ def command_motif_find(args: argparse.Namespace) -> None:
         kwargs["passes"] = args.passes
     result = discover_motifs(sequences, width=args.width, solver=args.solver, **kwargs)
     payload = result.as_json()
+    payload = _stamp_spec_version(payload, to_meta=False)
+    payload = _validate_payload_or_exit("viz_motif_logo", payload)
     text = json.dumps(payload, indent=2)
     print(text)
     if args.json:
@@ -547,15 +751,46 @@ def command_motif_find(args: argparse.Namespace) -> None:
 def command_workflows(args: argparse.Namespace) -> None:
     from helix_workflows import run_workflow_config
 
+    if getattr(args, "as_json", False) and not getattr(args, "with_schema", False):
+        raise SystemExit("--as-json requires --with-schema.")
     results = run_workflow_config(
         args.config,
         output_dir=args.output_dir,
         selected=args.name,
     )
+    schema_json: List[Dict[str, Any]] = []
     for result in results:
         print(f"Workflow '{result.name}' completed. Logs at {result.output_dir}")
         for step in result.steps:
             print(f"  - {step.command} -> {step.output_path or 'stdout captured'}")
+        if getattr(args, "with_schema", False):
+            rows: List[Dict[str, Any]] = []
+            for idx, step in enumerate(result.steps, start=1):
+                rows.append(
+                    {
+                        "step": idx,
+                        "command": step.command,
+                        "schema_kind": step.schema_kind,
+                        "spec_version": step.schema_version,
+                        "input_sha256": step.schema_hash,
+                        "status": "ok" if step.schema_kind else "n/a",
+                    }
+                )
+            if getattr(args, "as_json", False):
+                schema_json.append({"workflow": result.name, "steps": rows})
+            else:
+                print("  Schema provenance:")
+                header = f"{'Step':<4} {'Command':<15} {'Schema':<25} {'Spec':<6} {'SHA256':<64} {'Status':<6}"
+                print("    " + header)
+                for row in rows:
+                    row_str = (
+                        f"{row['step']:<4} {row['command']:<15} "
+                        f"{(row['schema_kind'] or '-'):<25} {(row['spec_version'] or '-'):<6} "
+                        f"{(row['input_sha256'] or '-')[:64]:<64} {row['status']:<6}"
+                    )
+                    print("    " + row_str)
+    if getattr(args, "with_schema", False) and getattr(args, "as_json", False):
+        print(json.dumps(schema_json, indent=2))
 
 
 def _require_matplotlib():
@@ -635,110 +870,402 @@ def command_viz_hydropathy(args: argparse.Namespace) -> None:
 
 
 def command_viz_minimizers(args: argparse.Namespace) -> None:
+    if getattr(args, "schema", False):
+        _print_schema_help("viz_minimizers", "minimizers")
+        return
+    _ensure_viz_available("helix viz minimizers")
+    if not args.input:
+        raise SystemExit("--input is required unless --schema is provided.")
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    payload = _validate_payload_or_exit("viz_minimizers", payload)
+    extra_meta = _input_meta(payload)
     seq_len = int(payload["sequence_length"])
     minimizers = payload.get("minimizers", [])
-    save = str(args.save) if args.save else None
-    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
-    plot_minimizer_density(
+    save_path = args.save
+    save = str(save_path) if save_path else None
+    spec_path = _default_viz_spec_path(save_path, args.save_viz_spec)
+    _, spec = plot_minimizer_density(
         sequence_length=seq_len,
         minimizers=minimizers,
         bin_count=args.bins,
         save=save,
         save_viz_spec=str(spec_path) if spec_path else None,
+        extra_meta=extra_meta,
     )
+    if save_path:
+        _write_provenance(
+            save_path,
+            schema_kind="viz_minimizers",
+            spec=spec,
+            input_sha=extra_meta.get("input_sha256"),
+            command=_current_command_str(),
+            viz_spec_path=spec_path,
+        )
 
 
 def command_viz_seed_chain(args: argparse.Namespace) -> None:
+    if getattr(args, "schema", False):
+        _print_schema_help("viz_seed_chain", "seed-chain")
+        return
+    _ensure_viz_available("helix viz seed-chain")
+    if not args.input:
+        raise SystemExit("--input is required unless --schema is provided.")
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
-    save = str(args.save) if args.save else None
-    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
-    plot_seed_chain(
+    payload = _validate_payload_or_exit("viz_seed_chain", payload)
+    extra_meta = _input_meta(payload)
+    save_path = args.save
+    save = str(save_path) if save_path else None
+    spec_path = _default_viz_spec_path(save_path, args.save_viz_spec)
+    _, spec = plot_seed_chain(
         ref_length=int(payload["ref_length"]),
         qry_length=int(payload["qry_length"]),
         chains=payload.get("chains", []),
         save=save,
         save_viz_spec=str(spec_path) if spec_path else None,
+        extra_meta=extra_meta,
     )
+    if save_path:
+        _write_provenance(
+            save_path,
+            schema_kind="viz_seed_chain",
+            spec=spec,
+            input_sha=extra_meta.get("input_sha256"),
+            command=_current_command_str(),
+            viz_spec_path=spec_path,
+        )
 
 
 def command_viz_rna_dotplot(args: argparse.Namespace) -> None:
+    if getattr(args, "schema", False):
+        _print_schema_help("viz_rna_dotplot", "rna-dotplot")
+        return
+    _ensure_viz_available("helix viz rna-dotplot")
+    if not args.input:
+        raise SystemExit("--input is required unless --schema is provided.")
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
-    save = str(args.save) if args.save else None
-    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
-    plot_rna_dotplot(
+    payload = _validate_payload_or_exit("viz_rna_dotplot", payload)
+    extra_meta = _input_meta(payload)
+    save_path = args.save
+    save = str(save_path) if save_path else None
+    spec_path = _default_viz_spec_path(save_path, args.save_viz_spec)
+    _, spec = plot_rna_dotplot(
         posterior=payload["posterior"],
         vmin=args.vmin,
         vmax=args.vmax,
         save=save,
         save_viz_spec=str(spec_path) if spec_path else None,
+        extra_meta=extra_meta,
     )
+    if save_path:
+        _write_provenance(
+            save_path,
+            schema_kind="viz_rna_dotplot",
+            spec=spec,
+            input_sha=extra_meta.get("input_sha256"),
+            command=_current_command_str(),
+            viz_spec_path=spec_path,
+        )
 
 
 def command_viz_alignment_ribbon(args: argparse.Namespace) -> None:
+    if getattr(args, "schema", False):
+        _print_schema_help("viz_alignment_ribbon", "alignment-ribbon")
+        return
+    _ensure_viz_available("helix viz alignment-ribbon")
+    if not args.input:
+        raise SystemExit("--input is required unless --schema is provided.")
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
-    results = payload.get("results", [])
-    if not results:
-        raise SystemExit("No alignment results in payload.")
-    target = None
-    if args.read_id:
-        for entry in results:
-            if entry.get("read_id") == args.read_id:
-                target = entry
-                break
-        if target is None:
-            raise SystemExit(f"Read '{args.read_id}' not found in payload.")
+    payload = _validate_payload_or_exit("viz_alignment_ribbon", payload)
+    extra_meta = _input_meta(payload)
+    alignment: Dict[str, Any]
+    ref_length: int | None = None
+    qry_length: int | None = None
+    metadata: Dict[str, Any] | None = None
+    title: str | None = args.title
+
+    if "results" in payload:
+        results = payload.get("results", [])
+        if not results:
+            raise SystemExit("No alignment results in payload.")
+        target = None
+        if args.read_id:
+            for entry in results:
+                if entry.get("read_id") == args.read_id:
+                    target = entry
+                    break
+            if target is None:
+                raise SystemExit(f"Read '{args.read_id}' not found in payload.")
+        else:
+            target = results[0]
+        alignments = target.get("alignments", [])
+        if not alignments:
+            raise SystemExit(f"No alignments for read '{target.get('read_id', 'read')}'.")
+        if args.alignment_index < 0 or args.alignment_index >= len(alignments):
+            raise SystemExit("alignment-index out of range for selected read.")
+        entry = alignments[args.alignment_index]
+        alignment = entry.get("alignment", entry)
+        ref_length = payload.get("meta", {}).get("ref_length", alignment.get("ref_end"))
+        qry_length = target.get("read_length", alignment.get("read_end"))
+        metadata = {
+            "read_id": target.get("read_id"),
+            "seed_hits": target.get("seed_hits"),
+        }
+        if entry.get("metadata"):
+            metadata.update(entry["metadata"])
+        if payload.get("meta", {}).get("reference"):
+            metadata["reference"] = payload["meta"]["reference"]
+        if not title:
+            title = f"{target.get('read_id', 'read')} vs {payload.get('meta', {}).get('reference', 'reference')}"
     else:
-        target = results[0]
-    alignments = target.get("alignments", [])
-    if not alignments:
-        raise SystemExit(f"No alignments for read '{target.get('read_id', 'read')}'.")
-    if args.alignment_index < 0 or args.alignment_index >= len(alignments):
-        raise SystemExit("alignment-index out of range for selected read.")
-    entry = alignments[args.alignment_index]
-    alignment = entry.get("alignment", entry)
-    ref_length = payload.get("meta", {}).get("ref_length", alignment.get("ref_end", 0))
-    qry_length = target.get("read_length", alignment.get("read_end", 0))
-    title = args.title or f"{target.get('read_id', 'read')} vs {payload.get('meta', {}).get('reference', 'reference')}"
-    save = str(args.save) if args.save else None
-    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
-    plot_alignment_ribbon(
+        alignment = payload.get("alignment", payload)
+        ref_length = payload.get("ref_length", alignment.get("ref_length") or alignment.get("ref_end"))
+        qry_length = payload.get("qry_length", alignment.get("qry_length") or alignment.get("read_end"))
+        metadata = payload.get("metadata", alignment.get("metadata"))
+        if not title:
+            title = payload.get("metadata", {}).get("name") or "Alignment ribbon"
+
+    if ref_length is None or qry_length is None:
+        raise SystemExit("ref_length and qry_length must be provided.")
+    save_path = args.save
+    save = str(save_path) if save_path else None
+    spec_path = _default_viz_spec_path(save_path, args.save_viz_spec)
+    _, spec = plot_alignment_ribbon(
         ref_length=int(ref_length or 0),
         qry_length=int(qry_length or 0),
         alignment=alignment,
+        metadata=metadata,
         title=title,
         save=save,
         save_viz_spec=str(spec_path) if spec_path else None,
+        extra_meta=extra_meta,
     )
+    if save_path:
+        _write_provenance(
+            save_path,
+            schema_kind="viz_alignment_ribbon",
+            spec=spec,
+            input_sha=extra_meta.get("input_sha256"),
+            command=_current_command_str(),
+            viz_spec_path=spec_path,
+        )
 
 
 def command_viz_distance_heatmap(args: argparse.Namespace) -> None:
+    if getattr(args, "schema", False):
+        _print_schema_help("viz_distance_heatmap", "distance-heatmap")
+        return
+    _ensure_viz_available("helix viz distance-heatmap")
+    if not args.input:
+        raise SystemExit("--input is required unless --schema is provided.")
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    payload = _validate_payload_or_exit("viz_distance_heatmap", payload)
+    extra_meta = _input_meta(payload)
     if "matrix" not in payload or "labels" not in payload:
         raise SystemExit("Distance payload must include 'matrix' and 'labels'.")
-    save = str(args.save) if args.save else None
-    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
-    plot_distance_heatmap(
+    save_path = args.save
+    save = str(save_path) if save_path else None
+    spec_path = _default_viz_spec_path(save_path, args.save_viz_spec)
+    _, spec = plot_distance_heatmap(
         matrix=payload["matrix"],
         labels=payload["labels"],
         method=payload.get("method", "minhash"),
         save=save,
         save_viz_spec=str(spec_path) if spec_path else None,
+        extra_meta=extra_meta,
     )
+    if save_path:
+        _write_provenance(
+            save_path,
+            schema_kind="viz_distance_heatmap",
+            spec=spec,
+            input_sha=extra_meta.get("input_sha256"),
+            command=_current_command_str(),
+            viz_spec_path=spec_path,
+        )
 
 
 def command_viz_motif_logo(args: argparse.Namespace) -> None:
+    if getattr(args, "schema", False):
+        _print_schema_help("viz_motif_logo", "motif-logo")
+        return
+    _ensure_viz_available("helix viz motif-logo")
+    if not args.input:
+        raise SystemExit("--input is required unless --schema is provided.")
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    payload = _validate_payload_or_exit("viz_motif_logo", payload)
+    extra_meta = _input_meta(payload)
     if "pwm" not in payload:
         raise SystemExit("Motif payload must include 'pwm'.")
-    save = str(args.save) if args.save else None
-    spec_path = _default_viz_spec_path(args.save, args.save_viz_spec)
-    plot_motif_logo(
+    save_path = args.save
+    save = str(save_path) if save_path else None
+    spec_path = _default_viz_spec_path(save_path, args.save_viz_spec)
+    _, spec = plot_motif_logo(
         pwm=payload["pwm"],
         title=args.title or payload.get("consensus", "Motif logo"),
+        alphabet=payload.get("alphabet"),
+        background=payload.get("background"),
         save=save,
         save_viz_spec=str(spec_path) if spec_path else None,
+        extra_meta=extra_meta,
     )
+    if save_path:
+        _write_provenance(
+            save_path,
+            schema_kind="viz_motif_logo",
+            spec=spec,
+            input_sha=extra_meta.get("input_sha256"),
+            command=_current_command_str(),
+            viz_spec_path=spec_path,
+        )
+
+
+def command_viz_schema(args: argparse.Namespace) -> None:
+    kind = args.kind
+    try:
+        description = describe_schema(kind)
+    except SchemaError as exc:
+        raise SystemExit(str(exc))
+    print(description)
+
+
+def command_schema_manifest(args: argparse.Namespace) -> None:
+    data = manifest()
+    text = json.dumps(data, indent=2)
+    if args.out:
+        args.out.write_text(text + "\n", encoding="utf-8")
+        print(f"Schema manifest written to {args.out}")
+    else:
+        print(text)
+
+
+def command_schema_diff(args: argparse.Namespace) -> None:
+    base_manifest = load_manifest(args.base)
+    if args.target:
+        target_manifest = load_manifest(args.target)
+    else:
+        target_manifest = manifest()
+    diff = diff_manifests(base_manifest, target_manifest)
+    fmt = args.format
+    if fmt == "json":
+        print(json.dumps(diff, indent=2))
+    else:
+        print(format_manifest_diff(diff, fmt="table"))
+
+
+def command_demo_viz(args: argparse.Namespace) -> None:
+    _ensure_viz_available("helix demo viz")
+    output_dir: Path = args.output
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for name, spec in VIZ_DEMO_PAYLOADS.items():
+        data = json.loads(json.dumps(spec["data"]))  # shallow copy
+        kind = spec["kind"]
+        data = _validate_payload_or_exit(kind, data)
+        payload_path = output_dir / f"{name}.json"
+        payload_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        png_path = output_dir / f"{name}.png"
+        viz_path = output_dir / f"{name}.viz.json"
+        extra_meta = _input_meta(data)
+        if name == "minimizers":
+            _, spec = plot_minimizer_density(
+                sequence_length=data["sequence_length"],
+                minimizers=data["minimizers"],
+                save=str(png_path),
+                save_viz_spec=str(viz_path),
+                extra_meta=extra_meta,
+            )
+            _write_provenance(
+                png_path,
+                schema_kind="viz_minimizers",
+                spec=spec,
+                input_sha=extra_meta.get("input_sha256"),
+                command=_current_command_str(),
+                viz_spec_path=viz_path,
+            )
+        elif name == "seed-chain":
+            _, spec = plot_seed_chain(
+                ref_length=data["ref_length"],
+                qry_length=data["qry_length"],
+                chains=data["chains"],
+                save=str(png_path),
+                save_viz_spec=str(viz_path),
+                extra_meta=extra_meta,
+            )
+            _write_provenance(
+                png_path,
+                schema_kind="viz_seed_chain",
+                spec=spec,
+                input_sha=extra_meta.get("input_sha256"),
+                command=_current_command_str(),
+                viz_spec_path=viz_path,
+            )
+        elif name == "rna-dotplot":
+            _, spec = plot_rna_dotplot(
+                posterior=data["posterior"],
+                save=str(png_path),
+                save_viz_spec=str(viz_path),
+                extra_meta=extra_meta,
+            )
+            _write_provenance(
+                png_path,
+                schema_kind="viz_rna_dotplot",
+                spec=spec,
+                input_sha=extra_meta.get("input_sha256"),
+                command=_current_command_str(),
+                viz_spec_path=viz_path,
+            )
+        elif name == "alignment-ribbon":
+            _, spec = plot_alignment_ribbon(
+                ref_length=data["ref_length"],
+                qry_length=data["qry_length"],
+                alignment=data,
+                metadata=data.get("metadata"),
+                save=str(png_path),
+                save_viz_spec=str(viz_path),
+                extra_meta=extra_meta,
+            )
+            _write_provenance(
+                png_path,
+                schema_kind="viz_alignment_ribbon",
+                spec=spec,
+                input_sha=extra_meta.get("input_sha256"),
+                command=_current_command_str(),
+                viz_spec_path=viz_path,
+            )
+        elif name == "distance-heatmap":
+            _, spec = plot_distance_heatmap(
+                matrix=data["matrix"],
+                labels=data["labels"],
+                method=data.get("method", "demo"),
+                save=str(png_path),
+                save_viz_spec=str(viz_path),
+                extra_meta=extra_meta,
+            )
+            _write_provenance(
+                png_path,
+                schema_kind="viz_distance_heatmap",
+                spec=spec,
+                input_sha=extra_meta.get("input_sha256"),
+                command=_current_command_str(),
+                viz_spec_path=viz_path,
+            )
+        elif name == "motif-logo":
+            _, spec = plot_motif_logo(
+                pwm=data["pwm"],
+                alphabet=data.get("alphabet"),
+                background=data.get("background"),
+                save=str(png_path),
+                save_viz_spec=str(viz_path),
+                extra_meta=extra_meta,
+            )
+            _write_provenance(
+                png_path,
+                schema_kind="viz_motif_logo",
+                spec=spec,
+                input_sha=extra_meta.get("input_sha256"),
+                command=_current_command_str(),
+                viz_spec_path=viz_path,
+            )
+    print(f"Demo visualizations written to {output_dir}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -810,6 +1337,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory for workflow logs/output (default: workflow_runs).",
     )
     workflows_cmd.add_argument("--name", help="Optional workflow name to run.")
+    workflows_cmd.add_argument(
+        "--with-schema",
+        action="store_true",
+        help="Print a schema provenance summary for each step after execution.",
+    )
+    workflows_cmd.add_argument(
+        "--as-json",
+        action="store_true",
+        help="Emit schema provenance as JSON (requires --with-schema).",
+    )
     workflows_cmd.set_defaults(func=command_workflows)
 
     viz_cmd = subparsers.add_parser("viz", help="Visualization helpers.")
@@ -843,47 +1380,80 @@ def build_parser() -> argparse.ArgumentParser:
     viz_hydro.set_defaults(func=command_viz_hydropathy)
 
     viz_min = viz_subparsers.add_parser("minimizers", help="Plot minimizer density from a JSON payload.")
-    viz_min.add_argument("--input", type=Path, required=True, help="JSON with sequence_length and minimizers.")
+    viz_min.add_argument("--input", type=Path, help="JSON with sequence_length and minimizers.")
     viz_min.add_argument("--bins", type=int, default=200, help="Number of bins (default: 200).")
     viz_min.add_argument("--save", type=Path, help="Optional output image path.")
     viz_min.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_min.add_argument("--schema", action="store_true", help="Print schema/sample and exit.")
     viz_min.set_defaults(func=command_viz_minimizers)
 
     viz_seed = viz_subparsers.add_parser("seed-chain", help="Plot chained seed anchors.")
-    viz_seed.add_argument("--input", type=Path, required=True, help="JSON with ref_length, qry_length, chains.")
+    viz_seed.add_argument("--input", type=Path, help="JSON with ref_length, qry_length, chains.")
     viz_seed.add_argument("--save", type=Path, help="Optional output image path.")
     viz_seed.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_seed.add_argument("--schema", action="store_true", help="Print schema/sample and exit.")
     viz_seed.set_defaults(func=command_viz_seed_chain)
 
     viz_rna_plot = viz_subparsers.add_parser("rna-dotplot", help="Plot RNA pairing posterior from JSON.")
-    viz_rna_plot.add_argument("--input", type=Path, required=True, help="JSON with posterior matrix.")
+    viz_rna_plot.add_argument("--input", type=Path, help="JSON with posterior matrix.")
     viz_rna_plot.add_argument("--vmin", type=float, default=0.0)
     viz_rna_plot.add_argument("--vmax", type=float, default=1.0)
     viz_rna_plot.add_argument("--save", type=Path, help="Optional output image path.")
     viz_rna_plot.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_rna_plot.add_argument("--schema", action="store_true", help="Print schema/sample and exit.")
     viz_rna_plot.set_defaults(func=command_viz_rna_dotplot)
 
+    viz_schema_cmd = viz_subparsers.add_parser("schema", help="Describe viz schemas.")
+    viz_schema_cmd.add_argument("--kind", help="Optional schema key (e.g., viz_minimizers).")
+    viz_schema_cmd.set_defaults(func=command_viz_schema)
+
     viz_align = viz_subparsers.add_parser("alignment-ribbon", help="Plot an alignment ribbon from mapping JSON.")
-    viz_align.add_argument("--input", type=Path, required=True, help="JSON output from 'helix seed map'.")
+    viz_align.add_argument("--input", type=Path, help="JSON output from 'helix seed map'.")
     viz_align.add_argument("--read-id", help="Read ID to plot (defaults to the first entry).")
     viz_align.add_argument("--alignment-index", type=int, default=0, help="Alignment index for the selected read.")
     viz_align.add_argument("--title", help="Override plot title.")
     viz_align.add_argument("--save", type=Path, help="Optional output image path.")
     viz_align.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_align.add_argument("--schema", action="store_true", help="Print schema/sample and exit.")
     viz_align.set_defaults(func=command_viz_alignment_ribbon)
 
     viz_dist = viz_subparsers.add_parser("distance-heatmap", help="Plot a distance matrix heatmap.")
-    viz_dist.add_argument("--input", type=Path, required=True, help="JSON with 'matrix' and 'labels'.")
+    viz_dist.add_argument("--input", type=Path, help="JSON with 'matrix' and 'labels'.")
     viz_dist.add_argument("--save", type=Path, help="Optional output image path.")
     viz_dist.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_dist.add_argument("--schema", action="store_true", help="Print schema/sample and exit.")
     viz_dist.set_defaults(func=command_viz_distance_heatmap)
 
     viz_motif = viz_subparsers.add_parser("motif-logo", help="Plot a motif logo from a PWM JSON payload.")
-    viz_motif.add_argument("--input", type=Path, required=True, help="JSON containing a 'pwm' entry.")
+    viz_motif.add_argument("--input", type=Path, help="JSON containing a 'pwm' entry.")
     viz_motif.add_argument("--title", help="Optional plot title override.")
     viz_motif.add_argument("--save", type=Path, help="Optional output image path.")
     viz_motif.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output.")
+    viz_motif.add_argument("--schema", action="store_true", help="Print schema/sample and exit.")
     viz_motif.set_defaults(func=command_viz_motif_logo)
+
+    demo_cmd = subparsers.add_parser("demo", help="Demo helpers for Helix.")
+    demo_sub = demo_cmd.add_subparsers(dest="demo_command", required=True)
+    demo_viz = demo_sub.add_parser("viz", help="Render sample visualization payloads.")
+    demo_viz.add_argument(
+        "--output",
+        type=Path,
+        default=Path("demo_viz"),
+        help="Directory to write demo JSON/PNG artifacts (default: demo_viz).",
+    )
+    demo_viz.set_defaults(func=command_demo_viz)
+
+    schema_cmd = subparsers.add_parser("schema", help="Schema utilities.")
+    schema_sub = schema_cmd.add_subparsers(dest="schema_command", required=True)
+    schema_manifest_cmd = schema_sub.add_parser("manifest", help="Export schema manifest JSON.")
+    schema_manifest_cmd.add_argument("--out", type=Path, help="Optional output path for the manifest JSON.")
+    schema_manifest_cmd.set_defaults(func=command_schema_manifest)
+
+    schema_diff_cmd = schema_sub.add_parser("diff", help="Diff schema manifests.")
+    schema_diff_cmd.add_argument("--base", required=True, type=Path, help="Path to the base manifest JSON.")
+    schema_diff_cmd.add_argument("--target", type=Path, help="Optional target manifest (defaults to current).")
+    schema_diff_cmd.add_argument("--format", choices=["table", "json"], default="table")
+    schema_diff_cmd.set_defaults(func=command_schema_diff)
 
     string_cmd = subparsers.add_parser("string", help="String / sequence search helpers.")
     string_sub = string_cmd.add_subparsers(dest="string_command", required=True)

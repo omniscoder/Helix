@@ -10,10 +10,15 @@ helix --help
 ```
 
 ## Quick Starts
-- `helix dna --sequence ACGTACGT --k 4`
-- `helix spectrum --peptide NQEL --spectrum "0,113,114,128,227,242,242,355,356,370,371,484"`
-- `helix rna --sequence GGGAAACCC`
-- `helix viz triage --json report.json --output report.png`
+- `helix seed map --ref src/helix/datasets/dna/plasmid_demo.fna --reads src/helix/datasets/dna/plasmid_demo.fna --json map.json`  
+  _Plot this result →_ `helix viz alignment-ribbon --input map.json --save map.png` (see [schema](viz.md#alignment-ribbon))
+- `helix sketch compare --method hll --fasta-a your_ref.fna --fasta-b your_query.fna --json dist.json`  
+  _Plot this result →_ `helix viz distance-heatmap --input dist.json --save dist.png` (see [schema](viz.md#distance-heatmap))
+- `helix motif find --fasta your_sequences.fna --width 6 --json motif.json`  
+  _Plot this result →_ `helix viz motif-logo --input motif.json --save motif.png` (see [schema](viz.md#motif-logo))
+- Need the exact field list? `helix viz schema --kind viz_motif_logo` prints the JSON schema inline.
+- Want example PNGs + payloads instantly? `helix demo viz --output demo_viz` renders every visualization and writes the paired `.viz.json` files.
+- Grab a sample JSON from [Visualization JSON Schemas](viz.md) (e.g., minimizers or seed-chain) and run `helix viz ... --input sample.json --save sample.png` to experiment with the plotting commands immediately.
 
 ## Python API
 ```python

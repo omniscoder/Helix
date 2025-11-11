@@ -1,7 +1,7 @@
 """Distance heatmap visualization for sketch outputs."""
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,6 +16,7 @@ def plot_distance_heatmap(
     method: str = "minhash",
     save: Optional[str] = None,
     save_viz_spec: Optional[str] = None,
+    extra_meta: Optional[Dict[str, Any]] = None,
 ):
     """Render a distance matrix heatmap with a colorbar."""
     apply_rc()
@@ -37,9 +38,12 @@ def plot_distance_heatmap(
     cbar = fig.colorbar(im, ax=ax)
     cbar.set_label("distance")
 
+    meta = {"n": n, "method": method}
+    if extra_meta:
+        meta.update(extra_meta)
     spec = VizSpec(
         kind="distance_heatmap",
-        meta={"n": n, "method": method},
+        meta=meta,
         primitives={
             "min": float(np.min(mat)),
             "max": float(np.max(mat)),

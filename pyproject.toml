@@ -1,36 +1,60 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=69", "wheel", "build"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "helix-bio"
-version = "0.1.0"
-description = "Helix: a hobbyist-first bioinformatics playground"
+version = "0.2.0"
+description = "Friendly, reproducible bioinformatics toolkit with schema-verified viz"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{name = "Helix Contributors"}]
+license = "Apache-2.0"
+authors = [{name = "Helix Authors"}]
+keywords = ["bioinformatics", "genomics", "rna", "alignment", "visualization"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Intended Audience :: Science/Research",
+]
 dependencies = [
     "numpy>=1.24",
-    "pandas>=1.5",
     "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.7"]
-protein = ["biopython>=1.85"]
-dev = ["pytest>=8.0", "matplotlib>=3.7", "biopython>=1.85", "ruff>=0.6"]
+viz = ["matplotlib>=3.6"]
+protein = ["biopython>=1.84"]
+schema = ["pydantic>=2.5"]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "build",
+    "twine",
+    "matplotlib>=3.6",
+    "biopython>=1.84",
+    "pydantic>=2.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/omniscoder/Helix"
+Documentation = "https://omniscoder.github.io/Helix/"
+Issues = "https://github.com/omniscoder/Helix/issues"
 
 [project.scripts]
 helix = "helix.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-helix = ["datasets/**/*"]
+"helix.schema" = ["*.json"]
+"helix.datasets" = ["**/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

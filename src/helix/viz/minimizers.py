@@ -1,7 +1,7 @@
 """Minimizer density visualization."""
 from __future__ import annotations
 
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -56,6 +56,7 @@ def plot_minimizer_density(
     bin_count: int = 200,
     save: Optional[str] = None,
     save_viz_spec: Optional[str] = None,
+    extra_meta: Optional[Dict[str, Any]] = None,
 ):
     apply_rc()
     normalized = np.array(_normalize_minimizer_positions(minimizers), dtype=int)
@@ -70,9 +71,12 @@ def plot_minimizer_density(
     ax.set_ylabel("Minimizers per bin")
     ax.set_title("Minimizer density")
 
+    meta = {"sequence_length": int(sequence_length), "bin_count": int(bins)}
+    if extra_meta:
+        meta.update(extra_meta)
     spec = VizSpec(
         kind="minimizer_density",
-        meta={"sequence_length": int(sequence_length), "bin_count": int(bins)},
+        meta=meta,
         primitives={
             "points": int(centers.size),
             "total_minimizers": int(valid_positions.size),

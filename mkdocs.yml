@@ -3,4 +3,6 @@ repo_url: https://example.com/helix
 nav:
   - Home: index.md
   - CLI: cli.md
+  - Visualization: viz.md
+  - Schema Reference: schema.md
 docs_dir: docs

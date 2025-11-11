@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from helix import datasets
+from helix.schema import SPEC_VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -103,6 +104,13 @@ def test_cli_viz_triage(tmp_path: Path):
     assert "Triage visualization saved" in result.stdout
 
 
+def test_cli_viz_schema_command():
+    result = run_cli("viz", "schema")
+    assert "viz_minimizers" in result.stdout
+    result = run_cli("viz", "schema", "--kind", "viz_minimizers")
+    assert "properties" in result.stdout
+
+
 def test_cli_workflows_runner(tmp_path: Path):
     pytest.importorskip("yaml")
     config = tmp_path / "workflow.yaml"
@@ -134,6 +142,60 @@ workflows:
     assert (output_dir / "test_run" / "triage.txt").exists()
 
 
+def test_cli_workflow_schema_validation(tmp_path: Path):
+    pytest.importorskip("yaml")
+    ref = tmp_path / "ref.fna"
+    reads = tmp_path / "reads.fna"
+    ref.write_text(">ref\nACGTACGTACGT\n", encoding="utf-8")
+    reads.write_text(">read1\nACGTACGTACGT\n", encoding="utf-8")
+    config = tmp_path / "workflow_schema.yaml"
+    config.write_text(
+        f"""
+workflows:
+  - name: schema_run
+    steps:
+      - command: ["seed", "map"]
+        args:
+          ref: {ref}
+          reads: {reads}
+          k: 3
+          window: 2
+          json: map.json
+        schema:
+          kind: viz_alignment_ribbon
+          output: map.json
+""",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "runs"
+    result = run_cli(
+        "workflows",
+        "--config",
+        str(config),
+        "--output-dir",
+        str(output_dir),
+        "--with-schema",
+        "--as-json",
+    )
+    stdout = result.stdout
+    start = stdout.find("[\n")
+    assert start != -1
+    schema_info = json.loads(stdout[start:])
+    assert schema_info[0]["workflow"] == "schema_run"
+    assert schema_info[0]["steps"][0]["schema_kind"] == "viz_alignment_ribbon"
+    artifact = output_dir / "schema_run" / "map.json"
+    payload = json.loads(artifact.read_text())
+    assert payload["meta"]["spec_version"] == SPEC_VERSION
+
+
+def test_cli_demo_viz(tmp_path: Path):
+    output_dir = tmp_path / "demo"
+    result = run_cli("demo", "viz", "--output", str(output_dir))
+    assert "Demo visualizations written" in result.stdout
+    assert (output_dir / "minimizers.png").exists()
+    assert (output_dir / "minimizers.viz.json").exists()
+
+
 def test_cli_viz_hydropathy(tmp_path: Path):
     pytest.importorskip("Bio")
     output = tmp_path / "hydro.png"
@@ -150,6 +212,40 @@ def test_cli_viz_hydropathy(tmp_path: Path):
     )
     assert output.exists()
     assert "Hydropathy chart saved" in result.stdout
+
+
+def test_cli_schema_manifest(tmp_path: Path):
+    out = tmp_path / "schemas.json"
+    result = run_cli("schema", "manifest", "--out", str(out))
+    assert out.exists()
+    payload = json.loads(out.read_text())
+    assert payload["spec_version"] == SPEC_VERSION
+    assert "viz_minimizers" in payload["schemas"]
+
+
+def test_cli_schema_diff_identity(tmp_path: Path):
+    manifest_path = tmp_path / "manifest.json"
+    manifest_data = run_cli("schema", "manifest").stdout
+    manifest_path.write_text(manifest_data, encoding="utf-8")
+    result = run_cli("schema", "diff", "--base", str(manifest_path))
+    assert "No schema changes detected." in result.stdout
+
+
+def test_cli_schema_diff_changes(tmp_path: Path):
+    manifest_data = json.loads(run_cli("schema", "manifest").stdout)
+    schemas = manifest_data["schemas"]
+    removed_key = next(iter(schemas.keys()))
+    schemas.pop(removed_key)
+    base_path = tmp_path / "base.json"
+    base_path.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+    result = run_cli("schema", "diff", "--base", str(base_path))
+    assert "Added schemas" in result.stdout
+
+
+def test_cli_viz_schema_flag():
+    result = run_cli("viz", "alignment-ribbon", "--schema")
+    assert "Sample payload" in result.stdout
+    assert "demo_read" in result.stdout
 
 
 def test_cli_rna_ensemble(tmp_path: Path):

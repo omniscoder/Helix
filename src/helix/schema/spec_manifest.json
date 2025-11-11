@@ -1,0 +1,5 @@
+{
+  "spec_version": "1.0",
+  "last_modified": "2024-12-30",
+  "notes": "Schema versioning for viz payloads; bump minor for additive fields, major for breaking changes."
+}

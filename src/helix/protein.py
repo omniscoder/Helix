@@ -1,7 +1,11 @@
-"""Practical protein sequence helpers for Helix."""
+"""Practical protein sequence helpers for Helix.
+
+Hydropathy scales are resolved dynamically; unavailable tables are logged and skipped.
+"""
 from __future__ import annotations
 
 import argparse
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
@@ -20,15 +24,18 @@ except ImportError:  # pragma: no cover - fallback when Biopython missing
 
 
 VALID_AA = set("ACDEFGHIKLMNPQRSTVWY")
-SCALE_LIBRARY = (
-    {
-        "kd": ProtParamData.kd,
-        "hs": ProtParamData.hs,
-        "flexibility": ProtParamData.flexibility,
-    }
-    if BIOPYTHON_AVAILABLE
-    else {}
-)
+LOGGER = logging.getLogger(__name__)
+if BIOPYTHON_AVAILABLE:
+    _scales: Dict[str, Dict[str, float]] = {}
+    for key in ("kd", "hs", "flexibility"):
+        attr = getattr(ProtParamData, key, None)
+        if attr is not None:
+            _scales[key] = attr
+        else:
+            LOGGER.info("ProtParamData.%s unavailable; hydropathy scale skipped.", key)
+    SCALE_LIBRARY = _scales
+else:
+    SCALE_LIBRARY = {}
 
 
 def _require_biopython() -> None:

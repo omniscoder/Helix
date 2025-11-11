@@ -1,0 +1,10 @@
+{
+  "ref_length": 300,
+  "qry_length": 290,
+  "cigar": "30M2I10M3D15M",
+  "ref_start": 20,
+  "qry_start": 18,
+  "metadata": {
+    "name": "demo_read"
+  }
+}

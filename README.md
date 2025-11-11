@@ -53,10 +53,15 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - Optional extras: `matplotlib` for plotting, `biopython` for protein helpers, `pyyaml` for workflow configs (already included in base deps).
 
 ### Installation
+Stable release from PyPI (installs CLI + package):
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[viz,protein]"   # add extras as needed; omit for a lean install
+pip install "helix-bio[viz,protein,schema]"
+```
+Need only the core library? Drop the extras (viz/matplotlib, protein/Biopython, schema/pydantic). For local development, clone the repo and run:
+```bash
+pip install -e ".[dev]"
 ```
 This exposes the `helix` console command and the `helix` Python package (`from helix import bioinformatics`).
 
@@ -155,6 +160,16 @@ Browse task-specific quickstarts in `examples/README.md`. Tiny datasets ship ins
 pytest
 ```
 Pytest powers translator and k-mer regression checks; feel free to add more as you create new helpers.
+
+## Reproducible Viz & Viz-Spec
+- Every `helix viz ...` (and CLI modes that call them) accepts `--save out.png` (PNG/SVG/PDF) and auto-emits a sibling `.viz.json` unless `--save-viz-spec` overrides the path.
+- Each plot footer stamps `Helix vX.Y • viz-kind • spec=1.x • key params • timestamp • input_sha256` so shared figures always carry their provenance and the SHA-256 of the original JSON payload.
+- The viz-spec JSON captures counts, quantiles, bounds, and the `input_sha256` used for hashing; regressions assert against that structured payload instead of brittle pixel hashes.
+- You can feed those viz-specs (plus the original JSON inputs) into docs/notebooks to explain how a figure was produced and which parameters generated it.
+- Explore or inspect schemas with `helix viz schema --kind ...`, diff manifests with `helix schema diff --base old.json`, export everything via `helix schema manifest --out schemas.json`, or render ready-to-plot payloads via `helix demo viz`.
+- Workflows can enforce schemas per step and print provenance tables with `helix workflows ... --with-schema`.
+- Every saved plot writes `<image>.provenance.json` next to the PNG, capturing `{schema_kind, spec_version, input_sha256, viz_spec_sha256, image_sha256, helix_version, command}` for chain-of-custody.
+- Full schemas, screenshots, and sample payloads live under [docs/viz.md](docs/viz.md) and the [Schema Reference](docs/schema.md).
 
 ## Weekend Project Ideas
 - Plot the GC skew for a bacterial plasmid and compare predicted origins to literature.

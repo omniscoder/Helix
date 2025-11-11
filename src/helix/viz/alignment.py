@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from ._utils import VizSpec, apply_rc, finalize
 
-_CIGAR_RE = re.compile(r"(\d+)([MID])")
+_CIGAR_RE = re.compile(r"(\d+)([MID=X])")
 
 
 def _parse_cigar(cigar: str) -> List[Tuple[str, int]]:
@@ -32,7 +32,7 @@ def _path_from_cigar(ref_start: int, read_start: int, cigar: str) -> Tuple[np.nd
     for op, count in _parse_cigar(cigar):
         if count <= 0:
             continue
-        if op == "M":
+        if op in ("M", "=", "X"):
             for _ in range(count):
                 ref_pos += 1
                 read_pos += 1
@@ -60,9 +60,11 @@ def plot_alignment_ribbon(
     ref_length: int,
     qry_length: int,
     alignment: Dict[str, Any],
+    metadata: Optional[Dict[str, Any]] = None,
     title: str | None = None,
     save: Optional[str] = None,
     save_viz_spec: Optional[str] = None,
+    extra_meta: Optional[Dict[str, Any]] = None,
 ):
     """
     Plot a local alignment ribbon using banded Smith-Waterman output.
@@ -83,6 +85,7 @@ def plot_alignment_ribbon(
         int(alignment.get("read_start", 0)),
         alignment.get("cigar", ""),
     )
+    cigar_ops = _parse_cigar(alignment.get("cigar", ""))
     fig, ax = plt.subplots(figsize=(5.0, 4.0))
     if ref_arr.size and read_arr.size:
         ax.fill_between(ref_arr, read_arr - 0.4, read_arr + 0.4, color="#c6dbef", alpha=0.5, linewidth=0)
@@ -99,19 +102,25 @@ def plot_alignment_ribbon(
     ax.set_ylabel("Query (bp)")
     ax.set_title(title or f"Alignment ribbon (score={score})")
 
+    meta = {
+        "ref_length": int(ref_length),
+        "qry_length": int(qry_length),
+        "score": float(score) if score is not None else None,
+    }
+    if metadata:
+        meta["metadata"] = metadata
+
+    if extra_meta:
+        meta.update(extra_meta)
     spec = VizSpec(
         kind="alignment_ribbon",
-        meta={
-            "ref_length": int(ref_length),
-            "qry_length": int(qry_length),
-            "score": float(score) if score is not None else None,
-        },
+        meta=meta,
         primitives={
             "path_points": int(ref_arr.size),
             "insertions": len(insertions),
             "deletions": len(deletions),
             "matches": int(alignment.get("matches", 0)),
-            "cigar_ops": len(_parse_cigar(alignment.get("cigar", ""))),
+            "segments": len(cigar_ops),
         },
     )
     return finalize(fig, spec, save=save, save_viz_spec=save_viz_spec)

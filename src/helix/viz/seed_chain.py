@@ -1,7 +1,7 @@
 """Seed chaining visualization."""
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 
@@ -15,6 +15,7 @@ def plot_seed_chain(
     chains: List[List[Dict[str, int]]],
     save: Optional[str] = None,
     save_viz_spec: Optional[str] = None,
+    extra_meta: Optional[Dict[str, Any]] = None,
 ):
     apply_rc()
     fig, ax = plt.subplots(figsize=(4.5, 4.5))
@@ -37,9 +38,12 @@ def plot_seed_chain(
     ax.set_ylabel("Query (bp)")
     ax.set_title("Seed chaining (ref vs query)")
 
+    meta = {"ref_length": int(ref_length), "qry_length": int(qry_length), "chains": len(chains)}
+    if extra_meta:
+        meta.update(extra_meta)
     spec = VizSpec(
         kind="seed_chain",
-        meta={"ref_length": int(ref_length), "qry_length": int(qry_length), "chains": len(chains)},
+        meta=meta,
         primitives={"line_segments": int(line_count)},
     )
     return finalize(fig, spec, save=save, save_viz_spec=save_viz_spec)

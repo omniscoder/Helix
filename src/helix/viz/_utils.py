@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import json
 from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from importlib import metadata
 from typing import Any, Dict, Optional, Tuple
 
@@ -11,6 +12,11 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+try:
+    from helix.schema import SPEC_VERSION
+except ImportError:  # pragma: no cover - fallback if schema not available
+    SPEC_VERSION = "1.0"
 
 RC = {
     "figure.dpi": 120,
@@ -37,23 +43,38 @@ class VizSpec:
     kind: str
     meta: Dict[str, Any]
     primitives: Dict[str, Any]
-    spec_version: str = "1.0"
+    spec_version: str = SPEC_VERSION
+
+    def to_payload(self) -> Dict[str, Any]:
+        payload = asdict(self)
+        meta = payload.setdefault("meta", {})
+        meta.setdefault("spec_version", self.spec_version)
+        payload["timestamp"] = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        return payload
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
+        return json.dumps(self.to_payload(), sort_keys=True, separators=(",", ":"))
 
 
-def _footer_text(spec: VizSpec) -> str:
-    parts = [f"Helix {HELIX_VERSION}", spec.kind]
-    if spec.meta:
+def _footer_text(spec_payload: Dict[str, Any]) -> str:
+    parts = [
+        f"Helix {HELIX_VERSION}",
+        spec_payload.get("kind", "viz"),
+        f"spec={spec_payload.get('spec_version', '1.0')}",
+    ]
+    meta = spec_payload.get("meta", {})
+    if meta:
         meta_bits = []
-        for key in sorted(spec.meta):
-            value = spec.meta[key]
+        for key in sorted(meta):
+            if key == "spec_version":
+                continue
+            value = meta[key]
             if isinstance(value, (int, float, str)):
                 meta_bits.append(f"{key}={value}")
         if meta_bits:
             parts.append(", ".join(meta_bits))
-    return " • ".join(parts)
+    parts.append(spec_payload.get("timestamp", ""))
+    return " • ".join(filter(None, parts))
 
 
 def finalize(
@@ -62,7 +83,8 @@ def finalize(
     save: Optional[str] = None,
     save_viz_spec: Optional[str] = None,
 ) -> Tuple[plt.Figure, Dict[str, Any]]:
-    footer = _footer_text(spec)
+    payload = spec.to_payload()
+    footer = _footer_text(payload)
     fig.text(
         0.01,
         0.01,
@@ -77,8 +99,8 @@ def finalize(
         fig.savefig(save, bbox_inches="tight", facecolor="white")
     if save_viz_spec:
         with open(save_viz_spec, "w", encoding="utf-8") as handle:
-            handle.write(spec.to_json())
-    return fig, asdict(spec)
+            handle.write(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    return fig, payload
 
 
 def fig_bytes_sha256(fig: plt.Figure) -> str:

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,6 +17,7 @@ def plot_rna_dotplot(
     vmax: float = 1.0,
     save: Optional[str] = None,
     save_viz_spec: Optional[str] = None,
+    extra_meta: Optional[Dict[str, Any]] = None,
 ):
     apply_rc()
     size = len(posterior)
@@ -40,9 +41,12 @@ def plot_rna_dotplot(
     upper = matrix[np.triu_indices(n, k=1)]
     q = np.quantile(upper, [0.0, 0.25, 0.5, 0.75, 0.95, 1.0]) if upper.size else np.zeros(6)
 
+    meta = {"n": int(n), "vmin": float(vmin), "vmax": float(vmax)}
+    if extra_meta:
+        meta.update(extra_meta)
     spec = VizSpec(
         kind="rna_dotplot",
-        meta={"n": int(n), "vmin": float(vmin), "vmax": float(vmax)},
+        meta=meta,
         primitives={
             "nonzero_pairs": int((upper > 0).sum()),
             "quantiles": [float(x) for x in q.tolist()],

@@ -1,0 +1,14 @@
+{
+  "sequence_length": 500,
+  "minimizers": [
+    5,
+    [
+      25,
+      "AAA",
+      1
+    ],
+    {
+      "pos": 120
+    }
+  ]
+}
