@@ -106,7 +106,7 @@ jobs:
       - name: Publish benchmark summary
         run: cat benchmarks/out/latest.md >> "$GITHUB_STEP_SUMMARY"
       - name: Update bench history
-        if: github.ref == 'refs/heads/main'
+        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/master')
         run: |
           python scripts/update_bench_history.py \
             benchmarks/out/latest.json \
@@ -115,7 +115,7 @@ jobs:
             --limit "${{ steps.sweep.outputs.limit }}" \
             --bench-heavy "${BENCH_HEAVY}"
       - name: Commit bench history
-        if: github.ref == 'refs/heads/main'
+        if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/heads/master')
         run: |
           git config user.name "helix-bot"
           git config user.email "actions@users.noreply.github.com"

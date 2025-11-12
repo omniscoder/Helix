@@ -2,8 +2,10 @@ name: docs
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch: {}
+  schedule:
+    - cron: "0 6 * * 1"  # weekly docs rebuild (Mondays 06:00 UTC)
 
 permissions:
   contents: read
