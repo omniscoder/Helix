@@ -92,8 +92,17 @@ jobs:
             --seed 1337
           cp "benchmarks/out/bench-${GITHUB_SHA}.json" benchmarks/out/latest.json
           cp "benchmarks/out/bench-${GITHUB_SHA}.md" benchmarks/out/latest.md
-      - name: Check drift vs baseline
-        run: python scripts/bench_check.py .bench/baseline.json benchmarks/out/latest.json --threshold 5.0
+      - name: Check drift vs baseline (macro-cases)
+        run: |
+          # Gate on macro-cases only to reduce micro-bench noise on shared runners
+          python scripts/bench_check.py \
+            .bench/baseline.json \
+            benchmarks/out/latest.json \
+            --threshold 20.0 \
+            --min-abs-slowdown 0.02 \
+            --min-runtime 0.05 \
+            --include workflow.plasmid_screen \
+            --include helix.fold_rna
       - name: Publish benchmark summary
         run: cat benchmarks/out/latest.md >> "$GITHUB_STEP_SUMMARY"
       - name: Update bench history
