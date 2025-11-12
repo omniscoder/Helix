@@ -840,7 +840,8 @@ def command_crispr_genome_sim(args: argparse.Namespace) -> None:
     }
     if params:
         payload["params"] = params
-    _write_json_output(payload, args.json)
+    validated = validate_viz_payload("crispr.cut_events", payload)
+    _write_json_output(validated, args.json)
     if not events:
         print("No candidate cut events were produced with the current parameters.")
 
@@ -872,7 +873,8 @@ def command_prime_simulate(args: argparse.Namespace) -> None:
         "genome": _digital_genome_summary(genome, source=args.genome),
         "outcomes": [_serialize_prime_outcome(outcome) for outcome in outcomes],
     }
-    _write_json_output(payload, args.json)
+    validated = validate_viz_payload("prime.edit_sim", payload)
+    _write_json_output(validated, args.json)
     if not outcomes:
         print("No prime editing outcomes were produced with the current parameters.")
 

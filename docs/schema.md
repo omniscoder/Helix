@@ -9,7 +9,7 @@ Helix ships a schema registry so every JSON artifact (CLI output, workflow step,
 
 ## Registered Schemas
 
-All schemas live under the `viz_*` namespace today and correspond to the visualization contracts in [Visualization JSON Schemas](viz.md). Use `helix schema manifest` to obtain the machine-readable form; a truncated excerpt:
+Most schemas live under the `viz_*` namespace and correspond to the visualization contracts in [Visualization JSON Schemas](viz.md). Use `helix schema manifest` to obtain the machine-readable form; a truncated excerpt:
 
 ```bash
 $ helix schema manifest | jq '.schemas.viz_alignment_ribbon.schema.properties | keys'
@@ -24,6 +24,15 @@ $ helix schema manifest | jq '.schemas.viz_alignment_ribbon.schema.properties | 
 ```
 
 Whenever we add optional fields, the spec version bumps to `1.x`. Breaking changes (field removal/renames) would trigger a major bump to `2.0`. The manifest + CLI help make these bumps explicit.
+
+### CRISPR / Prime simulation payloads
+
+The new digital simulators emit their own schema-tagged payloads so downstream tooling can trust the structure:
+
+- `crispr.cut_events` – produced by `helix crispr genome-sim`, contains `{cas, guide, genome summary, params, events[]}` where every event records the candidate `TargetSite`, cut position, score, and serialized guide/Cas metadata.
+- `prime.edit_sim` – produced by `helix prime simulate`, bundles `{editor, peg, genome summary, params, outcomes[]}` where each outcome includes the targeted site, edited sequence, logit score, and a short description (`intended_edit`, `indel_loss`, `no_edit`, etc.).
+
+Both schemas participate in the manifest/validator pipeline, so `helix schema manifest` and `helix viz schema --kind ...` will now list them alongside the existing viz payloads.
 
 ## Workflow Provenance
 

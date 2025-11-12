@@ -237,6 +237,41 @@ if PYDANTIC_AVAILABLE:
         meta: Optional[Dict[str, Any]] = None
 
 
+    class CRISPRCutEventEntry(_BaseSchemaModel):
+        site: Dict[str, Any]
+        cut_position: int
+        guide: Dict[str, Any]
+        cas: Dict[str, Any]
+        score: float
+
+
+    class CRISPRCutEventsPayload(_BaseSchemaModel):
+        schema_alias: Dict[str, Any] = Field(alias="schema")
+        meta: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None
+        cas: Dict[str, Any]
+        guide: Dict[str, Any]
+        genome: Dict[str, Any]
+        events: List[CRISPRCutEventEntry]
+
+
+    class PrimeEditOutcomeEntry(_BaseSchemaModel):
+        site: Dict[str, Any]
+        edited_sequence: str
+        logit_score: float
+        description: Optional[str] = None
+
+
+    class PrimeEditSimPayload(_BaseSchemaModel):
+        schema_alias: Dict[str, Any] = Field(alias="schema")
+        meta: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None
+        editor: Dict[str, Any]
+        peg: Dict[str, Any]
+        genome: Dict[str, Any]
+        outcomes: List[PrimeEditOutcomeEntry]
+
+
     _SCHEMA_MODELS: Dict[str, Any] = {
         "viz_minimizers": MinimizersPayload,
         "viz_seed_chain": SeedChainPayload,
@@ -247,6 +282,8 @@ if PYDANTIC_AVAILABLE:
         "crispr.guides": CRISPRGuidesPayload,
         "crispr.offtargets": CRISPROffTargetsPayload,
         "crispr.sim": CRISPRSimPayload,
+        "crispr.cut_events": CRISPRCutEventsPayload,
+        "prime.edit_sim": PrimeEditSimPayload,
     }
 else:
     _SCHEMA_MODELS = {}
