@@ -6,6 +6,8 @@ Helix is a hobbyist-first playground for bioinformatics and computational biolog
 
 Helix complements our production platform OGN rather than competing with it. When a prototype proves its value, you can polish and port it into OGN. Until then, Helix is the sandbox where curiosity rules.
 
+👉 Docs: https://omniscoder.github.io/Helix/
+
 ## Why Helix Exists
 - Lower the barrier to tinkering: ship batteries-included examples and tiny datasets.
 - Showcase approachable implementations of classic algorithms so learners can peek under the hood.

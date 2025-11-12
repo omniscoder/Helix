@@ -1,8 +1,41 @@
-site_name: Helix Bioinformatics
-repo_url: https://example.com/helix
+site_name: Veri-Helix
+site_description: Reproducible bioinformatics toolkit with schema-verified visualization
+site_url: https://omniscoder.github.io/Helix/
+repo_url: https://github.com/omniscoder/Helix
+repo_name: omniscoder/Helix
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - scheme: default
+      primary: teal
+      accent: deep orange
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
 nav:
-  - Home: index.md
-  - CLI: cli.md
-  - Visualization: viz.md
-  - Schema Reference: schema.md
-docs_dir: docs
+  - Overview: index.md
+  - Getting Started: getting-started.md
+  - Concepts:
+      - Artifacts & Provenance: concepts/artifacts.md
+      - Schemas: concepts/schemas.md
+      - Workflows: concepts/workflows.md
+  - CLI:
+      - Visualization: cli/viz.md
+      - Schema Tools: cli/schema.md
+      - Workflows: cli/workflows.md
+      - Demos: cli/demo.md
+  - Visualization Gallery:
+      - Alignment Ribbon: visualization/alignment-ribbon.md
+      - RNA Dot-Plot: visualization/rna-dotplot.md
+      - Motif Logo: visualization/motif-logo.md
+      - Distance Heatmap: visualization/distance-heatmap.md
+      - Minimizer Density: visualization/minimizer-density.md
+  - Schema Reference: schema-reference.md
+  - Contributing: contributing.md
