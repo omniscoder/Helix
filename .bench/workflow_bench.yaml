@@ -1,0 +1,34 @@
+workflows:
+- name: plasmid_screen
+  steps:
+  - args:
+      input: /tmp/helix_bench_data_qkqwv3yx/dna_limit.fna
+      k: 5
+      max_diff: 1
+      step: 30
+      top: 5
+      window: 120
+    command: dna
+    stdout: dna_summary.txt
+  - args:
+      input: /tmp/helix_bench_data_qkqwv3yx/dna_limit.fna
+      json: plasmid_triage.json
+      k: 4
+      max_diff: 1
+      min_orf_length: 60
+      top: 3
+    command: triage
+    stdout: triage_summary.txt
+  - args:
+      leaderboard: 3
+      peptide: NQEL
+      spectrum: 0,113,114,128,227,242,242,355,356,370,371,484
+    command: spectrum
+    stdout: spectrum_hits.txt
+  - args:
+      dotbracket: plasmid_mfe.dbn
+      fasta: ../src/helix/datasets/dna/plasmid_demo.fna
+    command:
+    - rna
+    - mfe
+    stdout: rna_mfe.json

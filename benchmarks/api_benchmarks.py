@@ -136,19 +136,19 @@ class BenchmarkResult:
 
 def _run_workflow() -> None:
     config_path = REPO_ROOT / "workflows" / "plasmid_screen.yaml"
+    bench_config_dir = REPO_ROOT / ".bench"
+    bench_config_dir.mkdir(parents=True, exist_ok=True)
+    config_copy = bench_config_dir / "workflow_bench.yaml"
+    data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    for wf in data.get("workflows", []):
+        for step in wf.get("steps", []):
+            args = step.get("args", {})
+            if "input" in args and ACTIVE_DNA_FILE_PATH:
+                args["input"] = str(ACTIVE_DNA_FILE_PATH)
+    config_copy.write_text(yaml.safe_dump(data), encoding="utf-8")
     with TemporaryDirectory(prefix="helix_bench_workflow_") as tmp:
         tmpdir = Path(tmp)
-        config_to_use = config_path
-        if ACTIVE_DNA_FILE_PATH:
-            data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            for wf in data.get("workflows", []):
-                for step in wf.get("steps", []):
-                    args = step.get("args", {})
-                    if "input" in args:
-                        args["input"] = str(ACTIVE_DNA_FILE_PATH)
-            config_to_use = tmpdir / "workflow.yaml"
-            config_to_use.write_text(yaml.safe_dump(data), encoding="utf-8")
-        hx.run_workflow(config_to_use, output_dir=tmpdir, name="plasmid_screen")
+        hx.run_workflow(config_copy, output_dir=tmpdir, name="plasmid_screen")
 
 
 def _dna_summary_runner() -> None:
