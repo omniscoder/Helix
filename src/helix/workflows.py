@@ -19,7 +19,15 @@ except ImportError:  # pragma: no cover - handled at runtime
     yaml = None
 
 
-INPUT_PATH_KEYS = {"input", "spectrum_file", "fasta"}
+INPUT_PATH_KEYS = {
+    "input",
+    "spectrum_file",
+    "fasta",
+    "genome",
+    "peg_config",
+    "editor_config",
+    "cas_config",
+}
 OUTPUT_PATH_KEYS = {
     "dot_output",
     "dotbracket",

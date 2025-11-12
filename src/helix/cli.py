@@ -7,13 +7,22 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from . import bioinformatics, cyclospectrum, triage
 from .crispr import guide as crispr_guide
 from .crispr import pam as crispr_pam
 from .crispr import score
 from .crispr import simulate as crispr_simulate
+from .crispr.model import (
+    CasSystem,
+    CasSystemType,
+    DigitalGenome,
+    GuideRNA,
+    PAMRule,
+    TargetSite,
+)
+from .crispr.simulator import CutEvent, simulate_cuts
 from .io import read_fasta
 from .string import fm as string_fm
 from .string import edit as string_edit
@@ -30,6 +39,8 @@ from .graphs import (
 )
 from .sketch import compute_minhash, mash_distance, compute_hll, union_hll
 from .motif import discover_motifs
+from .prime.model import PegRNA, PrimeEditOutcome, PrimeEditor
+from .prime.simulator import simulate_prime_edit
 from .schema import (
     SchemaError,
     SPEC_VERSION,
@@ -252,6 +263,274 @@ def _ensure_viz_available(feature: str = "visualization") -> None:
         raise SystemExit(
             f"{feature} requires the 'viz' extra. Install with `pip install \"veri-helix[viz]\"`."
         )
+
+
+CAS_PRESET_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "cas9": {
+        "name": "SpCas9",
+        "system_type": "cas9",
+        "pam_rules": [{"pattern": "NGG", "description": "SpCas9 canonical PAM"}],
+        "cut_offset": 3,
+        "max_mismatches": 3,
+        "weight_mismatch_penalty": 1.0,
+        "weight_pam_penalty": 2.0,
+    },
+    "cas12a": {
+        "name": "LbCas12a",
+        "system_type": "cas12a",
+        "pam_rules": [{"pattern": "TTTV", "description": "LbCas12a canonical PAM"}],
+        "cut_offset": -18,
+        "max_mismatches": 4,
+        "weight_mismatch_penalty": 1.0,
+        "weight_pam_penalty": 2.5,
+    },
+}
+
+
+def _load_json_config(path: Path) -> Dict[str, Any]:
+    with Path(path).open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _cas_system_from_config(config: Mapping[str, Any]) -> CasSystem:
+    try:
+        name = str(config["name"])
+        system_type = CasSystemType(str(config["system_type"]).lower())
+        cut_offset = int(config["cut_offset"])
+    except KeyError as exc:  # pragma: no cover - defensive, CLI validated via tests
+        raise ValueError(f"CasSystem config missing required field: {exc}") from exc
+    pam_entries = config.get("pam_rules") or []
+    if not pam_entries:
+        raise ValueError("CasSystem config requires at least one PAM rule.")
+    pam_rules: List[PAMRule] = []
+    for entry in pam_entries:
+        if isinstance(entry, str):
+            pam_rules.append(PAMRule(pattern=entry))
+            continue
+        pattern = entry.get("pattern")
+        if not pattern:
+            raise ValueError("PAM rule entries require a 'pattern' value.")
+        pam_rules.append(PAMRule(pattern=str(pattern), description=str(entry.get("description", ""))))
+    return CasSystem(
+        name=name,
+        system_type=system_type,
+        pam_rules=pam_rules,
+        cut_offset=cut_offset,
+        max_mismatches=int(config.get("max_mismatches", 3)),
+        weight_mismatch_penalty=float(config.get("weight_mismatch_penalty", 1.0)),
+        weight_pam_penalty=float(config.get("weight_pam_penalty", 2.0)),
+    )
+
+
+def _resolve_cas_system(
+    preset_name: Optional[str],
+    config_path: Optional[Path] = None,
+    *,
+    inline_config: Optional[Mapping[str, Any]] = None,
+) -> CasSystem:
+    if inline_config:
+        return _cas_system_from_config(inline_config)
+    if config_path:
+        return _cas_system_from_config(_load_json_config(config_path))
+    if preset_name:
+        preset_cfg = CAS_PRESET_CONFIGS.get(preset_name.lower())
+        if not preset_cfg:
+            raise SystemExit(f"Unknown CasSystem preset '{preset_name}'.")
+        return _cas_system_from_config(preset_cfg)
+    raise SystemExit("Provide --cas or --cas-config to select a CasSystem.")
+
+
+def _load_digital_genome(path: Path) -> DigitalGenome:
+    fasta_path = Path(path)
+    if not fasta_path.exists():
+        raise SystemExit(f"Genome FASTA '{fasta_path}' not found.")
+    records = read_fasta(fasta_path)
+    if not records:
+        raise SystemExit(f"No sequences found in {fasta_path}.")
+    sequences: Dict[str, str] = {}
+    for idx, (header, seq) in enumerate(records, start=1):
+        chrom = header or f"sequence_{idx}"
+        sequences[chrom] = bioinformatics.normalize_sequence(seq)
+    return DigitalGenome(sequences=sequences)
+
+
+def _digital_genome_summary(genome: DigitalGenome, *, source: Optional[Path] = None) -> Dict[str, Any]:
+    chromosomes = [
+        {"name": chrom, "length": len(sequence)}
+        for chrom, sequence in genome.sequences.items()
+    ]
+    total_length = sum(entry["length"] for entry in chromosomes)
+    summary: Dict[str, Any] = {
+        "chromosomes": chromosomes,
+        "total_length": total_length,
+        "count": len(chromosomes),
+    }
+    if source is not None:
+        summary["source"] = str(source)
+    return summary
+
+
+def _serialize_pam_rule(rule: PAMRule) -> Dict[str, Any]:
+    return {"pattern": rule.pattern, "description": rule.description}
+
+
+def _serialize_cas_system(cas: CasSystem) -> Dict[str, Any]:
+    return {
+        "name": cas.name,
+        "system_type": cas.system_type.value,
+        "cut_offset": cas.cut_offset,
+        "max_mismatches": cas.max_mismatches,
+        "weight_mismatch_penalty": cas.weight_mismatch_penalty,
+        "weight_pam_penalty": cas.weight_pam_penalty,
+        "pam_rules": [_serialize_pam_rule(rule) for rule in cas.pam_rules],
+    }
+
+
+def _serialize_guide(guide: GuideRNA) -> Dict[str, Any]:
+    payload = {
+        "sequence": guide.sequence,
+        "pam": guide.pam,
+        "name": guide.name,
+    }
+    if guide.metadata:
+        payload["metadata"] = guide.metadata
+    return payload
+
+
+def _serialize_target_site(site: TargetSite) -> Dict[str, Any]:
+    data: Dict[str, Any] = {
+        "chrom": site.chrom,
+        "start": site.start,
+        "end": site.end,
+        "strand": site.strand,
+        "sequence": site.sequence,
+    }
+    if site.on_target_score is not None:
+        data["on_target_score"] = site.on_target_score
+    if site.off_target_score is not None:
+        data["off_target_score"] = site.off_target_score
+    if site.pam_match_score is not None:
+        data["pam_match_score"] = site.pam_match_score
+    return data
+
+
+def _serialize_cut_event(event: CutEvent) -> Dict[str, Any]:
+    return {
+        "site": _serialize_target_site(event.site),
+        "cut_position": event.cut_position,
+        "guide": _serialize_guide(event.guide),
+        "cas": _serialize_cas_system(event.cas),
+        "score": event.score,
+    }
+
+
+def _serialize_prime_editor(editor: PrimeEditor) -> Dict[str, Any]:
+    return {
+        "name": editor.name,
+        "cas": _serialize_cas_system(editor.cas),
+        "nick_to_edit_offset": editor.nick_to_edit_offset,
+        "efficiency_scale": editor.efficiency_scale,
+        "indel_bias": editor.indel_bias,
+        "mismatch_tolerance": editor.mismatch_tolerance,
+    }
+
+
+def _serialize_peg(peg: PegRNA) -> Dict[str, Any]:
+    data: Dict[str, Any] = {
+        "spacer": peg.spacer,
+        "pbs": peg.pbs,
+        "rtt": peg.rtt,
+    }
+    if peg.name:
+        data["name"] = peg.name
+    if peg.metadata:
+        data["metadata"] = peg.metadata
+    return data
+
+
+def _serialize_prime_outcome(outcome: PrimeEditOutcome) -> Dict[str, Any]:
+    return {
+        "site": _serialize_target_site(outcome.site),
+        "edited_sequence": outcome.edited_sequence,
+        "logit_score": outcome.logit_score,
+        "description": outcome.description,
+    }
+
+
+def _write_json_output(payload: Dict[str, Any], output_path: Optional[Path]) -> None:
+    text = json.dumps(payload, indent=2)
+    if output_path:
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(text + "\n", encoding="utf-8")
+    else:
+        print(text)
+
+
+def _build_guide(sequence: str, *, name: Optional[str], pam: Optional[str]) -> GuideRNA:
+    normalized = bioinformatics.normalize_sequence(sequence)
+    return GuideRNA(sequence=normalized, pam=pam, name=name)
+
+
+def _load_peg_from_args(args: argparse.Namespace) -> PegRNA:
+    config: Dict[str, Any] = {}
+    if getattr(args, "peg_config", None):
+        config = _load_json_config(args.peg_config)
+
+    def _value(key: str, attr: str) -> Optional[str]:
+        arg_value = getattr(args, attr, None)
+        if arg_value:
+            return arg_value
+        return config.get(key)
+
+    spacer = _value("spacer", "peg_spacer")
+    pbs = _value("pbs", "peg_pbs")
+    rtt = _value("rtt", "peg_rtt")
+    if not spacer or not pbs or not rtt:
+        raise SystemExit("Provide peg spacer/PBS/RTT via --peg-config or CLI flags.")
+    metadata = config.get("metadata") or {}
+    if metadata and not isinstance(metadata, dict):
+        raise SystemExit("peg metadata must be a JSON object.")
+    name = getattr(args, "peg_name", None) or config.get("name")
+    return PegRNA(
+        spacer=bioinformatics.normalize_sequence(spacer),
+        pbs=bioinformatics.normalize_sequence(pbs),
+        rtt=bioinformatics.normalize_sequence(rtt),
+        name=name,
+        metadata=dict(metadata),
+    )
+
+
+def _load_prime_editor_from_args(args: argparse.Namespace) -> PrimeEditor:
+    config: Dict[str, Any] = {}
+    if getattr(args, "editor_config", None):
+        config = _load_json_config(args.editor_config)
+    inline_cas_config = config.get("cas")
+    cas = _resolve_cas_system(
+        preset_name=config.get("cas_preset") or getattr(args, "cas", None),
+        config_path=getattr(args, "cas_config", None),
+        inline_config=inline_cas_config,
+    )
+    name = getattr(args, "editor_name", None) or config.get("name") or cas.name
+
+    def _override(attr: str, key: str, default: Any) -> Any:
+        arg_value = getattr(args, attr, None)
+        if arg_value is not None:
+            return arg_value
+        return config.get(key, default)
+
+    nick_offset = int(_override("nick_offset", "nick_to_edit_offset", 0))
+    efficiency_scale = float(_override("efficiency_scale", "efficiency_scale", 1.0))
+    indel_bias = float(_override("indel_bias", "indel_bias", 0.0))
+    mismatch_tolerance = int(_override("mismatch_tolerance", "mismatch_tolerance", 3))
+    return PrimeEditor(
+        name=name,
+        cas=cas,
+        nick_to_edit_offset=nick_offset,
+        efficiency_scale=efficiency_scale,
+        indel_bias=indel_bias,
+        mismatch_tolerance=mismatch_tolerance,
+    )
 
 
 def command_dna(args: argparse.Namespace) -> None:
@@ -527,6 +806,75 @@ def command_crispr_simulate(args: argparse.Namespace) -> None:
         print(f"Simulation JSON saved to {args.json}.")
     else:
         print(text)
+
+
+def command_crispr_genome_sim(args: argparse.Namespace) -> None:
+    genome = _load_digital_genome(args.genome)
+    cas_system = _resolve_cas_system(args.cas, args.cas_config)
+    guide = _build_guide(args.guide_sequence, name=args.guide_name, pam=args.guide_pam)
+    try:
+        events = simulate_cuts(
+            genome,
+            cas_system,
+            guide,
+            max_events=args.max_events,
+        ) or []
+    except NotImplementedError as exc:
+        raise SystemExit(str(exc))
+
+    params: Dict[str, Any] = {}
+    if args.max_events is not None:
+        params["max_events"] = args.max_events
+
+    payload = {
+        "schema": {"kind": "crispr.cut_events", "spec_version": SPEC_VERSION},
+        "meta": {
+            "helix_version": HELIX_VERSION,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "command": _current_command_str(),
+        },
+        "cas": _serialize_cas_system(cas_system),
+        "guide": _serialize_guide(guide),
+        "genome": _digital_genome_summary(genome, source=args.genome),
+        "events": [_serialize_cut_event(event) for event in events],
+    }
+    if params:
+        payload["params"] = params
+    _write_json_output(payload, args.json)
+    if not events:
+        print("No candidate cut events were produced with the current parameters.")
+
+
+def command_prime_simulate(args: argparse.Namespace) -> None:
+    genome = _load_digital_genome(args.genome)
+    peg = _load_peg_from_args(args)
+    editor = _load_prime_editor_from_args(args)
+    try:
+        outcomes = simulate_prime_edit(
+            genome,
+            editor,
+            peg,
+            max_outcomes=args.max_outcomes,
+        ) or []
+    except NotImplementedError as exc:
+        raise SystemExit(str(exc))
+
+    payload = {
+        "schema": {"kind": "prime.edit_sim", "spec_version": SPEC_VERSION},
+        "meta": {
+            "helix_version": HELIX_VERSION,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "command": _current_command_str(),
+        },
+        "params": {"max_outcomes": args.max_outcomes},
+        "editor": _serialize_prime_editor(editor),
+        "peg": _serialize_peg(peg),
+        "genome": _digital_genome_summary(genome, source=args.genome),
+        "outcomes": [_serialize_prime_outcome(outcome) for outcome in outcomes],
+    }
+    _write_json_output(payload, args.json)
+    if not outcomes:
+        print("No prime editing outcomes were produced with the current parameters.")
 
 
 def command_protein(args: argparse.Namespace) -> None:
@@ -1564,6 +1912,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include raw site/guide sequences in the JSON (masked by default).",
     )
     crispr_sim.set_defaults(func=command_crispr_simulate)
+
+    crispr_genome = crispr_sub.add_parser("genome-sim", help="Simulate digital cut events across a genome.")
+    crispr_genome.add_argument("--genome", type=Path, required=True, help="Genome FASTA file to scan.")
+    crispr_genome.add_argument("--guide-sequence", required=True, help="Guide RNA sequence (5'->3').")
+    crispr_genome.add_argument("--guide-name", help="Optional guide identifier.")
+    crispr_genome.add_argument("--guide-pam", help="Optional PAM label stored with the guide metadata.")
+    crispr_genome.add_argument(
+        "--cas",
+        default="cas9",
+        help=f"Cas preset to use (options: {', '.join(sorted(CAS_PRESET_CONFIGS))}; default: cas9).",
+    )
+    crispr_genome.add_argument("--cas-config", type=Path, help="JSON file describing a custom CasSystem.")
+    crispr_genome.add_argument("--max-events", type=int, help="Limit the number of events returned.")
+    crispr_genome.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
+    crispr_genome.set_defaults(func=command_crispr_genome_sim)
+
+    prime_cmd = subparsers.add_parser("prime", help="Prime editing helpers.")
+    prime_sub = prime_cmd.add_subparsers(dest="prime_command", required=True)
+
+    prime_sim = prime_sub.add_parser("simulate", help="Simulate prime editing outcomes.")
+    prime_sim.add_argument("--genome", type=Path, required=True, help="Genome FASTA file containing the target site(s).")
+    prime_sim.add_argument("--peg-config", type=Path, help="JSON file describing pegRNA components.")
+    prime_sim.add_argument("--peg-spacer", help="pegRNA spacer sequence (5'->3').")
+    prime_sim.add_argument("--peg-pbs", help="pegRNA primer binding site sequence.")
+    prime_sim.add_argument("--peg-rtt", help="pegRNA reverse transcription template sequence.")
+    prime_sim.add_argument("--peg-name", help="Optional pegRNA identifier.")
+    prime_sim.add_argument("--editor-config", type=Path, help="JSON file describing a PrimeEditor.")
+    prime_sim.add_argument("--editor-name", help="Override the editor name.")
+    prime_sim.add_argument(
+        "--cas",
+        default="cas9",
+        help=f"Cas preset for inline editor definitions (options: {', '.join(sorted(CAS_PRESET_CONFIGS))}; default: cas9).",
+    )
+    prime_sim.add_argument("--cas-config", type=Path, help="JSON file describing a custom CasSystem for the editor.")
+    prime_sim.add_argument("--nick-offset", type=int, help="Override nick-to-edit offset.")
+    prime_sim.add_argument("--efficiency-scale", type=float, help="Override efficiency scale.")
+    prime_sim.add_argument("--indel-bias", type=float, help="Override indel bias.")
+    prime_sim.add_argument("--mismatch-tolerance", type=int, help="Override mismatch tolerance.")
+    prime_sim.add_argument("--max-outcomes", type=int, default=16, help="Maximum number of outcomes to emit (default: 16).")
+    prime_sim.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
+    prime_sim.set_defaults(func=command_prime_simulate)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
     protein.add_argument("--sequence", help="Inline amino-acid string.")
