@@ -4,6 +4,22 @@ on:
   push:
     branches: ["main", "master"]
   pull_request:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      bench_heavy:
+        description: "Run heavy benchmark sweep"
+        type: boolean
+        default: false
+      dna_fasta:
+        description: "Override DNA FASTA path (runner-accessible)"
+        type: string
+        default: ""
+      protein_fasta:
+        description: "Override protein FASTA path (runner-accessible)"
+        type: string
+        default: ""
 
 jobs:
   tests:
@@ -33,3 +49,75 @@ jobs:
         run: pip install -e ".[dev,viz,protein,schema]"
       - name: Run visualization tests
         run: pytest --disable-warnings -q tests/viz tests/e2e
+
+  benchmarks:
+    needs: tests
+    runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: "4"
+      MKL_NUM_THREADS: "4"
+      PYTHONHASHSEED: "0"
+      BENCH_HEAVY: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.bench_heavy) || 'false' }}
+      HELIX_BENCH_DNA_FASTA: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.dna_fasta) || '' }}
+      HELIX_BENCH_PROTEIN_FASTA: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.protein_fasta) || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -e ".[viz,protein,schema]" psutil
+      - name: Decide sweep params
+        id: sweep
+        run: |
+          if [ "${BENCH_HEAVY}" = "true" ]; then
+            echo "repeat=10" >> "$GITHUB_OUTPUT"
+            echo "limit=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "repeat=3" >> "$GITHUB_OUTPUT"
+            echo "limit=10000" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run API benchmarks
+        shell: bash
+        run: |
+          mkdir -p benchmarks/out
+          python -m benchmarks.api_benchmarks \
+            --repeat "${{ steps.sweep.outputs.repeat }}" \
+            --warmup 1 \
+            --limit "${{ steps.sweep.outputs.limit }}" \
+            --sort mean \
+            --out "benchmarks/out/bench-${GITHUB_SHA}.json" \
+            --summary-md "benchmarks/out/bench-${GITHUB_SHA}.md" \
+            --baseline .bench/baseline.json \
+            --seed 1337
+          cp "benchmarks/out/bench-${GITHUB_SHA}.json" benchmarks/out/latest.json
+          cp "benchmarks/out/bench-${GITHUB_SHA}.md" benchmarks/out/latest.md
+      - name: Check drift vs baseline
+        run: python scripts/bench_check.py .bench/baseline.json benchmarks/out/latest.json --threshold 5.0
+      - name: Publish benchmark summary
+        run: cat benchmarks/out/latest.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Update bench history
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python scripts/update_bench_history.py \
+            benchmarks/out/latest.json \
+            docs/data/bench/history.csv \
+            --sha "${GITHUB_SHA}" \
+            --limit "${{ steps.sweep.outputs.limit }}" \
+            --bench-heavy "${BENCH_HEAVY}"
+      - name: Commit bench history
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "helix-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/data/bench/history.csv
+          git commit -m "bench: append ${GITHUB_SHA} history row" || echo "No bench history changes"
+          git push
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helix-benchmarks
+          path: |
+            benchmarks/out/bench-${{ github.sha }}.json
+            benchmarks/out/bench-${{ github.sha }}.md
+            benchmarks/out/latest.json
+            benchmarks/out/latest.md

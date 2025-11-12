@@ -35,6 +35,7 @@ dev = [
     "matplotlib>=3.6",
     "biopython>=1.84",
     "pydantic>=2.5",
+    "psutil>=5.9",
 ]
 
 [project.urls]

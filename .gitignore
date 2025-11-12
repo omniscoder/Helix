@@ -1,0 +1,9 @@
+# Compiled files
+__pycache__/
+*.py[cod]
+
+# Benchmark artifacts/datasets
+bench-results/
+benchmarks/data/*
+!benchmarks/data/.keep
+benchmarks/out/

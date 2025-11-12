@@ -19,9 +19,10 @@ except ImportError:  # pragma: no cover - handled at runtime
     yaml = None
 
 
-INPUT_PATH_KEYS = {"input", "spectrum_file"}
+INPUT_PATH_KEYS = {"input", "spectrum_file", "fasta"}
 OUTPUT_PATH_KEYS = {
     "dot_output",
+    "dotbracket",
     "json",
     "output",
     "frameshift_csv",

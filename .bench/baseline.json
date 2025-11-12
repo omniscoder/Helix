@@ -1,0 +1,184 @@
+{
+  "schema": {
+    "kind": "bench_result",
+    "spec_version": "1.0"
+  },
+  "run": {
+    "timestamp": "2025-11-12T04:43:12.627440+00:00",
+    "commit": "7c8cc4b95c5940243d1b452f4d8012a0164ea617",
+    "branch": "master",
+    "repeat": 3,
+    "warmup": 1,
+    "dataset": {
+      "dna_fasta": "/home/chris/Helix/src/helix/datasets/dna/plasmid_demo.fna",
+      "protein_fasta": "/home/chris/Helix/src/helix/datasets/protein/demo_protein.faa",
+      "dna_size_bp": 304,
+      "protein_count": 1
+    }
+  },
+  "env": {
+    "python": "3.13.5",
+    "helix_version": "0.2.0",
+    "numpy": "2.1.3",
+    "pydantic": "2.10.3",
+    "matplotlib": "3.10.0",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "cpu": "x86_64",
+    "threads": 12,
+    "blas": null,
+    "locale": "CUTF-8",
+    "seed": 1337,
+    "omp_threads": null,
+    "mkl_threads": null,
+    "git_commit": "7c8cc4b95c5940243d1b452f4d8012a0164ea617",
+    "git_branch": "master"
+  },
+  "cases": [
+    {
+      "name": "helix.fold_rna",
+      "params": {
+        "input_length_nt": 304,
+        "min_loop_length": 3,
+        "allow_wobble_pairs": true
+      },
+      "n": 3,
+      "time_s": {
+        "mean": 0.9731536099958854,
+        "std": 0.01204565419608366,
+        "min": 0.9615365099889459,
+        "max": 0.985586359995068
+      },
+      "rss_mb": {
+        "peak": 67.59765625
+      },
+      "throughput": {
+        "items_s": 1.0275870014028188
+      },
+      "status": "ok",
+      "error": null,
+      "delta_vs_baseline_pct": null
+    },
+    {
+      "name": "workflow.plasmid_screen",
+      "params": {
+        "config": "workflows/plasmid_screen.yaml",
+        "steps": 4
+      },
+      "n": 3,
+      "time_s": {
+        "mean": 0.27889854666621733,
+        "std": 0.0181282763284127,
+        "min": 0.266402070003096,
+        "max": 0.29969026999606285
+      },
+      "rss_mb": {
+        "peak": 116.83203125
+      },
+      "throughput": {
+        "items_s": 3.5855332053658526
+      },
+      "status": "ok",
+      "error": null,
+      "delta_vs_baseline_pct": null
+    },
+    {
+      "name": "helix.spectrum_leaderboard",
+      "params": {
+        "peptide": "NQEL",
+        "experimental_spectrum_len": 12,
+        "leaderboard_size": 10
+      },
+      "n": 3,
+      "time_s": {
+        "mean": 0.0015709833290505533,
+        "std": 0.00020791251536626183,
+        "min": 0.0014417700003832579,
+        "max": 0.0018108199874404818
+      },
+      "rss_mb": {
+        "peak": 67.59765625
+      },
+      "throughput": {
+        "items_s": 636.5439922296085
+      },
+      "status": "ok",
+      "error": null,
+      "delta_vs_baseline_pct": null
+    },
+    {
+      "name": "helix.triage_report",
+      "params": {
+        "length_nt": 304,
+        "k": 5,
+        "max_diff": 1,
+        "min_orf_length": 60
+      },
+      "n": 3,
+      "time_s": {
+        "mean": 0.0005165599965645621,
+        "std": 1.338750237106138e-05,
+        "min": 0.0005013799964217469,
+        "max": 0.0005266799998935312
+      },
+      "rss_mb": {
+        "peak": 66.921875
+      },
+      "throughput": {
+        "items_s": 1935.8835501212013
+      },
+      "status": "ok",
+      "error": null,
+      "delta_vs_baseline_pct": null
+    },
+    {
+      "name": "helix.dna_summary",
+      "params": {
+        "length_nt": 304,
+        "window": 200,
+        "step": 40,
+        "k": 6,
+        "max_diff": 1
+      },
+      "n": 3,
+      "time_s": {
+        "mean": 0.00042460000258870423,
+        "std": 4.895921916934962e-06,
+        "min": 0.00041965000855270773,
+        "max": 0.0004294399986974895
+      },
+      "rss_mb": {
+        "peak": 66.921875
+      },
+      "throughput": {
+        "items_s": 2355.157781213361
+      },
+      "status": "ok",
+      "error": null,
+      "delta_vs_baseline_pct": null
+    },
+    {
+      "name": "helix.protein_summary",
+      "params": {
+        "window": 11,
+        "step": 1,
+        "scale": "kd"
+      },
+      "n": 3,
+      "time_s": {
+        "mean": 0.0003188166641242181,
+        "std": 2.987554976372405e-05,
+        "min": 0.00029303999326657504,
+        "max": 0.0003515599964885041
+      },
+      "rss_mb": {
+        "peak": 67.59765625
+      },
+      "throughput": {
+        "items_s": 3136.5989062929834
+      },
+      "status": "ok",
+      "error": null,
+      "delta_vs_baseline_pct": null
+    }
+  ]
+}

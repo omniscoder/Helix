@@ -1,6 +1,7 @@
 # Helix
 [![PyPI](https://img.shields.io/pypi/v/veri-helix.svg)](https://pypi.org/project/veri-helix/)
 [![Reproducible Viz (spec v1.0)](https://img.shields.io/badge/reproducible%20viz-spec%201.0-6f42c1)](docs/schema.md)
+[![Benchmarks](https://img.shields.io/badge/bench-passing-success)](https://omniscoder.github.io/Helix/benchmarks/)
 
 Helix is a hobbyist-first playground for bioinformatics and computational biology. Think of it as a backpack full of lightweight tools, algorithms, and experiments you can remix on evenings, in classrooms, or between lab runs. We embrace rough edges and fast iteration so that ideas can leap from a notebook sketch to a runnable prototype quickly.
 
@@ -165,6 +166,18 @@ Browse task-specific quickstarts in `examples/README.md`. Tiny datasets ship ins
 pytest
 ```
 Pytest powers translator and k-mer regression checks; feel free to add more as you create new helpers.
+
+### Benchmarks
+```bash
+python -m benchmarks.api_benchmarks --repeat 5 --warmup 1 --limit 0 \
+  --out bench-results/api.json --summary-md bench-results/api.md
+```
+The benchmark harness now emits a schema-stamped payload (`bench_result` v1.0) that records commit SHA, dataset provenance, BLAS vendor, CPU/threads, locale, RNG seed, and per-case timing/RSS stats. Use `--scenario dna_summary` to focus on a subset, `--limit 10000` to mimic CI’s faster sweep, and `--summary-md` to capture the Markdown table that CI publishes automatically.
+
+- **CI drift tracking**: the `benchmarks` GitHub Actions job pins `OMP_NUM_THREADS`/`MKL_NUM_THREADS`, seeds RNGs, runs the suite (`repeat=3` by default, `repeat=10` when `bench_heavy=true` via `workflow_dispatch`), uploads `benchmarks/out/bench-$GITHUB_SHA.{json,md}`, and appends the rendered Markdown summary to the workflow summary tab.
+- **Regression gate**: `scripts/bench_check.py .bench/baseline.json benchmarks/out/latest.json --threshold 5` enforces a >+5 % slowdown limit and fails the workflow when hit. Update `.bench/baseline.json` whenever you intentionally change performance characteristics.
+- **Heavier datasets**: export `HELIX_BENCH_DNA_FASTA` / `HELIX_BENCH_PROTEIN_FASTA` (or pass them as workflow_dispatch inputs) to stress-test larger references. The benchmark JSON records the absolute paths and sizes so dashboards can keep apples-to-apples comparisons. Store private or future references under `benchmarks/data/` and toggle them via `bench_heavy=true` when ready.
+- **Dashboard**: CI appends every main-branch run to `docs/data/bench/history.csv`; the published chart lives at [docs/benchmarks.md](docs/benchmarks.md).
 
 ## Reproducible Viz & Viz-Spec
 - Every `helix viz ...` (and CLI modes that call them) accepts `--save out.png` (PNG/SVG/PDF) and auto-emits a sibling `.viz.json` unless `--save-viz-spec` overrides the path.

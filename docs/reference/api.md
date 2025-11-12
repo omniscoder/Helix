@@ -148,3 +148,5 @@ peptides = hx.spectrum_leaderboard(
 ```
 
 Each function returns plain JSON-serializable structures, making it trivial to call `json.dumps(...)`, ship results to `helix viz ...`, or interoperate with scientific Python stacks. Exceptions surface early and with actionable messages—ideal for research-grade reproducibility and provenance.
+
+Need performance baselines? Run `python -m benchmarks.api_benchmarks --repeat 5 --limit 0 --sort mean --out bench/api.json` from the repo root to capture timing data for every helper (or focus on specific functions via `--scenario`). Set `HELIX_BENCH_DNA_FASTA` / `HELIX_BENCH_PROTEIN_FASTA` to swap in larger genomes or proteomes once available, and use `--limit 10000` to mimic CI’s quicker sampling. Each run emits a schema-tagged payload (`bench_result` v1.0) that logs git SHA, BLAS vendor, CPU/threads, RNG seed, and per-case RSS stats so notebooks + CI can do apples-to-apples comparisons. Compare two runs via `scripts/bench_check.py baseline.json current.json --threshold 5` to flag >5% slowdowns automatically, and browse the rolling history at `docs/benchmarks.md`.

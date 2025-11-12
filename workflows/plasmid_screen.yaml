@@ -25,8 +25,8 @@ workflows:
           spectrum: "0,113,114,128,227,242,242,355,356,370,371,484"
           leaderboard: 3
         stdout: spectrum_hits.txt
-      - command: rna
+      - command: [rna, mfe]
         args:
-          sequence: AUGGCCUUUUAA
-          min_loop: 0
-        stdout: rna_fold.txt
+          fasta: ../src/helix/datasets/dna/plasmid_demo.fna
+          dotbracket: plasmid_mfe.dbn
+        stdout: rna_mfe.json
