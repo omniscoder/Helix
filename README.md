@@ -20,7 +20,7 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - **Peptide spectrum sandbox** (`helix.cyclospectrum`): linear + cyclic theoretical spectra, scoring helpers, and a leaderboard CLI for reconstructing peptides.
 - **RNA folding + ensembles** (`helix.rna`): Zuker-style MFE plus McCaskill partition/MEA/centroid helpers with dot-plots and entropy tracks.
 - **Protein helpers** (`helix.protein`): sequence-first summaries (weight, charge, hydropathy windows) with FASTA loading, visualization, and a friendly CLI wrapper.
-- **Workflows + API** (`helix.cli`, `helix.workflows`, `helix.api`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts.
+- **Workflows + API** (`helix.cli`, `helix.workflows`, `helix.api`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts (full helper reference lives in [`docs/reference/api.md`](docs/reference/api.md)).
 - **Seeding + seed-and-extend** (`helix.seed`): deterministic minimizers/syncmers and banded seed-extend helpers for toy mappers and density visualizations.
 - **String/search helpers** (`helix.string`): FM-index construction, exact pattern search, and Myers bit-vector edit-distance for CLI/API explorations.
 - **Graphs & DBG tooling** (`helix.graphs`): build/clean De Bruijn graphs, serialize to JSON/GraphML, and prep for colored/pseudoalignment experiments.
@@ -140,7 +140,7 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   ```bash
   python examples/helix_api_demo.py
   ```
-  Showcases the `helix_api` module for notebook-friendly access to DNA summaries, triage reports, spectra, RNA folding, and (optionally) protein metrics.
+  Showcases the `helix_api` module for notebook-friendly access to DNA summaries, triage reports, spectra, RNA folding, and (optionally) protein metrics. For full signatures and payload descriptions, see the [API reference](docs/reference/api.md).
 
 - **Triage report CLI**
   ```bash
