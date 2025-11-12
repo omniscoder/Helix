@@ -2,6 +2,8 @@
 
 Research workflows often start in notebooks or lightweight scripts where shelling out to the CLI is inconvenient. The `helix.api` module mirrors the CLI surface area but returns plain Python dictionaries and lists, making it straightforward to serialize to JSON, pass through pandas, or feed into downstream visualization components.
 
+> **Simulation only:** `helix.api` helpers work exclusively on digital sequences, spectra, or graphs. They never prescribe wet-lab procedures or interface with instruments—use them strictly for in-silico analysis and visualization.
+
 The helpers prefer explicit inputs: every function accepts either an inline `sequence="ACGU..."` **or** an `input_path=Path("sample.fasta")` when DNA/protein IO is relevant. Validation happens up front—invalid bases, overlapping arguments, and missing files raise informative `ValueError` or `ImportError` exceptions so that provenance remains audit-friendly.
 
 ## Function reference

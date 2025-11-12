@@ -2,7 +2,7 @@
 
 from importlib import metadata
 
-from . import bioinformatics, codon, cyclospectrum, triage, string, seed, motif
+from . import bioinformatics, codon, cyclospectrum, triage, string, seed, motif, crispr, prime
 from .api import dna_summary, triage_report, fold_rna, spectrum_leaderboard, protein_summary
 
 try:  # pragma: no cover - metadata only at runtime
@@ -18,6 +18,8 @@ __all__ = [
     "string",
     "seed",
     "motif",
+    "crispr",
+    "prime",
     "dna_summary",
     "triage_report",
     "fold_rna",

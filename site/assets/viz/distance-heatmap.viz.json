@@ -1,0 +1,1 @@
+{"kind":"distance_heatmap","meta":{"input_sha256":"88c2d7d880220f0cda33495da4f1f6509bc701b01927146aa8da28942492ef76","method":"demo","n":3,"spec_version":"1.0"},"primitives":{"max":0.1,"mean":0.051111111111111114,"min":0.0},"spec_version":"1.0","timestamp":"2025-11-11T21:14:25Z"}

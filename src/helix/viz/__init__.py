@@ -8,6 +8,7 @@ from .minimizers import plot_minimizer_density
 from .motif import plot_motif_logo
 from .rna import plot_rna_dotplot
 from .seed_chain import plot_seed_chain
+from .crispr_track import render_crispr_track
 
 __all__ = [
     "motif",
@@ -19,4 +20,5 @@ __all__ = [
     "plot_motif_logo",
     "plot_seed_chain",
     "plot_rna_dotplot",
+    "render_crispr_track",
 ]

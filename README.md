@@ -3,9 +3,9 @@
 [![Reproducible Viz (spec v1.0)](https://img.shields.io/badge/reproducible%20viz-spec%201.0-6f42c1)](docs/schema.md)
 [![Benchmarks](https://img.shields.io/badge/bench-passing-success)](https://omniscoder.github.io/Helix/benchmarks/)
 
-Helix is a hobbyist-first playground for bioinformatics and computational biology. Think of it as a backpack full of lightweight tools, algorithms, and experiments you can remix on evenings, in classrooms, or between lab runs. We embrace rough edges and fast iteration so that ideas can leap from a notebook sketch to a runnable prototype quickly.
+Helix is a hobbyist-first playground for **computational** bioinformatics and simulations. Think of it as a backpack full of lightweight tools, algorithms, and in-silico experiments you can remix on evenings, in classrooms, or during notebook sessions. We embrace rough edges and fast iteration so that ideas can leap from a notebook sketch to a reproducible **software** prototype quickly.
 
-Helix complements our production platform OGN rather than competing with it. When a prototype proves its value, you can polish and port it into OGN. Until then, Helix is the sandbox where curiosity rules.
+Helix complements our production platform OGN rather than competing with it. When a computational prototype proves its value, you can polish and port it into OGN. Until then, Helix is the sandbox where curiosity rules. All outputs are simulations or static analyses; no wet-lab instructions or experimental guidance are provided.
 
 👉 Docs: https://omniscoder.github.io/Helix/
 
@@ -20,6 +20,7 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - **Translation and mass lookups** (`helix.codon`, `helix.amino_acids`): resilient codon translation, bidirectional ORF scanning, frameshift heuristics, and peptide mass utilities.
 - **Peptide spectrum sandbox** (`helix.cyclospectrum`): linear + cyclic theoretical spectra, scoring helpers, and a leaderboard CLI for reconstructing peptides.
 - **RNA folding + ensembles** (`helix.rna`): Zuker-style MFE plus McCaskill partition/MEA/centroid helpers with dot-plots and entropy tracks.
+- **CRISPR/prime scaffolding** (`helix.crispr`, `helix.prime`): PAM registry, guide discovery CLI + schema payloads, and stubs for scoring/simulation/viz.
 - **Protein helpers** (`helix.protein`): sequence-first summaries (weight, charge, hydropathy windows) with FASTA loading, visualization, and a friendly CLI wrapper.
 - **Workflows + API** (`helix.cli`, `helix.workflows`, `helix.api`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts (full helper reference lives in [`docs/reference/api.md`](docs/reference/api.md)).
 - **Seeding + seed-and-extend** (`helix.seed`): deterministic minimizers/syncmers and banded seed-extend helpers for toy mappers and density visualizations.
@@ -28,6 +29,12 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - **Motif discovery** (`helix.motif`): EM-based PWM inference (baseline MEME) with CLI/API symmetry and optional PWM plots.
 - **Neural net doodles** (`ann.py`): minimal NumPy-only network for experimenting with small bio datasets.
 - **Schema + provenance tooling** (`helix.schema`, `helix viz --schema`, `helix schema diff/manifest`, `helix workflows --with-schema`): every JSON artifact and PNG knows its schema kind, spec version, and SHA-256 for audit-ready reproducibility.
+
+## Safety & Scope
+- Helix operates entirely in silico: it ingests digital sequences or public reference datasets and emits JSON summaries, plots, or other software artifacts.
+- The project never controls lab equipment, prescribes wet-lab steps, or suggests reagent handling; those activities belong in downstream, compliance-reviewed systems.
+- Contributions, docs, and examples must stay simulation-only—if an idea drifts toward physical protocols, move it to OGN (or another governed surface) after review.
+- Provenance metadata is provided so researchers can audit computational pipelines and reproducible simulations, not to guide lab execution.
 
 ## Repo Layout
 ```
@@ -124,6 +131,16 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   ```
   The `helix` entry point wraps the DNA, spectrum, RNA, protein, triage, viz, and workflow helpers so you can run ad-hoc analyses without hunting for scripts.
 
+- **CRISPR guide + off-target scan**
+  ```bash
+  helix crispr find-guides --fasta target.fna --pam SpCas9-NGG --guide-len 20 --json guides.json
+  helix crispr offtargets --fasta genome.fna --guides guides.json --max-mm 3 --json hits.json
+  helix crispr score --guides guides.json --hits hits.json --weights weights/cfd-lite.json --json scores.json
+  helix crispr simulate --fasta target.fna --guides guides.json --guide-id g1 --draws 1000 --seed 42 --json crispr_sim.json
+  helix viz crispr-track --input crispr_sim.json --save crispr_track.png
+  ```
+  Produces schema-tagged JSON (`crispr.guides`, `crispr.offtargets`, `crispr.sim`) with optional scoring and cut/repair simulations; CLI viz renders a provenance-stamped PNG. Sequences remain masked unless `--emit-sequences` is explicitly passed.
+
 - **Workflow runner**
   ```bash
   helix workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs
@@ -195,7 +212,7 @@ The benchmark harness now emits a schema-stamped payload (`bench_result` v1.0) t
 - Compare frameshift candidates against known gene models to flag likely sequencing errors.
 - Pair the ORF scanner with the GC skew plot to compare predicted origins and coding regions.
 - Use the CSV/plot outputs from `examples/kmer_counter.py` to highlight SNP hotspots and share charts with the community.
-- Customize `notebooks/triage_dashboard.ipynb` with your own sequences and publish the visuals for lab updates.
+- Customize `notebooks/triage_dashboard.ipynb` with your own sequences and publish the visuals for project updates (digital reports only).
 - Hook `cyclospectrum.py` into a simple leaderboard scorer and visualize the mass differences.
 - Swap the activation function in `ann.py`, log loss curves, and document what changes.
 - Build a notebook that fetches a PDB entry, prints its sequence via `protein.py`, and sketches the secondary structure counts.
@@ -217,7 +234,7 @@ Browse ready-to-run snippets in `examples/README.md`, and share your results in 
 5. Draft an `examples/` gallery featuring community notebooks and weekend projects.
 
 ## Relationship to OGN
-Helix is intentionally lightweight. We do not guarantee production stability, large-scale data orchestration, or SLA-backed support. When your prototype needs robustness, data governance, or integration with lab automation:
+Helix is intentionally lightweight. We do not guarantee production stability, large-scale data orchestration, or SLA-backed support, and we never interface with lab automation hardware. When your prototype needs robustness, data governance, or integration with those systems:
 1. Package the core logic (functions, notebooks, scripts).
 2. Identify equivalent building blocks in OGN or write adapters that call into it.
 3. Open an OGN ticket or PR referencing the Helix prototype so we can collaborate on the migration.

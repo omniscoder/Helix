@@ -5,10 +5,15 @@ import argparse
 import hashlib
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from . import bioinformatics, cyclospectrum, triage
+from .crispr import guide as crispr_guide
+from .crispr import pam as crispr_pam
+from .crispr import score
+from .crispr import simulate as crispr_simulate
 from .io import read_fasta
 from .string import fm as string_fm
 from .string import edit as string_edit
@@ -46,6 +51,7 @@ try:  # optional viz imports (matplotlib)
         plot_motif_logo,
         plot_seed_chain,
         plot_rna_dotplot,
+        render_crispr_track,
     )
     VIZ_AVAILABLE = True
 except ImportError:  # pragma: no cover - viz extra not installed
@@ -198,6 +204,10 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _sequence_sha256(sequence: str) -> str:
+    return hashlib.sha256(sequence.encode("utf-8")).hexdigest()
 
 
 def _current_command_str() -> str:
@@ -375,6 +385,148 @@ def command_rna_ensemble(args: argparse.Namespace) -> None:
         _ensure_viz_available("RNA ensemble entropy plotting")
         viz_rna.plot_entropy(ensemble["entropy"], Path(args.entropy_plot), title=f"Entropy ({header})")
 
+
+def command_crispr_find_guides(args: argparse.Namespace) -> None:
+    raw_sequence = _load_sequence_arg(args.sequence, args.fasta)
+    normalized_sequence = bioinformatics.normalize_sequence(raw_sequence)
+    pam_def = crispr_pam.get_pam(args.pam)
+    window = tuple(args.window) if args.window else None
+    try:
+        guides = crispr_guide.find_guides(
+            normalized_sequence,
+            pam_def,
+            args.guide_len,
+            strand=args.strand,
+            window=window,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    if not args.emit_sequences:
+        for guide in guides:
+            guide["sequence"] = None
+
+    payload = {
+        "schema": {"kind": "crispr.guides", "spec_version": SPEC_VERSION},
+        "meta": {"helix_version": HELIX_VERSION, "timestamp": datetime.now(timezone.utc).isoformat()},
+        "input_sha256": _sequence_sha256(normalized_sequence),
+        "sequence_length": len(normalized_sequence),
+        "pam": pam_def,
+        "params": {"guide_length": args.guide_len, "strand": args.strand},
+        "guides": guides,
+    }
+    if window:
+        payload["params"]["window"] = list(window)
+
+    validated = validate_viz_payload("crispr.guides", payload)
+    if not args.emit_sequences:
+        for guide in validated.get("guides", []):
+            guide.setdefault("sequence", None)
+    text = json.dumps(validated, indent=2)
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(text + "\n", encoding="utf-8")
+        print(f"Guide JSON saved to {args.json} ({len(guides)} guides).")
+    else:
+        print(text)
+        print(f"Guides discovered: {len(guides)}")
+    if not guides:
+        print("No guides found with the current parameters.")
+
+
+def _read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def command_crispr_offtargets(args: argparse.Namespace) -> None:
+    raw_sequence = _load_sequence_arg(args.genome, args.fasta)
+    genome = bioinformatics.normalize_sequence(raw_sequence)
+    guides_payload = _read_json(args.guides)
+    pam_def = crispr_pam.get_pam(args.pam)
+    params = {"max_mismatches": args.max_mm, "max_gaps": args.max_gap}
+
+    guide_hits = []
+    for guide in guides_payload.get("guides", []):
+        hits = score.enumerate_off_targets(
+            genome,
+            guide,
+            pam_def,
+            max_mm=args.max_mm,
+            max_gap=args.max_gap,
+        )
+        guide_hits.append({"guide_id": guide.get("id"), "hits": hits})
+
+    payload = {
+        "schema": {"kind": "crispr.offtargets", "spec_version": SPEC_VERSION},
+        "meta": {"helix_version": HELIX_VERSION, "timestamp": datetime.now(timezone.utc).isoformat()},
+        "input_sha256": _sequence_sha256(genome),
+        "pam": pam_def,
+        "params": params,
+        "guides": guide_hits,
+    }
+
+    validated = validate_viz_payload("crispr.offtargets", payload)
+    text = json.dumps(validated, indent=2)
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(text + "\n", encoding="utf-8")
+        print(f"Off-target JSON saved to {args.json}.")
+    else:
+        print(text)
+    if not guide_hits:
+        print("No guides provided; off-target search skipped.")
+
+
+def command_crispr_score(args: argparse.Namespace) -> None:
+    guides_payload = _read_json(args.guides)
+    hits_payload = _read_json(args.hits)
+    weights = score.load_weights(args.weights)
+    guide_lookup = {guide.get("id"): guide for guide in guides_payload.get("guides", []) if guide.get("id")}
+
+    on_params = weights.get("on_target", {})
+    off_params = weights.get("off_target", {})
+
+    for entry in hits_payload.get("guides", []):
+        guide_id = entry.get("guide_id")
+        guide_info = guide_lookup.get(guide_id, {})
+        entry["on_target_score"] = score.score_on_target(guide_info, on_params)
+        entry["hits"] = score.score_off_targets(entry.get("hits", []), off_params)
+
+    hits_payload.setdefault("meta", {})["weights"] = {"path": str(args.weights) if args.weights else None}
+    validated = validate_viz_payload("crispr.offtargets", hits_payload)
+    text = json.dumps(validated, indent=2)
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(text + "\n", encoding="utf-8")
+        print(f"Scored off-target JSON saved to {args.json}.")
+    else:
+        print(text)
+
+
+def command_crispr_simulate(args: argparse.Namespace) -> None:
+    raw_sequence = _load_sequence_arg(args.sequence, args.fasta)
+    guides_payload = _read_json(args.guides)
+    guide = next((g for g in guides_payload.get("guides", []) if g.get("id") == args.guide_id), None)
+    if not guide:
+        raise SystemExit(f"Guide '{args.guide_id}' not found in {args.guides}.")
+    priors = _read_json(args.priors) if args.priors else None
+    result = crispr_simulate.simulate_cut_repair(
+        raw_sequence,
+        guide,
+        priors,
+        draws=args.draws,
+        seed=args.seed,
+        emit_sequence=args.emit_sequences,
+    )
+    result.setdefault("meta", {})["helix_version"] = HELIX_VERSION
+    validated = validate_viz_payload("crispr.sim", result)
+    text = json.dumps(validated, indent=2)
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(text + "\n", encoding="utf-8")
+        print(f"Simulation JSON saved to {args.json}.")
+    else:
+        print(text)
 
 
 def command_protein(args: argparse.Namespace) -> None:
@@ -1119,6 +1271,31 @@ def command_viz_motif_logo(args: argparse.Namespace) -> None:
         )
 
 
+def command_viz_crispr_track(args: argparse.Namespace) -> None:
+    _ensure_viz_available("helix viz crispr-track")
+    payload = _validate_payload_or_exit("crispr.sim", _read_json(args.input))
+    extra_meta = _input_meta(payload)
+    save_path = args.save
+    save = str(save_path) if save_path else None
+    spec_path = _default_viz_spec_path(save_path, args.save_viz_spec)
+    _, spec = render_crispr_track(
+        payload,
+        save=save,
+        show=args.show,
+        extra_meta=extra_meta,
+        save_viz_spec=str(spec_path) if spec_path else None,
+    )
+    if save_path:
+        _write_provenance(
+            save_path,
+            schema_kind="viz_crispr_track",
+            spec=spec,
+            input_sha=extra_meta.get("input_sha256"),
+            command=_current_command_str(),
+            viz_spec_path=spec_path,
+        )
+
+
 def command_viz_schema(args: argparse.Namespace) -> None:
     kind = args.kind
     try:
@@ -1269,7 +1446,15 @@ def command_demo_viz(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Helix unified CLI.")
+    description = (
+        "Helix unified CLI for computational bioinformatics workflows.\n\n"
+        "Simulation only: Helix operates purely in silico on digital sequences/datasets and does not "
+        "control lab equipment or prescribe wet-lab procedures."
+    )
+    parser = argparse.ArgumentParser(
+        description=description,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     dna = subparsers.add_parser("dna", help="Summarize GC, windows, and k-mer hotspots.")
@@ -1308,6 +1493,77 @@ def build_parser() -> argparse.ArgumentParser:
     rna_ensemble.add_argument("--entropy-plot", type=Path, help="Optional entropy plot path (requires matplotlib).")
     rna_ensemble.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON for dot-plot.")
     rna_ensemble.set_defaults(func=command_rna_ensemble)
+
+    crispr = subparsers.add_parser("crispr", help="CRISPR design helpers.")
+    crispr_sub = crispr.add_subparsers(dest="crispr_command", required=True)
+
+    crispr_find = crispr_sub.add_parser("find-guides", help="Discover CRISPR guide candidates near PAM matches.")
+    crispr_find.add_argument("--sequence", help="Inline target sequence.")
+    crispr_find.add_argument("--fasta", type=Path, help="Path to a FASTA file containing the target sequence.")
+    crispr_find.add_argument("--pam", default="SpCas9-NGG", help="Named PAM definition (default: SpCas9-NGG).")
+    crispr_find.add_argument("--guide-len", type=int, default=20, help="Guide length (default: 20).")
+    crispr_find.add_argument(
+        "--strand",
+        choices=["+", "-", "both"],
+        default="both",
+        help="Strand(s) to search (default: both).",
+    )
+    crispr_find.add_argument(
+        "--window",
+        type=int,
+        nargs=2,
+        metavar=("START", "END"),
+        help="Optional 0-based window [START, END) to limit guide discovery.",
+    )
+    crispr_find.add_argument("--json", type=Path, help="Optional path to write the crispr.guides JSON payload.")
+    crispr_find.add_argument(
+        "--emit-sequences",
+        action="store_true",
+        help="Include guide sequences in the JSON output (default masks sequences).",
+    )
+    crispr_find.set_defaults(func=command_crispr_find_guides)
+
+    crispr_off = crispr_sub.add_parser("offtargets", help="Enumerate CRISPR off-target sites for each guide.")
+    crispr_off.add_argument("--genome", help="Inline genomic sequence to search.")
+    crispr_off.add_argument("--fasta", type=Path, help="FASTA file containing the genome/contig to search.")
+    crispr_off.add_argument("--guides", type=Path, required=True, help="Path to a crispr.guides JSON file.")
+    crispr_off.add_argument("--pam", default="SpCas9-NGG", help="Named PAM definition (default: SpCas9-NGG).")
+    crispr_off.add_argument("--max-mm", type=int, default=3, help="Maximum mismatches allowed (default: 3).")
+    crispr_off.add_argument(
+        "--max-gap",
+        type=int,
+        default=0,
+        help="Maximum gaps allowed (default: 0; currently gaps>0 unsupported).",
+    )
+    crispr_off.add_argument("--json", type=Path, help="Optional path to write crispr.offtargets JSON.")
+    crispr_off.set_defaults(func=command_crispr_offtargets)
+
+    crispr_score = crispr_sub.add_parser("score", help="Apply on/off-target scoring using a weights plugin.")
+    crispr_score.add_argument("--guides", type=Path, required=True, help="Path to crispr.guides JSON.")
+    crispr_score.add_argument("--hits", type=Path, required=True, help="Path to crispr.offtargets JSON.")
+    crispr_score.add_argument(
+        "--weights",
+        type=Path,
+        help="Optional JSON file describing scoring weights (position/mismatch penalties).",
+    )
+    crispr_score.add_argument("--json", type=Path, help="Optional output JSON path for scored payload.")
+    crispr_score.set_defaults(func=command_crispr_score)
+
+    crispr_sim = crispr_sub.add_parser("simulate", help="Simulate CRISPR cut/repair outcomes.")
+    crispr_sim.add_argument("--sequence", help="Inline site sequence.")
+    crispr_sim.add_argument("--fasta", type=Path, help="FASTA file containing the site sequence.")
+    crispr_sim.add_argument("--guides", type=Path, required=True, help="Path to crispr.guides JSON.")
+    crispr_sim.add_argument("--guide-id", required=True, help="Guide identifier to simulate.")
+    crispr_sim.add_argument("--priors", type=Path, help="JSON file describing outcome priors/weights.")
+    crispr_sim.add_argument("--draws", type=int, default=1000, help="Number of Monte Carlo draws (default: 1000).")
+    crispr_sim.add_argument("--seed", type=int, help="Optional RNG seed for reproducibility.")
+    crispr_sim.add_argument("--json", type=Path, help="Optional path to write crispr.sim JSON.")
+    crispr_sim.add_argument(
+        "--emit-sequences",
+        action="store_true",
+        help="Include raw site/guide sequences in the JSON (masked by default).",
+    )
+    crispr_sim.set_defaults(func=command_crispr_simulate)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
     protein.add_argument("--sequence", help="Inline amino-acid string.")
@@ -1378,6 +1634,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     viz_hydro.add_argument("--show", action="store_true", help="Display interactively.")
     viz_hydro.set_defaults(func=command_viz_hydropathy)
+
+    viz_crispr = viz_subparsers.add_parser("crispr-track", help="Plot a CRISPR guide/outcome track.")
+    viz_crispr.add_argument("--input", type=Path, required=True, help="Path to a crispr.sim JSON payload.")
+    viz_crispr.add_argument("--save", type=Path, help="Optional output image path.")
+    viz_crispr.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON output path.")
+    viz_crispr.add_argument("--show", action="store_true", help="Display interactively.")
+    viz_crispr.set_defaults(func=command_viz_crispr_track)
 
     viz_min = viz_subparsers.add_parser("minimizers", help="Plot minimizer density from a JSON payload.")
     viz_min.add_argument("--input", type=Path, help="JSON with sequence_length and minimizers.")

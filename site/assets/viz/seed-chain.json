@@ -1,0 +1,22 @@
+{
+  "ref_length": 400,
+  "qry_length": 380,
+  "chains": [
+    [
+      {
+        "ref_start": 10,
+        "qry_start": 12,
+        "ref_end": 40,
+        "qry_end": 42
+      }
+    ],
+    [
+      {
+        "ref_start": 80,
+        "qry_start": 78,
+        "ref_end": 120,
+        "qry_end": 118
+      }
+    ]
+  ]
+}

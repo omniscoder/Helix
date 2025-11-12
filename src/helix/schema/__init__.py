@@ -13,7 +13,7 @@ _SPEC_MANIFEST = json.loads(
 SPEC_VERSION: str = _SPEC_MANIFEST["spec_version"]
 
 try:  # pragma: no cover - optional dependency
-    from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+    from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
     PYDANTIC_AVAILABLE = True
 except ImportError:  # pragma: no cover - fallback path
@@ -57,7 +57,7 @@ def _check_spec_version(payload: Dict[str, Any], kind: str) -> None:
 if PYDANTIC_AVAILABLE:
 
     class _BaseSchemaModel(BaseModel):
-        model_config = ConfigDict(extra="allow")
+        model_config = ConfigDict(extra="allow", protected_namespaces=(), populate_by_name=True)
 
     class MinimizersPayload(_BaseSchemaModel):
         sequence_length: int
@@ -169,6 +169,74 @@ if PYDANTIC_AVAILABLE:
             return values
 
 
+    class CRISPRPamSite(_BaseSchemaModel):
+        start: int
+        end: int
+
+
+    class CRISPRGuideEntry(_BaseSchemaModel):
+        id: Optional[str] = None
+        start: int
+        end: int
+        strand: str
+        pam_site: CRISPRPamSite
+        gc_content: float
+        sequence: Optional[str] = None
+        metadata: Optional[Dict[str, Any]] = None
+
+
+    class CRISPRGuidesPayload(_BaseSchemaModel):
+        schema_alias: Dict[str, Any] = Field(alias="schema")
+        input_sha256: str
+        sequence_length: int
+        pam: Dict[str, Any]
+        params: Dict[str, Any]
+        guides: List[CRISPRGuideEntry]
+        meta: Optional[Dict[str, Any]] = None
+
+
+    class CRISPROffTargetHit(_BaseSchemaModel):
+        start: int
+        end: int
+        strand: str
+        pam_ok: bool
+        mismatches: List[Dict[str, Any]] = []
+        distance: Optional[int] = None
+        score: Optional[float] = None
+
+
+    class CRISPROffTargetGuideHits(_BaseSchemaModel):
+        guide_id: Optional[str] = None
+        hits: List[CRISPROffTargetHit]
+        on_target_score: Optional[float] = None
+
+
+    class CRISPROffTargetsPayload(_BaseSchemaModel):
+        schema_alias: Dict[str, Any] = Field(alias="schema")
+        input_sha256: str
+        pam: Dict[str, Any]
+        params: Dict[str, Any]
+        guides: List[CRISPROffTargetGuideHits]
+        meta: Optional[Dict[str, Any]] = None
+
+
+    class CRISPRSimOutcome(_BaseSchemaModel):
+        label: str
+        count: int
+        probability: float
+        diff: Optional[Dict[str, Any]] = None
+
+
+    class CRISPRSimPayload(_BaseSchemaModel):
+        schema_alias: Dict[str, Any] = Field(alias="schema")
+        site: Dict[str, Any]
+        guide: Dict[str, Any]
+        priors: Dict[str, Any]
+        draws: int
+        outcomes: List[CRISPRSimOutcome]
+        meta: Optional[Dict[str, Any]] = None
+
+
     _SCHEMA_MODELS: Dict[str, Any] = {
         "viz_minimizers": MinimizersPayload,
         "viz_seed_chain": SeedChainPayload,
@@ -176,6 +244,9 @@ if PYDANTIC_AVAILABLE:
         "viz_alignment_ribbon": AlignmentRibbonPayload,
         "viz_distance_heatmap": DistanceHeatmapPayload,
         "viz_motif_logo": MotifLogoPayload,
+        "crispr.guides": CRISPRGuidesPayload,
+        "crispr.offtargets": CRISPROffTargetsPayload,
+        "crispr.sim": CRISPRSimPayload,
     }
 else:
     _SCHEMA_MODELS = {}
@@ -193,7 +264,7 @@ def validate_viz_payload(kind: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         validated = model.model_validate(payload)
     except ValidationError as exc:  # pragma: no cover - exercised via tests
         raise SchemaError(f"{kind} payload invalid: {exc}") from exc
-    return validated.model_dump(exclude_none=True)
+    return validated.model_dump(exclude_none=True, by_alias=True)
 
 
 def describe_schema(kind: str | None = None) -> str:
