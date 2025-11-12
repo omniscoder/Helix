@@ -31,6 +31,8 @@ nav:
       - Schema Tools: cli/schema.md
       - Workflows: cli/workflows.md
       - Demos: cli/demo.md
+  - API Reference:
+      - helix.api: reference/api.md
   - Visualization Gallery:
       - Alignment Ribbon: visualization/alignment-ribbon.md
       - RNA Dot-Plot: visualization/rna-dotplot.md
