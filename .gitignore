@@ -9,3 +9,6 @@ bench-results/
 benchmarks/data/*
 !benchmarks/data/.keep
 benchmarks/out/
+
+# MkDocs build output (always rebuilt in CI)
+site/

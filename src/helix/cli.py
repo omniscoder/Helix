@@ -45,7 +45,6 @@ from .genome.digital import DigitalGenome as CoreDigitalGenome
 from .crispr.dag_api import build_crispr_edit_dag
 from .prime.dag_api import build_prime_edit_dag
 from .edit.dag import EditDAG, dag_from_payload
-from .visualization.dag_viz import save_edit_dag_png
 from .schema import (
     SchemaError,
     SPEC_VERSION,
@@ -145,6 +144,23 @@ def _schema_sample(name: str) -> Optional[dict]:
     if not entry:
         return None
     return json.loads(json.dumps(entry["data"]))
+
+
+def _load_dag_viz_exporter():
+    """
+    Import the edit DAG visualization helper only when needed.
+
+    The dependency chain pulls in optional packages (networkx, matplotlib), so
+    we defer the import until a visualization command is invoked.
+    """
+    try:
+        from .visualization.dag_viz import save_edit_dag_png
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise SystemExit(
+            "Edit DAG visualization requires optional dependencies 'networkx' and 'matplotlib'. "
+            "Install them via 'pip install helix[viz]' or 'pip install networkx matplotlib'."
+        ) from exc
+    return save_edit_dag_png
 
 
 def _print_schema_help(kind: str, sample_name: str | None = None) -> None:
@@ -978,6 +994,7 @@ def command_prime_dag(args: argparse.Namespace) -> None:
 def command_edit_dag_viz(args: argparse.Namespace) -> None:
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
     dag = dag_from_payload(payload)
+    save_edit_dag_png = _load_dag_viz_exporter()
     save_edit_dag_png(dag, str(args.out))
     print(f"Edit DAG visualization saved to {args.out}.")
 

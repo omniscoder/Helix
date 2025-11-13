@@ -1,1 +1,0 @@
-{"kind":"minimizer_density","meta":{"bin_count":200,"input_sha256":"e6506d0977c607dc038475d7fbc80ee5b341f5a9f80aec55e2bb1e40b841cc22","sequence_length":500,"spec_version":"1.0"},"primitives":{"density_max":1,"density_sum":3,"points":200,"total_minimizers":3,"x_max":500,"x_min":0},"spec_version":"1.0","timestamp":"2025-11-11T21:14:24Z"}

@@ -1,1 +1,0 @@
-{"kind":"alignment_ribbon","meta":{"input_sha256":"d8ddd5f6748316d6573a57e244800849c22e9b4e59d03f95530ef5a7552ff987","metadata":{"name":"demo_read"},"qry_length":290,"ref_length":300,"score":null,"spec_version":"1.0"},"primitives":{"deletions":1,"insertions":1,"matches":0,"path_points":61,"segments":5},"spec_version":"1.0","timestamp":"2025-11-11T21:14:25Z"}
