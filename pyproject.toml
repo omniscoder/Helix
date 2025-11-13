@@ -22,7 +22,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.6"]
+viz = [
+    "matplotlib>=3.6",
+    "networkx>=3.0",
+]
 protein = ["biopython>=1.84"]
 schema = ["pydantic>=2.5"]
 dev = [
@@ -33,6 +36,7 @@ dev = [
     "build",
     "twine",
     "matplotlib>=3.6",
+    "networkx>=3.0",
     "biopython>=1.84",
     "pydantic>=2.5",
     "psutil>=5.9",
