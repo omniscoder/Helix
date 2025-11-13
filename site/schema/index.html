@@ -1032,6 +1032,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Registered Schemas">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#crispr-prime-simulation-payloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRISPR / Prime simulation payloads
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1079,7 +1096,7 @@
 <li><strong>Diff manifests:</strong> <code>helix schema diff --base old_manifest.json [--target new_manifest.json]</code> summarizes added/removed/modified schemas (use <code>--format json</code> for machine-friendly reports).</li>
 </ul>
 <h2 id="registered-schemas">Registered Schemas<a class="headerlink" href="#registered-schemas" title="Permanent link">&para;</a></h2>
-<p>All schemas live under the <code>viz_*</code> namespace today and correspond to the visualization contracts in <a href="../viz/">Visualization JSON Schemas</a>. Use <code>helix schema manifest</code> to obtain the machine-readable form; a truncated excerpt:</p>
+<p>Most schemas live under the <code>viz_*</code> namespace and correspond to the visualization contracts in <a href="../viz/">Visualization JSON Schemas</a>. Use <code>helix schema manifest</code> to obtain the machine-readable form; a truncated excerpt:</p>
 <div class="codehilite"><pre><span></span><code>$<span class="w"> </span>helix<span class="w"> </span>schema<span class="w"> </span>manifest<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.schemas.viz_alignment_ribbon.schema.properties | keys&#39;</span>
 <span class="o">[</span>
 <span class="w">  </span><span class="s2">&quot;cigar&quot;</span>,
@@ -1092,6 +1109,13 @@
 </code></pre></div>
 
 <p>Whenever we add optional fields, the spec version bumps to <code>1.x</code>. Breaking changes (field removal/renames) would trigger a major bump to <code>2.0</code>. The manifest + CLI help make these bumps explicit.</p>
+<h3 id="crispr-prime-simulation-payloads">CRISPR / Prime simulation payloads<a class="headerlink" href="#crispr-prime-simulation-payloads" title="Permanent link">&para;</a></h3>
+<p>The new digital simulators emit their own schema-tagged payloads so downstream tooling can trust the structure:</p>
+<ul>
+<li><code>crispr.cut_events</code> – produced by <code>helix crispr genome-sim</code>, contains <code>{cas, guide, genome summary, params, events[]}</code> where every event records the candidate <code>TargetSite</code>, cut position, score, and serialized guide/Cas metadata.</li>
+<li><code>prime.edit_sim</code> – produced by <code>helix prime simulate</code>, bundles <code>{editor, peg, genome summary, params, outcomes[]}</code> where each outcome includes the targeted site, edited sequence, logit score, and a short description (<code>intended_edit</code>, <code>indel_loss</code>, <code>no_edit</code>, etc.).</li>
+</ul>
+<p>Both schemas participate in the manifest/validator pipeline, so <code>helix schema manifest</code> and <code>helix viz schema --kind ...</code> will now list them alongside the existing viz payloads.</p>
 <h2 id="workflow-provenance">Workflow Provenance<a class="headerlink" href="#workflow-provenance" title="Permanent link">&para;</a></h2>
 <p>Workflows can declare schema expectations per step:</p>
 <div class="codehilite"><pre><span></span><code><span class="nt">steps</span><span class="p">:</span>

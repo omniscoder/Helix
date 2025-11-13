@@ -1,0 +1,82 @@
+{
+  "artifact": "helix.prime.edit_dag.v1",
+  "version": "1",
+  "metadata": {
+    "genome_id": "demo-genome",
+    "created_at": "2025-11-12T16:05:00Z",
+    "mechanism": "prime-pe3",
+    "rules": [
+      "prime.rtt_clean",
+      "prime.no_edit"
+    ]
+  },
+  "root_id": "node_0",
+  "nodes": {
+    "node_0": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 0,
+        "stage": "root"
+      },
+      "sequences": {
+        "chrDemo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    "node_1": {
+      "log_prob": -0.35667494393873245,
+      "metadata": {
+        "time_step": 1,
+        "stage": "prime_rtt",
+        "label": "prime_rtt_clean"
+      },
+      "sequences": {
+        "chrDemo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATTTTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    "node_2": {
+      "log_prob": -1.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "prime_no_edit",
+        "label": "prime_no_edit_branch"
+      },
+      "sequences": {
+        "chrDemo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "node_0",
+      "target": "node_1",
+      "rule": "prime.rtt_clean",
+      "event": {
+        "chrom": "chrDemo",
+        "start": 100,
+        "end": 104,
+        "replacement": "ATTTT",
+        "metadata": {
+          "label": "prime_rtt_clean",
+          "stage": "prime_rtt",
+          "mechanism": "prime"
+        }
+      }
+    },
+    {
+      "source": "node_0",
+      "target": "node_2",
+      "rule": "prime.no_edit",
+      "event": {
+        "chrom": "__none__",
+        "start": 0,
+        "end": 0,
+        "replacement": "",
+        "metadata": {
+          "label": "prime_no_edit_branch",
+          "stage": "prime_no_edit",
+          "mechanism": "prime"
+        }
+      }
+    }
+  ]
+}

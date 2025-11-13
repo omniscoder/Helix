@@ -133,6 +133,11 @@ def _extract_window(sequence: str, start: int, end: int) -> str:
     return sequence[start:end]
 
 
+def apply_rtt_edit(seq: str, site_start: int, site_end: int, rtt: str) -> str:
+    """Return a copy of `seq` with [site_start:site_end] replaced by rtt."""
+    return seq[:site_start] + rtt + seq[site_end:]
+
+
 def _apply_rtt(reference: str, offset: int, template: str) -> str:
     if not reference:
         return template

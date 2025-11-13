@@ -17,7 +17,7 @@ from .crispr import simulate as crispr_simulate
 from .crispr.model import (
     CasSystem,
     CasSystemType,
-    DigitalGenome,
+    DigitalGenome as CrisprDigitalGenome,
     GuideRNA,
     PAMRule,
     TargetSite,
@@ -41,6 +41,11 @@ from .sketch import compute_minhash, mash_distance, compute_hll, union_hll
 from .motif import discover_motifs
 from .prime.model import PegRNA, PrimeEditOutcome, PrimeEditor
 from .prime.simulator import simulate_prime_edit
+from .genome.digital import DigitalGenome as CoreDigitalGenome
+from .crispr.dag_api import build_crispr_edit_dag
+from .prime.dag_api import build_prime_edit_dag
+from .edit.dag import EditDAG, dag_from_payload
+from .visualization.dag_viz import save_edit_dag_png
 from .schema import (
     SchemaError,
     SPEC_VERSION,
@@ -340,7 +345,7 @@ def _resolve_cas_system(
     raise SystemExit("Provide --cas or --cas-config to select a CasSystem.")
 
 
-def _load_digital_genome(path: Path) -> DigitalGenome:
+def _load_digital_genome(path: Path) -> CrisprDigitalGenome:
     fasta_path = Path(path)
     if not fasta_path.exists():
         raise SystemExit(f"Genome FASTA '{fasta_path}' not found.")
@@ -351,10 +356,10 @@ def _load_digital_genome(path: Path) -> DigitalGenome:
     for idx, (header, seq) in enumerate(records, start=1):
         chrom = header or f"sequence_{idx}"
         sequences[chrom] = bioinformatics.normalize_sequence(seq)
-    return DigitalGenome(sequences=sequences)
+    return CrisprDigitalGenome(sequences=sequences)
 
 
-def _digital_genome_summary(genome: DigitalGenome, *, source: Optional[Path] = None) -> Dict[str, Any]:
+def _digital_genome_summary(genome: CrisprDigitalGenome, *, source: Optional[Path] = None) -> Dict[str, Any]:
     chromosomes = [
         {"name": chrom, "length": len(sequence)}
         for chrom, sequence in genome.sequences.items()
@@ -368,6 +373,10 @@ def _digital_genome_summary(genome: DigitalGenome, *, source: Optional[Path] = N
     if source is not None:
         summary["source"] = str(source)
     return summary
+
+
+def _core_genome_from_legacy(genome: CrisprDigitalGenome) -> CoreDigitalGenome:
+    return CoreDigitalGenome(sequences=dict(genome.sequences))
 
 
 def _serialize_pam_rule(rule: PAMRule) -> Dict[str, Any]:
@@ -531,6 +540,40 @@ def _load_prime_editor_from_args(args: argparse.Namespace) -> PrimeEditor:
         indel_bias=indel_bias,
         mismatch_tolerance=mismatch_tolerance,
     )
+
+
+def _edit_dag_to_payload(dag: EditDAG, *, artifact: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    nodes_payload: Dict[str, Any] = {}
+    for node_id, node in dag.nodes.items():
+        nodes_payload[node_id] = {
+            "log_prob": node.log_prob,
+            "metadata": node.metadata,
+            "sequences": node.genome_view.materialize_all(),
+        }
+    edges_payload = []
+    for edge in dag.edges:
+        edges_payload.append(
+            {
+                "source": edge.source,
+                "target": edge.target,
+                "rule": edge.rule_name,
+                "event": {
+                    "chrom": edge.event.chrom,
+                    "start": edge.event.start,
+                    "end": edge.event.end,
+                    "replacement": edge.event.replacement,
+                    "metadata": edge.event.metadata,
+                },
+                "metadata": edge.metadata,
+            }
+        )
+    return {
+        "artifact": artifact,
+        "meta": metadata,
+        "nodes": nodes_payload,
+        "edges": edges_payload,
+        "root_id": dag.root_id,
+    }
 
 
 def command_dna(args: argparse.Namespace) -> None:
@@ -846,6 +889,33 @@ def command_crispr_genome_sim(args: argparse.Namespace) -> None:
         print("No candidate cut events were produced with the current parameters.")
 
 
+def command_crispr_dag(args: argparse.Namespace) -> None:
+    genome = _load_digital_genome(args.genome)
+    cas_system = _resolve_cas_system(args.cas, args.cas_config)
+    guide = _build_guide(args.guide_sequence, name=args.guide_name, pam=args.guide_pam)
+    dag = build_crispr_edit_dag(
+        genome,
+        cas_system,
+        guide,
+        rng_seed=args.seed or 0,
+        max_depth=args.max_depth,
+        min_prob=args.min_prob,
+        max_sites=args.max_sites,
+    )
+    payload = _edit_dag_to_payload(
+        dag,
+        artifact="helix.crispr.edit_dag.v1",
+        metadata={
+            "helix_version": HELIX_VERSION,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "genome_source": str(args.genome),
+        },
+    )
+    _write_json_output(payload, args.json)
+    if not dag.edges:
+        print("No edit events generated; DAG contains only the root state.")
+
+
 def command_prime_simulate(args: argparse.Namespace) -> None:
     genome = _load_digital_genome(args.genome)
     peg = _load_peg_from_args(args)
@@ -877,6 +947,39 @@ def command_prime_simulate(args: argparse.Namespace) -> None:
     _write_json_output(validated, args.json)
     if not outcomes:
         print("No prime editing outcomes were produced with the current parameters.")
+
+
+def command_prime_dag(args: argparse.Namespace) -> None:
+    genome = _load_digital_genome(args.genome)
+    peg = _load_peg_from_args(args)
+    editor = _load_prime_editor_from_args(args)
+    dag = build_prime_edit_dag(
+        genome,
+        editor,
+        peg,
+        rng_seed=args.seed or 0,
+        max_depth=args.max_depth,
+        min_prob=args.min_prob,
+    )
+    payload = _edit_dag_to_payload(
+        dag,
+        artifact="helix.prime.edit_dag.v1",
+        metadata={
+            "helix_version": HELIX_VERSION,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "genome_source": str(args.genome),
+        },
+    )
+    _write_json_output(payload, args.json)
+    if not dag.edges:
+        print("No prime editing DAG edges were generated.")
+
+
+def command_edit_dag_viz(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    dag = dag_from_payload(payload)
+    save_edit_dag_png(dag, str(args.out))
+    print(f"Edit DAG visualization saved to {args.out}.")
 
 
 def command_protein(args: argparse.Namespace) -> None:
@@ -1930,6 +2033,24 @@ def build_parser() -> argparse.ArgumentParser:
     crispr_genome.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
     crispr_genome.set_defaults(func=command_crispr_genome_sim)
 
+    crispr_dag = crispr_sub.add_parser("dag", help="Construct a CRISPR edit DAG.")
+    crispr_dag.add_argument("--genome", type=Path, required=True, help="Genome FASTA file.")
+    crispr_dag.add_argument("--guide-sequence", required=True, help="Guide RNA sequence (5'->3').")
+    crispr_dag.add_argument("--guide-name", help="Optional guide identifier.")
+    crispr_dag.add_argument("--guide-pam", help="Optional PAM label stored with the guide metadata.")
+    crispr_dag.add_argument(
+        "--cas",
+        default="cas9",
+        help=f"Cas preset to use (options: {', '.join(sorted(CAS_PRESET_CONFIGS))}; default: cas9).",
+    )
+    crispr_dag.add_argument("--cas-config", type=Path, help="JSON file describing a custom CasSystem.")
+    crispr_dag.add_argument("--max-sites", type=int, default=5, help="Maximum candidate sites per layer (default: 5).")
+    crispr_dag.add_argument("--max-depth", type=int, default=1, help="Maximum DAG depth (default: 1).")
+    crispr_dag.add_argument("--min-prob", type=float, default=1e-4, help="Minimum branch probability (default: 1e-4).")
+    crispr_dag.add_argument("--seed", type=int, default=0, help="Random seed for stochastic rules (default: 0).")
+    crispr_dag.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
+    crispr_dag.set_defaults(func=command_crispr_dag)
+
     prime_cmd = subparsers.add_parser("prime", help="Prime editing helpers.")
     prime_sub = prime_cmd.add_subparsers(dest="prime_command", required=True)
 
@@ -1955,6 +2076,39 @@ def build_parser() -> argparse.ArgumentParser:
     prime_sim.add_argument("--max-outcomes", type=int, default=16, help="Maximum number of outcomes to emit (default: 16).")
     prime_sim.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
     prime_sim.set_defaults(func=command_prime_simulate)
+
+    prime_dag = prime_sub.add_parser("dag", help="Construct a prime editing edit DAG.")
+    prime_dag.add_argument("--genome", type=Path, required=True, help="Genome FASTA file.")
+    prime_dag.add_argument("--peg-config", type=Path, help="JSON file describing pegRNA components.")
+    prime_dag.add_argument("--peg-spacer", help="pegRNA spacer sequence (5'->3').")
+    prime_dag.add_argument("--peg-pbs", help="pegRNA primer binding site sequence.")
+    prime_dag.add_argument("--peg-rtt", help="pegRNA reverse transcription template sequence.")
+    prime_dag.add_argument("--peg-name", help="Optional pegRNA identifier.")
+    prime_dag.add_argument("--editor-config", type=Path, help="JSON file describing a PrimeEditor.")
+    prime_dag.add_argument("--editor-name", help="Override the editor name.")
+    prime_dag.add_argument(
+        "--cas",
+        default="cas9",
+        help=f"Cas preset for inline editor definitions (options: {', '.join(sorted(CAS_PRESET_CONFIGS))}; default: cas9).",
+    )
+    prime_dag.add_argument("--cas-config", type=Path, help="JSON file describing a custom CasSystem for the editor.")
+    prime_dag.add_argument("--nick-offset", type=int, help="Override nick-to-edit offset.")
+    prime_dag.add_argument("--efficiency-scale", type=float, help="Override efficiency scale.")
+    prime_dag.add_argument("--indel-bias", type=float, help="Override indel bias.")
+    prime_dag.add_argument("--mismatch-tolerance", type=int, help="Override mismatch tolerance.")
+    prime_dag.add_argument("--max-depth", type=int, default=1, help="Maximum DAG depth (default: 1).")
+    prime_dag.add_argument("--min-prob", type=float, default=1e-4, help="Minimum branch probability (default: 1e-4).")
+    prime_dag.add_argument("--seed", type=int, default=0, help="Random seed (default: 0).")
+    prime_dag.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
+    prime_dag.set_defaults(func=command_prime_dag)
+
+    edit_dag_cmd = subparsers.add_parser("edit-dag", help="Edit DAG utilities.")
+    edit_dag_sub = edit_dag_cmd.add_subparsers(dest="edit_dag_command", required=True)
+
+    edit_dag_viz = edit_dag_sub.add_parser("viz", help="Render an edit DAG artifact as a PNG.")
+    edit_dag_viz.add_argument("--input", type=Path, required=True, help="Path to an edit DAG JSON artifact.")
+    edit_dag_viz.add_argument("--out", type=Path, required=True, help="PNG output path.")
+    edit_dag_viz.set_defaults(func=command_edit_dag_viz)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
     protein.add_argument("--sequence", help="Inline amino-acid string.")

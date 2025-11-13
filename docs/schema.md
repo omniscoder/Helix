@@ -32,6 +32,11 @@ The new digital simulators emit their own schema-tagged payloads so downstream t
 - `crispr.cut_events` – produced by `helix crispr genome-sim`, contains `{cas, guide, genome summary, params, events[]}` where every event records the candidate `TargetSite`, cut position, score, and serialized guide/Cas metadata.
 - `prime.edit_sim` – produced by `helix prime simulate`, bundles `{editor, peg, genome summary, params, outcomes[]}` where each outcome includes the targeted site, edited sequence, logit score, and a short description (`intended_edit`, `indel_loss`, `no_edit`, etc.).
 
+Edit DAG artifacts join the registry as well:
+
+- `helix.crispr.edit_dag.v1` – full node/edge graph from `helix crispr dag`, where every node embeds materialized sequences for its genome view and edges record the `EditEvent` + rule metadata.
+- `helix.prime.edit_dag.v1` – equivalent artifact for prime editing, emitted by `helix prime dag` with RTT-driven branches.
+
 Both schemas participate in the manifest/validator pipeline, so `helix schema manifest` and `helix viz schema --kind ...` will now list them alongside the existing viz payloads.
 
 ## Workflow Provenance

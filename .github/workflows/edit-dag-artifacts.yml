@@ -1,0 +1,34 @@
+name: Edit DAG Artifacts
+
+on:
+  push:
+    paths:
+      - "examples/**"
+      - "src/helix/**"
+      - ".github/workflows/edit-dag-artifacts.yml"
+  pull_request:
+    paths:
+      - "examples/**"
+      - "src/helix/**"
+      - ".github/workflows/edit-dag-artifacts.yml"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Helix with viz extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[viz]"
+      - name: Render CRISPR edit DAG
+        run: |
+          python -m helix.cli edit-dag viz --input examples/crispr_edit_dag.json --out crispr_dag.png
+          test -f crispr_dag.png
+      - name: Render Prime edit DAG
+        run: |
+          python -m helix.cli edit-dag viz --input examples/prime_edit_dag.json --out prime_dag.png
+          test -f prime_dag.png

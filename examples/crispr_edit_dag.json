@@ -1,0 +1,139 @@
+{
+  "artifact": "helix.crispr.edit_dag.v1",
+  "version": "1",
+  "metadata": {
+    "genome_id": "demo-genome",
+    "created_at": "2025-11-12T16:00:00Z",
+    "mechanism": "crispr-cas9",
+    "rules": [
+      "crispr.clean_cut",
+      "crispr.indel_branch",
+      "crispr.no_edit"
+    ]
+  },
+  "root_id": "node_0",
+  "nodes": {
+    "node_0": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 0,
+        "stage": "root"
+      },
+      "sequences": {
+        "chrDemo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    "node_1": {
+      "log_prob": -0.6931471805599453,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "cut_position": 103,
+        "strand": 1,
+        "label": "clean_cut"
+      },
+      "sequences": {
+        "chrDemo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    "node_2": {
+      "log_prob": -1.203972804325936,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "label": "intended_edit"
+      },
+      "sequences": {
+        "chrDemo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGCTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    "node_3": {
+      "log_prob": -1.5596157879354227,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "label": "indel"
+      },
+      "sequences": {
+        "chrDemo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGTACGACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    },
+    "node_4": {
+      "log_prob": -2.302585092994046,
+      "metadata": {
+        "time_step": 1,
+        "stage": "no_edit",
+        "label": "no_edit_branch"
+      },
+      "sequences": {
+        "chrDemo": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACGTACGTACGTAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "node_0",
+      "target": "node_1",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrDemo",
+        "start": 103,
+        "end": 103,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "stage": "cut",
+          "mechanism": "crispr"
+        }
+      }
+    },
+    {
+      "source": "node_1",
+      "target": "node_2",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrDemo",
+        "start": 101,
+        "end": 105,
+        "replacement": "TGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "stage": "repaired",
+          "mechanism": "crispr"
+        }
+      }
+    },
+    {
+      "source": "node_1",
+      "target": "node_3",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrDemo",
+        "start": 103,
+        "end": 104,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "stage": "repaired",
+          "mechanism": "crispr"
+        }
+      }
+    },
+    {
+      "source": "node_0",
+      "target": "node_4",
+      "rule": "crispr.no_edit",
+      "event": {
+        "chrom": "__none__",
+        "start": 0,
+        "end": 0,
+        "replacement": "",
+        "metadata": {
+          "label": "no_edit_branch",
+          "stage": "no_edit",
+          "mechanism": "crispr"
+        }
+      }
+    }
+  ]
+}

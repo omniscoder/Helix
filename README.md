@@ -147,11 +147,31 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   ```
   Loads the genome into a `DigitalGenome`, instantiates a preset (or JSON-defined) `CasSystem`, and calls the in-silico cut simulator so you can inspect potential target sites. Outputs include serialized guides, Cas parameters, and any simulated `CutEvent` entries.
 
+- **CRISPR edit DAG**
+  ```bash
+  helix crispr dag --genome genome.fna --guide-sequence GGGGTTTAGAGCTATGCT --max-depth 1 --json crispr_edit_dag.json
+  ```
+  Builds the first-version “digital twin” graph using the new edit runtime. Nodes contain fully materialized genome views, edges capture each clean-cut event, and the JSON artifact (`helix.crispr.edit_dag.v1`) can feed notebooks and future viz surfaces.
+
 - **Prime editing sandbox**
   ```bash
   helix prime simulate --genome genome.fna --peg-config peg.json --editor-config pe3.json --max-outcomes 16 --json prime_edits.json
   ```
   Wraps the new prime-editing models: pegRNA definitions (inline flags or JSON), prime-editor parameters, and the `simulate_prime_edit` entrypoint. Like the CRISPR command, this is purely computational—it emits hypothetical outcomes for downstream notebooks and viz.
+
+- **Prime edit DAG**
+  ```bash
+  helix prime dag --genome genome.fna --peg-config peg.json --editor-config pe3.json --json prime_edit_dag.json
+  ```
+  Produces the prime-editing DAG artifact (`helix.prime.edit_dag.v1`) so you can inspect RTT-driven branches, log probabilities, and materialized genome snapshots per node.
+
+- **Edit DAG visualization**
+  ```bash
+  helix edit-dag viz --input examples/crispr_edit_dag.json --out crispr_dag.png
+  helix edit-dag viz --input examples/prime_edit_dag.json --out prime_dag.png
+  ```
+  Renders any DAG artifact to a PNG using the built-in networkx/matplotlib helper. The `examples/` directory ships ready-to-plot JSON fixtures for CRISPR and Prime editing so you can kick the tires immediately.
+  For an interactive walkthrough (including sequence diffs), open `docs/notebooks/edit_dag_visual_demo.ipynb`.
 
 - **Workflow runner**
   ```bash

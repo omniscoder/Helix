@@ -12,6 +12,7 @@ from .model import (
     TargetSite,
 )
 from .simulator import CutEvent, find_candidate_sites, rank_off_targets, simulate_cuts
+from .dag_api import build_crispr_edit_dag
 from . import score, simulate
 
 __all__ = [
@@ -31,4 +32,5 @@ __all__ = [
     "find_candidate_sites",
     "simulate_cuts",
     "rank_off_targets",
+    "build_crispr_edit_dag",
 ]
