@@ -60,7 +60,13 @@ function reverseComplement(seq) {
 }
 
 function computeFrames(payload) {
-  const genome = parseGenome(payload.genome || "");
+  const genomeInput = payload.genome || "";
+  let genome = "";
+  if (genomeInput.startsWith(">") || genomeInput.includes("\n")) {
+    genome = parseGenome(genomeInput);
+  } else {
+    genome = genomeInput.trim().toUpperCase();
+  }
   const chrom = payload.chrom || "chrDemo";
   const guide = (payload.guide || "").trim().toUpperCase();
   const pam = (payload.pam || "NGG").trim().toUpperCase();

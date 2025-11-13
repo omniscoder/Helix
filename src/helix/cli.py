@@ -9,11 +9,11 @@ import math
 import random
 import re
 import sys
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
 from types import SimpleNamespace
-import sys
 
 from . import bioinformatics, cyclospectrum, triage
 from .crispr import guide as crispr_guide
@@ -1095,6 +1095,41 @@ def _frame_to_payload(frame: EditDAGFrame) -> Dict[str, Any]:
     }
 
 
+def _frames_to_artifact_payload(frames: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    nodes: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    edges: List[Dict[str, Any]] = []
+    artifact = "helix.crispr.edit_dag.v1.1"
+    for frame in frames:
+        mechanism = (frame.get("meta") or {}).get("mechanism")
+        if mechanism == "prime":
+            artifact = "helix.prime.edit_dag.v1.1"
+        for node_id, node_payload in (frame.get("new_nodes") or {}).items():
+            nodes[node_id] = node_payload
+        for edge_payload in frame.get("new_edges") or []:
+            edges.append(edge_payload)
+    if not nodes:
+        raise ValueError("Frame stream contained no nodes.")
+    root_id = next(iter(nodes))
+    return {
+        "artifact": artifact,
+        "version": "1.1",
+        "nodes": nodes,
+        "edges": edges,
+        "root_id": root_id,
+    }
+
+
+def _read_frame_jsonl(path: Path) -> List[Dict[str, Any]]:
+    frames: List[Dict[str, Any]] = []
+    with Path(path).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            frames.append(json.loads(line))
+    return frames
+
+
 def _open_frame_stream(path_value: str) -> tuple[TextIO, bool]:
     if path_value == "-":
         return sys.stdout, False
@@ -1868,8 +1903,9 @@ def command_edit_dag_generate_dataset(args: argparse.Namespace) -> None:
     rng = random.Random(args.seed)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    next_id = 0
     with out_path.open("w", encoding="utf-8") as handle:
-        for idx in range(args.n):
+        for _ in range(args.n):
             if args.mechanism == "crispr":
                 dag = _random_crispr_dag(rng)
                 artifact_name = "helix.crispr.edit_dag.v1.1"
@@ -1883,7 +1919,7 @@ def command_edit_dag_generate_dataset(args: argparse.Namespace) -> None:
             }
             payload = _edit_dag_to_payload(dag, artifact=artifact_name, metadata=metadata)
             record = {
-                "id": idx,
+                "id": next_id,
                 "mechanism": args.mechanism,
                 "node_count": len(dag.nodes),
                 "edge_count": len(dag.edges),
@@ -1891,6 +1927,24 @@ def command_edit_dag_generate_dataset(args: argparse.Namespace) -> None:
                 "artifact": payload,
             }
             handle.write(json.dumps(record) + "\n")
+            next_id += 1
+        for frame_path in args.frames_input or []:
+            frames = _read_frame_jsonl(frame_path)
+            payload = _frames_to_artifact_payload(frames)
+            payload.setdefault("meta", {})["frame_source"] = str(frame_path)
+            dag = dag_from_payload(payload)
+            mechanism = "prime" if payload.get("artifact", "").startswith("helix.prime") else "crispr"
+            record = {
+                "id": next_id,
+                "mechanism": mechanism,
+                "node_count": len(dag.nodes),
+                "edge_count": len(dag.edges),
+                "top_outcomes": _top_outcomes_from_dag(dag, topk=args.topk),
+                "artifact": payload,
+                "frame_source": str(frame_path),
+            }
+            handle.write(json.dumps(record) + "\n")
+            next_id += 1
     print(f"Edit DAG dataset written to {args.out}.")
 
 
@@ -3167,6 +3221,12 @@ def build_parser() -> argparse.ArgumentParser:
     edit_dag_dataset.add_argument("--topk", type=int, default=5, help="How many outcomes to summarize per record.")
     edit_dag_dataset.add_argument("--out", type=Path, required=True, help="Output JSONL path.")
     edit_dag_dataset.add_argument("--seed", type=int, default=7, help="Random seed (default: 7).")
+    edit_dag_dataset.add_argument(
+        "--frames-input",
+        type=Path,
+        action="append",
+        help="Optional JSONL frame files to convert into dataset records.",
+    )
     edit_dag_dataset.set_defaults(func=command_edit_dag_generate_dataset)
 
     experiment_cmd = subparsers.add_parser("experiment", help="Experiment utilities.")

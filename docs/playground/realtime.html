@@ -5,6 +5,7 @@
     <title>Helix Real-Time Edit Simulator</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
       body {
         margin: 0;
@@ -137,6 +138,7 @@ TTTACCCAGGAAACCCGGGTTTTAGGTTT</textarea>
         <div class="controls">
           <button id="rt-run">Simulate</button>
           <button id="rt-reset" class="secondary">Reset</button>
+          <button id="rt-export" class="secondary">Export experiment</button>
         </div>
         <div class="controls">
           <button id="rt-play">Play/Pause</button>
@@ -150,8 +152,45 @@ TTTACCCAGGAAACCCGGGTTTTAGGTTT</textarea>
           <span id="rt-frame-label">0</span>
         </div>
         <div id="rt-metrics" class="metrics">Load a simulation…</div>
+        <canvas id="rt-branch-chart" height="120" style="margin-top:8px;"></canvas>
       </aside>
-      <section id="rt-cy"></section>
+      <section style="display:flex; flex-direction:column; min-height:0;">
+        <div id="rt-cy" style="flex:1;"></div>
+        <div style="border-top:1px solid #1e293b; padding:12px;">
+          <h2 style="margin:0 0 8px;font-size:14px;color:#94a3b8">Comparison Mode (Experimental)</h2>
+          <p style="margin:0 0 8px;font-size:12px;color:#94a3b8">
+            Run a second configuration to overlay edits side-by-side.
+          </p>
+          <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:240px;">
+              <label>
+                Guide A
+                <input id="rt-compare-guide-a" type="text" value="ACCCAGGAAACCCGGGTTTT" />
+              </label>
+              <label>
+                Guide B
+                <input id="rt-compare-guide-b" type="text" value="TTTACCCAGGAAACCCGGGT" />
+              </label>
+            </div>
+            <div style="flex:1; min-width:240px;">
+              <label>
+                PAM
+                <input id="rt-compare-pam" type="text" value="NGG" />
+              </label>
+              <label>
+                Mismatch tolerance
+                <input id="rt-compare-mismatch" type="number" value="3" />
+              </label>
+            </div>
+          </div>
+          <div class="controls">
+            <button id="rt-compare-run" class="secondary">Compare A vs B</button>
+            <button id="rt-compare-export" class="secondary">Export comparison YAML</button>
+          </div>
+          <div id="rt-compare-output" class="metrics">Awaiting comparison…</div>
+          <div id="rt-compare-cy" style="height:220px; border:1px solid #1f2937; border-radius:8px;"></div>
+        </div>
+      </section>
     </main>
     <script src="js/realtime.js" type="module"></script>
   </body>

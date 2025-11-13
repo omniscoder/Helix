@@ -75,6 +75,13 @@ Two end-to-end recipes ship in `examples/` so you can go from FASTA/configs → 
 
   A single YAML file describes the entire “edit experiment” (genome, Cas/Prime configs, guides/pegs, simulation knobs). Helix can regenerate DAGs, PNGs, and HTML reports from that spec at any time; see `templates/*.helix.yml` for starter files.
 
+### Live realtime Playground
+
+- [Realtime CRISPR Simulator](playground/realtime.html) — explore guides, stream DAG frames, and compare two designs interactively (browser-only, no backend required).
+  - Suggested demo: Guide A `ACCCAGGAAACCCGGGTTTT` vs Guide B `TTTACCCAGGAAACCCGGGT` (chrDemo) to see how probability mass shifts live.
+  - Branch chart + entropy panel update every frame (`intended`, `indel`, `no-edit`) so you can watch probability flow in real time.
+  - Export frames JSONL and hand them to `helix edit-dag generate-dataset --frames-input …` to append real experiments to your ML corpora (see [Edit DAG Frames](edit_dag_frames.md)).
+
 ---
 
 ## Deep Wiki (Project Map)

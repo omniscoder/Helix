@@ -257,7 +257,31 @@ This exposes the `helix` console command and the `helix` Python package (`from h
     --frames - \
     --out out/crispr_rt.edit_dag.json
   ```
-  Use `--frames` (or `--frames -` for stdout) on any CRISPR/Prime DAG command to stream incremental frames as JSON Lines—perfect for powering live Cytoscape animations or piping into notebooks for “real-time” plotting. Each frame carries new nodes/edges and updated probabilities, so you can watch the edit process unfold.
+  Streams `helix.edit_dag.frame.v1` JSON lines so you can animate CRISPR edits as they unfold. See [Edit DAG Frames](docs/edit_dag_frames.md) for schema details, or try it live in the [Realtime Playground](docs/playground/realtime.html).
+
+- **Frames → dataset**
+  ```bash
+  helix edit-dag generate-dataset --n 0 --frames-input run.frames.jsonl --out dataset.jsonl
+  ```
+  Converts a JSONL frame stream into a dataset record (mix with random generations by combining `--frames-input` and `--n`). Each row stays human-readable so you can audit what landed in the corpus:
+  ```json
+  {
+    "id": 7,
+    "mechanism": "crispr",
+    "node_count": 11,
+    "edge_count": 10,
+    "top_outcomes": [
+      {"stage": "repaired", "prob": 0.61, "sequence_hash": "9f4b1cbe"},
+      {"stage": "error", "prob": 0.31, "sequence_hash": "72acdc01"}
+    ],
+    "frame_source": "runs/hbb_demo.frames.jsonl",
+    "artifact": { "...": "helix.crispr.edit_dag.v1.1 payload" }
+  }
+  ```
+- **Hero comparison (HBB vs mutant)**
+  1. Open the [Realtime Playground](docs/playground/realtime.html).
+  2. Guide A: `ACCCAGGAAACCCGGGTTTT`, Guide B: `TTTACCCAGGAAACCCGGGT`, PAM `NGG`.
+  3. Hit “Compare” to watch probability mass shift between intended vs indel branches, then export the experiment `.helix.yml` for reproducible CLI runs.
 
 - **PCR amplicon DAG**
   ```bash
