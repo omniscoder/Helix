@@ -163,6 +163,20 @@ def _load_dag_viz_exporter():
     return save_edit_dag_png
 
 
+def _load_dag_animator():
+    """
+    Import the GIF animation helper lazily because it depends on viz extras.
+    """
+    try:
+        from .visualization.animate import animate_edit_dag
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise SystemExit(
+            "Edit DAG animation requires optional dependencies 'networkx', 'matplotlib', and 'imageio'. "
+            "Install them via 'pip install helix[viz]' or 'pip install networkx matplotlib imageio'."
+        ) from exc
+    return animate_edit_dag
+
+
 def _print_schema_help(kind: str, sample_name: str | None = None) -> None:
     print(describe_schema(kind))
     if sample_name:
@@ -997,6 +1011,25 @@ def command_edit_dag_viz(args: argparse.Namespace) -> None:
     save_edit_dag_png = _load_dag_viz_exporter()
     save_edit_dag_png(dag, str(args.out))
     print(f"Edit DAG visualization saved to {args.out}.")
+
+
+def command_edit_dag_animate(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    dag = dag_from_payload(payload)
+    animate_edit_dag = _load_dag_animator()
+    animate_edit_dag(
+        dag,
+        str(args.out),
+        fps=args.fps,
+        layout=args.layout,
+        figsize=(args.width, args.height),
+        background_color=args.bg_color,
+        prob_cmap=args.prob_cmap,
+        stage_cmap=args.stage_cmap,
+        highlight_color=args.highlight_color,
+        dpi=args.dpi,
+    )
+    print(f"Edit DAG animation saved to {args.out} at {args.fps} fps.")
 
 
 def command_protein(args: argparse.Namespace) -> None:
@@ -2126,6 +2159,32 @@ def build_parser() -> argparse.ArgumentParser:
     edit_dag_viz.add_argument("--input", type=Path, required=True, help="Path to an edit DAG JSON artifact.")
     edit_dag_viz.add_argument("--out", type=Path, required=True, help="PNG output path.")
     edit_dag_viz.set_defaults(func=command_edit_dag_viz)
+    edit_dag_anim = edit_dag_sub.add_parser("animate", help="Render an edit DAG animation (GIF).")
+    edit_dag_anim.add_argument("--input", type=Path, required=True, help="Path to an edit DAG JSON artifact.")
+    edit_dag_anim.add_argument("--out", type=Path, required=True, help="GIF output path.")
+    edit_dag_anim.add_argument("--fps", type=int, default=3, help="Frames per second for the animation (default: 3).")
+    edit_dag_anim.add_argument(
+        "--layout",
+        choices=["spring", "kamada-kawai", "spectral", "circular", "shell", "planar", "random"],
+        default="spring",
+        help="Graph layout algorithm (default: spring).",
+    )
+    edit_dag_anim.add_argument("--width", type=float, default=8.0, help="Figure width in inches (default: 8).")
+    edit_dag_anim.add_argument("--height", type=float, default=6.0, help="Figure height in inches (default: 6).")
+    edit_dag_anim.add_argument(
+        "--bg-color",
+        default="#0b0e14",
+        help="Background color for frames (default: #0b0e14).",
+    )
+    edit_dag_anim.add_argument("--prob-cmap", default="viridis", help="Matplotlib colormap for probabilities.")
+    edit_dag_anim.add_argument("--stage-cmap", default="tab10", help="Matplotlib colormap for stage outlines.")
+    edit_dag_anim.add_argument(
+        "--highlight-color",
+        default="#f5a97f",
+        help="Accent color for new nodes/edges (default: #f5a97f).",
+    )
+    edit_dag_anim.add_argument("--dpi", type=int, default=150, help="Figure DPI (default: 150).")
+    edit_dag_anim.set_defaults(func=command_edit_dag_animate)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
     protein.add_argument("--sequence", help="Inline amino-acid string.")
