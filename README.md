@@ -173,6 +173,30 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   Renders any DAG artifact to a PNG using the built-in networkx/matplotlib helper. The `examples/` directory ships ready-to-plot JSON fixtures for CRISPR and Prime editing so you can kick the tires immediately.
   For an interactive walkthrough (including sequence diffs), open `docs/notebooks/edit_dag_visual_demo.ipynb`.
 
+- **JSON configs → CLI**
+  ```bash
+  # Convert the JSON genome to FASTA on the fly
+  python - <<'PY' > /tmp/demo_genome.fna
+  import json
+  cfg = json.load(open("examples/crispr_demo_genome.json"))
+  for chrom in cfg["chromosomes"]:
+      print(f">{chrom['name']}\\n{chrom['sequence']}")
+  PY
+  GUIDE=$(jq -r '.sequence' examples/crispr_demo_guide.json)
+  helix crispr dag --genome /tmp/demo_genome.fna --guide-sequence "$GUIDE" --json /tmp/demo_dag.json
+  ```
+  The `examples/crispr_demo_genome.json` + `examples/crispr_demo_guide.json` pair provides a self-contained, copy-pastable config for CLI experiments without needing any external FASTA files.
+
+- **Prime config quickstart**
+  ```bash
+  python examples/scripts/make_prime_demo_fasta.py --input examples/prime_demo_genome.json --out /tmp/prime_demo.fna
+  helix prime dag --genome /tmp/prime_demo.fna \
+    --peg-config examples/prime_demo_configs.json \
+    --editor-config examples/prime_demo_configs.json \
+    --json /tmp/prime_dag.json
+  ```
+  This uses the bundled `examples/prime_demo_genome.json` plus peg/editor definitions in `examples/prime_demo_configs.json` to build a full prime-edit DAG without any external data.
+
 - **Workflow runner**
   ```bash
   helix workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs

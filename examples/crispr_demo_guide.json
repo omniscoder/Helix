@@ -1,0 +1,6 @@
+{
+  "id": "guide-demo",
+  "sequence": "ACGTACGTACGT",
+  "pam": "NGG",
+  "notes": "Minimal CRISPR guide for demo-genome."
+}

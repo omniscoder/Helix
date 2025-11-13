@@ -1,0 +1,25 @@
+{
+  "peg": {
+    "name": "peg-demo",
+    "spacer": "AAAAATTTTT",
+    "pbs": "AAAA",
+    "rtt": "TTTTAA"
+  },
+  "editor": {
+    "name": "prime-demo-editor",
+    "nick_to_edit_offset": 1,
+    "efficiency_scale": 0.5,
+    "indel_bias": 0.1,
+    "mismatch_tolerance": 3,
+    "cas": {
+      "name": "demo-cas9",
+      "system_type": "cas9",
+      "pam_rules": [
+        {
+          "pattern": "NGG"
+        }
+      ],
+      "cut_offset": 3
+    }
+  }
+}
