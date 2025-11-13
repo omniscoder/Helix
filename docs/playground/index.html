@@ -33,6 +33,7 @@
     <div class="controls">
       <input id="file" type="file" accept=".json" />
       <button id="loadSample">Load sample</button>
+      <button id="loadPcrDemo" data-json="assets/viz/pcr_amplicon_dag.json">Load PCR demo</button>
       <label>Min prob <input id="pmin" type="range" min="0" max="1" step="0.001" value="0"></label>
       <label>Max time <input id="tmax" type="range" min="0" max="16" step="1" value="16"></label>
       <select id="layout">
@@ -163,6 +164,7 @@
     // ---------- UI plumbing ----------
     const fileInput = document.getElementById('file');
     const loadSampleBtn = document.getElementById('loadSample');
+    const loadPcrDemoBtn = document.getElementById('loadPcrDemo');
     const pminSlider = document.getElementById('pmin');
     const tmaxSlider = document.getElementById('tmax');
     const layoutSel = document.getElementById('layout');
@@ -267,6 +269,26 @@
       };
       renderPayload();
     });
+
+    if (loadPcrDemoBtn) {
+      loadPcrDemoBtn.addEventListener('click', () => {
+        const url = loadPcrDemoBtn.dataset.json;
+        fetch(url)
+          .then(resp => {
+            if (!resp.ok) {
+              throw new Error(`Failed to fetch ${url} (${resp.status})`);
+            }
+            return resp.json();
+          })
+          .then(data => {
+            payload = data;
+            renderPayload();
+          })
+          .catch(err => {
+            alert(`Could not load PCR demo: ${err.message}`);
+          });
+      });
+    }
 
     // Optional: auto-load ?json= URL param
     const params = new URLSearchParams(location.search);

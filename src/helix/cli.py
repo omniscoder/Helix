@@ -44,6 +44,8 @@ from .prime.simulator import simulate_prime_edit
 from .genome.digital import DigitalGenome as CoreDigitalGenome
 from .crispr.dag_api import build_crispr_edit_dag
 from .prime.dag_api import build_prime_edit_dag
+from .pcr.model import Primer, PrimerPair, PCRConfig
+from .pcr.dag_api import pcr_edit_dag
 from .edit.dag import EditDAG, dag_from_payload
 from .schema import (
     SchemaError,
@@ -572,6 +574,59 @@ def _load_prime_editor_from_args(args: argparse.Namespace) -> PrimeEditor:
     )
 
 
+def _load_primer_pair_from_args(args: argparse.Namespace) -> PrimerPair:
+    if not getattr(args, "primer_config", None):
+        raise SystemExit("Provide --primer-config pointing to a primer pair JSON file.")
+    config = _load_json_config(args.primer_config)
+    forward_cfg = config.get("forward")
+    reverse_cfg = config.get("reverse")
+    if not isinstance(forward_cfg, Mapping) or not isinstance(reverse_cfg, Mapping):
+        raise SystemExit("Primer config must contain 'forward' and 'reverse' objects.")
+
+    def _primer(entry: Mapping[str, Any], fallback_name: str) -> Primer:
+        sequence = entry.get("sequence")
+        if not sequence:
+            raise SystemExit(f"Primer '{fallback_name}' requires a 'sequence' field.")
+        metadata = entry.get("metadata") or {}
+        if metadata and not isinstance(metadata, dict):
+            raise SystemExit(f"Metadata for primer '{fallback_name}' must be a JSON object.")
+        return Primer(
+            name=str(entry.get("name") or fallback_name),
+            sequence=bioinformatics.normalize_sequence(sequence),
+            max_mismatches=int(entry.get("max_mismatches", 2)),
+            metadata=dict(metadata),
+        )
+
+    forward = _primer(forward_cfg, "forward")
+    reverse = _primer(reverse_cfg, "reverse")
+    metadata = config.get("metadata") or {}
+    if metadata and not isinstance(metadata, dict):
+        raise SystemExit("Primer pair metadata must be a JSON object.")
+    pair_name = str(config.get("name") or f"{forward.name}/{reverse.name}")
+    return PrimerPair(name=pair_name, forward=forward, reverse=reverse, metadata=dict(metadata))
+
+
+def _load_pcr_config_from_args(args: argparse.Namespace) -> PCRConfig:
+    data: Dict[str, Any] = {}
+    if getattr(args, "pcr_config", None):
+        data = _load_json_config(args.pcr_config)
+
+    def _value(attr: str, key: str, default: Any) -> Any:
+        arg_value = getattr(args, attr, None)
+        if arg_value is not None:
+            return arg_value
+        return data.get(key, default)
+
+    return PCRConfig(
+        cycles=int(_value("cycles", "cycles", 10)),
+        per_cycle_efficiency=float(_value("per_cycle_efficiency", "per_cycle_efficiency", 0.9)),
+        error_rate=float(_value("error_rate", "error_rate", 1e-3)),
+        max_amplicon_length=int(_value("max_amplicon_length", "max_amplicon_length", 2000)),
+        min_amplicon_length=int(_value("min_amplicon_length", "min_amplicon_length", 50)),
+        max_amplicons=int(_value("max_amplicons", "max_amplicons", 256)),
+    )
+
+
 def _edit_dag_to_payload(dag: EditDAG, *, artifact: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
     nodes_payload: Dict[str, Any] = {}
     for node_id, node in dag.nodes.items():
@@ -1003,6 +1058,30 @@ def command_prime_dag(args: argparse.Namespace) -> None:
     _write_json_output(payload, args.json)
     if not dag.edges:
         print("No prime editing DAG edges were generated.")
+
+
+def command_pcr_dag(args: argparse.Namespace) -> None:
+    genome = _load_digital_genome(args.genome)
+    primer_pair = _load_primer_pair_from_args(args)
+    config = _load_pcr_config_from_args(args)
+    dag = pcr_edit_dag(
+        genome,
+        primer_pair,
+        config,
+        rng_seed=args.seed or 0,
+        min_prob=args.min_prob,
+    )
+    metadata = {
+        "helix_version": HELIX_VERSION,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "genome_source": str(args.genome),
+        "primer_pair": primer_pair.name,
+        "cycles": config.cycles,
+    }
+    payload = _edit_dag_to_payload(dag, artifact="helix.pcr.amplicon_dag.v1", metadata=metadata)
+    _write_json_output(payload, args.out)
+    if not dag.edges:
+        print("No PCR amplification products were generated (no binding sites detected).")
 
 
 def command_edit_dag_viz(args: argparse.Namespace) -> None:
@@ -2152,6 +2231,37 @@ def build_parser() -> argparse.ArgumentParser:
     prime_dag.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
     prime_dag.set_defaults(func=command_prime_dag)
 
+    pcr_cmd = subparsers.add_parser("pcr", help="PCR amplification helpers.")
+    pcr_sub = pcr_cmd.add_subparsers(dest="pcr_command", required=True)
+
+    pcr_dag = pcr_sub.add_parser("dag", help="Construct a PCR amplicon Edit DAG.")
+    pcr_dag.add_argument("--genome", type=Path, required=True, help="Genome FASTA file.")
+    pcr_dag.add_argument("--primer-config", type=Path, required=True, help="Primer pair JSON configuration.")
+    pcr_dag.add_argument("--pcr-config", type=Path, help="PCR configuration JSON file.")
+    pcr_dag.add_argument("--cycles", type=int, help="Override PCR cycle count.")
+    pcr_dag.add_argument(
+        "--per-cycle-efficiency",
+        type=float,
+        help="Override per-cycle amplification efficiency (0-1).",
+    )
+    pcr_dag.add_argument("--error-rate", type=float, help="Override per-base error rate.")
+    pcr_dag.add_argument("--min-amplicon-length", type=int, help="Minimum amplicon length filter.")
+    pcr_dag.add_argument("--max-amplicon-length", type=int, help="Maximum amplicon length filter.")
+    pcr_dag.add_argument("--max-amplicons", type=int, help="Maximum amplicon branches to keep.")
+    pcr_dag.add_argument("--seed", type=int, default=0, help="Random seed (default: 0).")
+    pcr_dag.add_argument(
+        "--min-prob",
+        type=float,
+        default=1e-6,
+        help="Minimum branch probability (default: 1e-6).",
+    )
+    pcr_dag.add_argument(
+        "--out",
+        type=Path,
+        help="JSON output path for the PCR DAG (default: stdout).",
+    )
+    pcr_dag.set_defaults(func=command_pcr_dag)
+
     edit_dag_cmd = subparsers.add_parser("edit-dag", help="Edit DAG utilities.")
     edit_dag_sub = edit_dag_cmd.add_subparsers(dest="edit_dag_command", required=True)
 
@@ -2165,9 +2275,9 @@ def build_parser() -> argparse.ArgumentParser:
     edit_dag_anim.add_argument("--fps", type=int, default=3, help="Frames per second for the animation (default: 3).")
     edit_dag_anim.add_argument(
         "--layout",
-        choices=["spring", "kamada-kawai", "spectral", "circular", "shell", "planar", "random"],
-        default="spring",
-        help="Graph layout algorithm (default: spring).",
+        choices=["timeline", "spring", "kamada-kawai", "spectral", "circular", "shell", "planar", "random"],
+        default="timeline",
+        help="Graph layout algorithm (default: timeline).",
     )
     edit_dag_anim.add_argument("--width", type=float, default=8.0, help="Figure width in inches (default: 8).")
     edit_dag_anim.add_argument("--height", type=float, default=6.0, help="Figure height in inches (default: 6).")

@@ -1,0 +1,17 @@
+{
+  "name": "demo_pcr",
+  "forward": {
+    "name": "demo_forward",
+    "sequence": "ATGCGTACGTTG",
+    "max_mismatches": 0
+  },
+  "reverse": {
+    "name": "demo_reverse",
+    "sequence": "CGGTCAACGTAC",
+    "max_mismatches": 0
+  },
+  "metadata": {
+    "use_case": "demo",
+    "notes": "Example primer pair for PCR DAG smoke tests"
+  }
+}

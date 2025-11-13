@@ -4,8 +4,10 @@ from __future__ import annotations
 import math
 from typing import Mapping, Optional, Tuple
 
+import numpy as np
 from matplotlib import colors as mcolors
 from matplotlib.patches import Patch
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import matplotlib.pyplot as plt
 import networkx as nx
 
@@ -27,11 +29,18 @@ def _build_nx_graph(dag: EditDAG) -> Tuple[nx.DiGraph, Mapping[str, float]]:
         probs[node_id] = prob
         stage = node.metadata.get("stage", "unknown")
         time_step = node.metadata.get("time_step")
+        time_value = int(time_step) if isinstance(time_step, (int, float)) else 0
         stage_label = format_stage_label(stage)
-        primary = stage_label
-        if time_step is not None:
-            primary += f" · t={time_step}"
-        label = f"{primary}\n{node_id}"
+        icon = {
+            "root": "●",
+            "binding": "✂",
+            "cut": "✂",
+            "cycled": "↺",
+            "amplicon": "🧬",
+            "error": "⚠",
+            "no_product": "Ø",
+        }.get(stage, "●")
+        label = f"{stage_label} {icon}\n(t={time_value}, n={node_id})"
         graph.add_node(
             node_id,
             label=label,
@@ -39,6 +48,7 @@ def _build_nx_graph(dag: EditDAG) -> Tuple[nx.DiGraph, Mapping[str, float]]:
             prob=prob,
             stage=stage,
             time_step=time_step,
+            subset=time_value,
         )
     for edge in dag.edges:
         rule = edge.rule_name
@@ -54,7 +64,7 @@ def plot_edit_dag(
     with_labels: bool = True,
     cmap_name: str = "viridis",
     stage_cmap: str = "tab10",
-    layout: str = "spring",
+    layout: str = "timeline",
     show_colorbar: bool = True,
     background_color: str = "#0b0e14",
     seed: int = 0,
@@ -84,6 +94,11 @@ def plot_edit_dag(
     node_colors = [cmap(value) for value in normalized]
     node_sizes = [node_size * (0.6 + 0.4 * value) for value in normalized]
     node_norm_map = {node: value for node, value in zip(graph.nodes, normalized)}
+    time_positions: Mapping[int, list[float]] = {}
+    for node, (x, y) in pos.items():
+        time_step = graph.nodes[node].get("subset", 0)
+        bucket = time_positions.setdefault(time_step, [])
+        bucket.append(x)
 
     stage_values = [graph.nodes[node].get("stage", "unknown") for node in graph.nodes]
     stage_colors = stage_palette(stage_values, stage_cmap)
@@ -91,6 +106,38 @@ def plot_edit_dag(
 
     ax.set_facecolor(background_color)
     ax.figure.set_facecolor(background_color)
+
+    # DNA watermark (subtle double helix)
+    helix_x = np.linspace(-np.pi, np.pi, 200)
+    for phase, alpha in [(0, 0.03), (np.pi, 0.02)]:
+        helix_y = 0.1 * np.sin(helix_x * 2 + phase)
+        ax.plot(
+            helix_x,
+            helix_y,
+            color="#6f7dbf",
+            alpha=alpha,
+            linewidth=2,
+            transform=ax.transAxes,
+        )
+
+    # Temporal bands
+    if time_positions:
+        x_min = min(x for x, _ in pos.values())
+        x_max = max(x for x, _ in pos.values())
+        for t_value, xs in sorted(time_positions.items()):
+            center = sum(xs) / len(xs)
+            ax.axvline(center, color="#ffffff10", linewidth=1.0, linestyle="--")
+            ax.text(
+                center,
+                1.02,
+                f"t={t_value}",
+                transform=ax.transData,
+                color="#cdd2e3",
+                fontsize=8,
+                ha="center",
+                va="bottom",
+                alpha=0.7,
+            )
 
     nx.draw_networkx_nodes(
         graph,
@@ -102,18 +149,55 @@ def plot_edit_dag(
         linewidths=2.0,
         cmap=cmap,
     )
-    edge_widths = [1.1 + 3.2 * node_norm_map.get(edge[1], 0.5) for edge in graph.edges]
-    nx.draw_networkx_edges(
-        graph,
-        pos,
-        ax=ax,
-        arrows=True,
-        arrowstyle="->",
-        edge_color="#a7b0c2",
-        width=edge_widths,
-        alpha=0.85,
-        connectionstyle="arc3,rad=0.05",
-    )
+    prob_threshold = 0.25
+    halo_nodes = [node for node, value in node_norm_map.items() if value <= prob_threshold]
+    if halo_nodes:
+        xs = [pos[node][0] for node in halo_nodes]
+        ys = [pos[node][1] for node in halo_nodes]
+        halo_sizes = [node_size * 1.8 for _ in halo_nodes]
+        ax.scatter(
+            xs,
+            ys,
+            s=halo_sizes,
+            color="#f5a97f",
+            alpha=0.12,
+            linewidths=0,
+        )
+    def _connection_style(rule: str) -> str:
+        if "clean" in (rule or "").lower():
+            return "arc3,rad=0.0"
+        if "indel" in (rule or "").lower():
+            return "arc3,rad=0.25"
+        if "error" in (rule or "").lower():
+            return "arc3,rad=-0.2"
+        return "arc3,rad=0.05"
+
+    margin_args: dict[str, float] = {}
+    try:
+        nx.draw_networkx_edges(graph, pos, edgelist=[], ax=ax, min_source_margin=0, min_target_margin=0)
+        margin_args = {"min_source_margin": 10, "min_target_margin": 18}
+    except TypeError:
+        margin_args = {}
+
+    edge_labels = {}
+    for edge in graph.edges:
+        width = 1.1 + 3.2 * node_norm_map.get(edge[1], 0.5)
+        rule = graph.edges[edge].get("rule")
+        nx.draw_networkx_edges(
+            graph,
+            pos,
+            edgelist=[edge],
+            ax=ax,
+            arrows=True,
+            arrowstyle="-|>",
+            arrowsize=18,
+            edge_color="#a7b0c2",
+            width=width,
+            alpha=0.9,
+            connectionstyle=_connection_style(rule),
+            **margin_args,
+        )
+        edge_labels[(edge[0], edge[1])] = f"{rule or 'process'} p={probs.get(edge[1], 0.0):.2f}"
 
     if with_labels:
         labels = {node: graph.nodes[node]["display_label"] for node in graph.nodes}
@@ -127,7 +211,6 @@ def plot_edit_dag(
             ax=ax,
         )
 
-    edge_labels = {(edge[0], edge[1]): graph.edges[edge]["rule"] for edge in graph.edges}
     nx.draw_networkx_edge_labels(
         graph,
         pos,
@@ -153,7 +236,14 @@ def plot_edit_dag(
             Patch(edgecolor=color, facecolor="none", linewidth=2.0, label=stage)
             for stage, color in stage_colors.items()
         ]
-        ax.legend(handles=handles, title="Stage", loc="upper left", frameon=False, labelcolor="#e6e1cf")
+        legend_loc = "lower left" if layout == "timeline" else "upper left"
+        ax.legend(
+            handles=handles,
+            title="Edit stage",
+            loc=legend_loc,
+            frameon=False,
+            labelcolor="#e6e1cf",
+        )
 
     ax.annotate(
         "",
@@ -178,25 +268,26 @@ def plot_edit_dag(
     leaves = [node for node, out_degree in graph.out_degree() if out_degree == 0]
     if leaves:
         top_leaves = sorted(leaves, key=lambda node: graph.nodes[node]["prob"], reverse=True)[:5]
-        lines = [
-            f"{format_stage_label(graph.nodes[node].get('stage', 'Outcome'))}: {graph.nodes[node]['prob']:.1%}"
-            for node in top_leaves
-        ]
-        overlay_text = "Top outcomes\n" + "\n".join(lines)
-        ax.text(
-            0.98,
-            0.02,
-            overlay_text,
-            transform=ax.transAxes,
-            ha="right",
-            va="bottom",
-            fontsize=8,
-            color="#f4f6ff",
-            bbox=dict(boxstyle="round,pad=0.4", facecolor="#05070dcc", edgecolor="#3a4154", linewidth=0.6),
-        )
+        labels = [format_stage_label(graph.nodes[node].get("stage", "Outcome")) for node in top_leaves]
+        values = [graph.nodes[node]["prob"] for node in top_leaves]
+        inset = inset_axes(ax, width="25%", height="30%", loc="lower right", borderpad=1.0)
+        inset.barh(range(len(values)), values, color="#7aa2f7")
+        inset.set_yticks(range(len(values)))
+        inset.set_yticklabels(labels, fontsize=7, color="#e6e1cf")
+        inset.set_xlim(0, max(values) * 1.1 if values else 1)
+        inset.set_xticks([])
+        inset.set_title("Outcome probability", fontsize=8, color="#e6e1cf")
+        inset.set_facecolor("#0b0e14")
+        for spine in inset.spines.values():
+            spine.set_color("#2a2f3a")
 
     ax.axis("off")
-    ax.set_title("Helix Edit DAG", color="#e6e1cf")
+    ax.set_title(
+        "Helix CRISPR Repair Simulation\nStochastic lineage graph of possible edit outcomes",
+        color="#e6e1cf",
+        fontsize=13,
+        loc="left",
+    )
     return ax
 
 

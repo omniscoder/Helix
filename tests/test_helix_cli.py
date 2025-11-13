@@ -264,3 +264,25 @@ def test_cli_rna_ensemble(tmp_path: Path):
     )
     assert output.exists()
     assert "structure" in result.stdout
+
+
+def test_cli_pcr_dag(tmp_path: Path):
+    genome = "src/helix/datasets/dna/plasmid_demo.fna"
+    out_path = tmp_path / "pcr_dag.json"
+    result = run_cli(
+        "pcr",
+        "dag",
+        "--genome",
+        genome,
+        "--primer-config",
+        "examples/pcr_primers.json",
+        "--pcr-config",
+        "examples/pcr_config.json",
+        "--out",
+        str(out_path),
+    )
+    assert out_path.exists()
+    assert out_path.exists()
+    payload = json.loads(out_path.read_text())
+    assert payload["artifact"] == "helix.pcr.amplicon_dag.v1"
+    assert payload["nodes"]

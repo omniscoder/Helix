@@ -72,3 +72,9 @@ Welcome to the growing scrapbook of Helix weekend projects. Each example favors 
 - What it does: chains the unified CLI to run DNA summaries, triage reports, spectrum scoring, and RNA folding with one config.
 - Try it: `helix workflows --config workflows/plasmid_screen.yaml --output-dir workflow_runs`
 - Remix ideas: add `viz` steps for hydropathy plots, or point at your own FASTA files to produce per-sample dashboards overnight.
+
+## PCR Amplicon DAG
+- Files: `examples/pcr_primers.json`, `examples/pcr_config.json`
+- What it does: feeds the new `helix pcr dag` command with a demo genome + primer pair to generate a `helix.pcr.amplicon_dag.v1` artifact. Pair with `helix edit-dag viz/animate` to render PNG/GIF outputs.
+- Try it: `python -m helix.cli pcr dag --genome src/helix/datasets/dna/plasmid_demo.fna --primer-config examples/pcr_primers.json --pcr-config examples/pcr_config.json --out pcr_amplicon_dag.json`
+- Remix ideas: chain the PCR DAG after a CRISPR or Prime Edit DAG, or tweak the primers/config to explore how efficiency and error rates reshape the amplicon landscape.

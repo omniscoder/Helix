@@ -21,6 +21,7 @@ Helix complements our production platform OGN rather than competing with it. Whe
 - **Peptide spectrum sandbox** (`helix.cyclospectrum`): linear + cyclic theoretical spectra, scoring helpers, and a leaderboard CLI for reconstructing peptides.
 - **RNA folding + ensembles** (`helix.rna`): Zuker-style MFE plus McCaskill partition/MEA/centroid helpers with dot-plots and entropy tracks.
 - **CRISPR/prime scaffolding** (`helix.crispr`, `helix.prime`): PAM registry, guide discovery CLI + schema payloads, and stubs for scoring/simulation/viz.
+- **PCR amplification DAGs** (`helix.pcr`): primer pair + PCR config models, DAG construction helpers, and interactive viz outputs that slot into the edit-dag tooling pipeline.
 - **Protein helpers** (`helix.protein`): sequence-first summaries (weight, charge, hydropathy windows) with FASTA loading, visualization, and a friendly CLI wrapper.
 - **Workflows + API** (`helix.cli`, `helix.workflows`, `helix.api`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts (full helper reference lives in [`docs/reference/api.md`](docs/reference/api.md)).
 - **Seeding + seed-and-extend** (`helix.seed`): deterministic minimizers/syncmers and banded seed-extend helpers for toy mappers and density visualizations.
@@ -164,6 +165,17 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   helix prime dag --genome genome.fna --peg-config peg.json --editor-config pe3.json --json prime_edit_dag.json
   ```
   Produces the prime-editing DAG artifact (`helix.prime.edit_dag.v1`) so you can inspect RTT-driven branches, log probabilities, and materialized genome snapshots per node.
+
+- **PCR amplicon DAG**
+  ```bash
+  python -m helix.cli pcr dag \
+    --genome src/helix/datasets/dna/plasmid_demo.fna \
+    --primer-config examples/pcr_primers.json \
+    --pcr-config examples/pcr_config.json \
+    --out pcr_amplicon_dag.json
+  python -m helix.cli edit-dag viz --input pcr_amplicon_dag.json --out pcr_dag.png
+  ```
+  Simulates in-silico amplification (binding → cycles → error branches) and emits `helix.pcr.amplicon_dag.v1`. Drag-drop the JSON into the [Playground](https://omniscoder.github.io/Helix/playground/?json=assets/viz/pcr_amplicon_dag.json) for an interactive tour or animate it via `helix edit-dag animate`.
 
 - **Edit DAG visualization**
   ```bash

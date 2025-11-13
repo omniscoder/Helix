@@ -34,6 +34,12 @@ def stage_palette(stages: Sequence[str], cmap_name: str) -> Dict[str, Tuple[floa
 def compute_layout(graph: nx.DiGraph, layout: str, seed: int = 0) -> Dict[str, Tuple[float, float]]:
     """Return node positions for the requested layout."""
     layout = layout.lower()
+    if layout == "timeline":
+        try:
+            pos = nx.multipartite_layout(graph, subset_key="subset", align="horizontal", scale=1.5)
+            return {node: (coords[0], coords[1]) for node, coords in pos.items()}
+        except Exception:  # pragma: no cover - fallback
+            pass
     if layout == "kamada-kawai":
         return nx.kamada_kawai_layout(graph)
     if layout == "spectral":

@@ -20,7 +20,7 @@ def animate_edit_dag(
     out_gif: str,
     *,
     fps: int = 3,
-    layout: str = "spring",
+    layout: str = "timeline",
     figsize: Tuple[int, int] = (8, 6),
     background_color: str = "#0b0e14",
     prob_cmap: str = "viridis",
@@ -76,6 +76,10 @@ def animate_edit_dag(
     edge_width_map = {
         (source, target): 1.1 + 3.0 * node_norm_map.get(target, 0.5) for (source, target) in graph.edges
     }
+    time_positions: dict[int, list[float]] = {}
+    for node, (x, _) in position.items():
+        bucket = time_positions.setdefault(time_by_node.get(node, 0), [])
+        bucket.append(x)
 
     leaves = [node for node, out_degree in graph.out_degree() if out_degree == 0]
     if leaves:
@@ -107,6 +111,21 @@ def animate_edit_dag(
         ax.set_facecolor(background_color)
         fig.patch.set_facecolor(background_color)
 
+        if time_positions:
+            for t_value, xs in sorted(time_positions.items()):
+                center = sum(xs) / len(xs)
+                ax.axvline(center, color="#ffffff10", linewidth=0.8, linestyle="--")
+                ax.annotate(
+                    f"t={t_value}",
+                    xy=(center, 1.02),
+                    xycoords=("data", "axes fraction"),
+                    color="#cdd2e3",
+                    fontsize=7,
+                    ha="center",
+                    va="bottom",
+                    alpha=0.6,
+                )
+
         visible_nodes = [node for node in graph.nodes if time_by_node.get(node, 0) <= current_time]
         fresh_nodes = [node for node in visible_nodes if time_by_node.get(node, 0) == current_time]
         prior_nodes = [node for node in visible_nodes if time_by_node.get(node, 0) < current_time]
@@ -121,30 +140,56 @@ def animate_edit_dag(
             if time_by_node.get(target, 0) == current_time
         ]
 
-        nx.draw_networkx_edges(
-            graph,
-            position,
-            edgelist=visible_edges,
-            ax=ax,
-            arrows=True,
-            arrowstyle="->",
-            edge_color="#6b7085",
-            width=[edge_width_map[edge] for edge in visible_edges],
-            alpha=0.55,
-            connectionstyle="arc3,rad=0.05",
-        )
-        if fresh_edges:
+        def _connection_style(rule: str | None) -> str:
+            if not rule:
+                return "arc3,rad=0.05"
+            rule_lower = rule.lower()
+            if "clean" in rule_lower:
+                return "arc3,rad=0.0"
+            if "indel" in rule_lower:
+                return "arc3,rad=0.25"
+            if "error" in rule_lower:
+                return "arc3,rad=-0.2"
+            return "arc3,rad=0.05"
+
+        margin_args = {}
+        try:
+            nx.draw_networkx_edges(graph, position, edgelist=[], ax=ax, min_source_margin=0, min_target_margin=0)
+            margin_args = {"min_source_margin": 10, "min_target_margin": 18}
+        except TypeError:
+            margin_args = {}
+
+        for edge in visible_edges:
+            rule = graph.edges[edge].get("rule")
             nx.draw_networkx_edges(
                 graph,
                 position,
-                edgelist=fresh_edges,
+                edgelist=[edge],
                 ax=ax,
                 arrows=True,
-                arrowstyle="->",
+                arrowstyle="-|>",
+                arrowsize=18,
+                edge_color="#6b7085",
+                width=edge_width_map[edge],
+                alpha=0.65,
+                connectionstyle=_connection_style(rule),
+                **margin_args,
+            )
+        for edge in fresh_edges:
+            rule = graph.edges[edge].get("rule")
+            nx.draw_networkx_edges(
+                graph,
+                position,
+                edgelist=[edge],
+                ax=ax,
+                arrows=True,
+                arrowstyle="-|>",
+                arrowsize=20,
                 edge_color=highlight_color,
-                width=[edge_width_map[edge] * 1.1 for edge in fresh_edges],
-                alpha=0.9,
-                connectionstyle="arc3,rad=0.05",
+                width=edge_width_map[edge] * 1.15,
+                alpha=0.95,
+                connectionstyle=_connection_style(rule),
+                **margin_args,
             )
 
         _draw_nodes(ax, prior_nodes, alpha=0.85)
@@ -171,10 +216,11 @@ def animate_edit_dag(
                 Patch(edgecolor=color, facecolor="none", linewidth=2.0, label=stage)
                 for stage, color in border_colors.items()
             ]
+            legend_loc = "lower left" if layout == "timeline" else "upper left"
             legend = ax.legend(
                 handles=handles,
                 title="Stage",
-                loc="upper left",
+                loc=legend_loc,
                 frameon=False,
                 fontsize=8,
             )
@@ -226,7 +272,13 @@ def animate_edit_dag(
                 bbox=dict(boxstyle="round,pad=0.4", facecolor="#05070dcc", edgecolor="#3a4154", linewidth=0.6),
             )
         ax.axis("off")
-        ax.set_title("Helix Edit DAG — cinematic mode", color="#e6e1cf", fontsize=13, pad=10)
+        ax.set_title(
+            "Helix CRISPR Repair Simulation\nStochastic lineage graph of possible edit outcomes",
+            color="#e6e1cf",
+            fontsize=12,
+            loc="left",
+            pad=10,
+        )
         fig.tight_layout()
 
         buffer = io.BytesIO()
