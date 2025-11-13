@@ -13,6 +13,7 @@ from .model import (
 )
 from .simulator import CutEvent, find_candidate_sites, rank_off_targets, simulate_cuts
 from .dag_api import build_crispr_edit_dag
+from .physics import CRISPRPhysics
 from . import score, simulate
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "TargetSite",
     "DigitalGenome",
     "CutEvent",
+    "CRISPRPhysics",
     "find_candidate_sites",
     "simulate_cuts",
     "rank_off_targets",

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import io
 import math
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import imageio.v2 as iio
 from matplotlib import colors as mcolors
@@ -27,6 +27,8 @@ def animate_edit_dag(
     stage_cmap: str = "tab10",
     highlight_color: str = "#f5a97f",
     dpi: int = 150,
+    min_prob: float = 0.0,
+    max_time_filter: Optional[int] = None,
 ) -> None:
     """
     Animate EditDAG growth over time and export to a GIF.
@@ -38,12 +40,12 @@ def animate_edit_dag(
     prob_by_node: dict[str, float] = {}
     stage_by_node: dict[str, str] = {}
     display_labels: dict[str, str] = {}
-    max_time = 0
+    max_time_seen = 0
 
     for node_id, node in dag.nodes.items():
         time_step = int(node.metadata.get("time_step", 0))
         stage = node.metadata.get("stage", "unknown")
-        max_time = max(max_time, time_step)
+        max_time_seen = max(max_time_seen, time_step)
         probability = math.exp(node.log_prob)
         time_by_node[node_id] = time_step
         prob_by_node[node_id] = probability
@@ -58,6 +60,25 @@ def animate_edit_dag(
 
     for edge in dag.edges:
         graph.add_edge(edge.source, edge.target)
+
+    total_prob = sum(prob_by_node.values()) or 1.0
+    normalized_probs = {node: prob_by_node[node] / total_prob for node in graph.nodes}
+    prob_threshold = max(0.0, min_prob)
+    allowed_nodes = [
+        node
+        for node in graph.nodes
+        if normalized_probs.get(node, 0.0) >= prob_threshold
+        and (max_time_filter is None or time_by_node.get(node, 0) <= max_time_filter)
+    ]
+    if not allowed_nodes:
+        allowed_nodes = list(graph.nodes)
+    graph = graph.subgraph(allowed_nodes).copy()
+    time_by_node = {node: time_by_node[node] for node in graph.nodes}
+    stage_by_node = {node: stage_by_node[node] for node in graph.nodes}
+    display_labels = {node: display_labels[node] for node in graph.nodes}
+    prob_by_node = {node: prob_by_node[node] for node in graph.nodes}
+    normalized_probs = {node: normalized_probs[node] for node in graph.nodes}
+    max_time_seen = max((time_by_node.get(node, 0) for node in graph.nodes), default=0)
 
     position = compute_layout(graph, layout, seed=0)
     frames: List = []
@@ -83,9 +104,9 @@ def animate_edit_dag(
 
     leaves = [node for node, out_degree in graph.out_degree() if out_degree == 0]
     if leaves:
-        top_leaves = sorted(leaves, key=lambda node: prob_by_node[node], reverse=True)[:5]
+        top_leaves = sorted(leaves, key=lambda node: normalized_probs[node], reverse=True)[:5]
         top_outcomes_lines = [
-            f"{format_stage_label(stage_by_node[node])}: {prob_by_node[node]:.1%}" for node in top_leaves
+            f"{format_stage_label(stage_by_node[node])}: {normalized_probs[node]:.1%}" for node in top_leaves
         ]
         top_outcomes_text = "Top outcomes\n" + "\n".join(top_outcomes_lines)
     else:
@@ -106,7 +127,7 @@ def animate_edit_dag(
             ax=ax,
         )
 
-    for current_time in range(0, max_time + 1):
+    for current_time in range(0, max_time_seen + 1):
         fig, ax = plt.subplots(figsize=figsize)
         ax.set_facecolor(background_color)
         fig.patch.set_facecolor(background_color)

@@ -6,10 +6,12 @@ import random
 
 from helix.edit.dag import EditDAG
 from helix.edit.simulate import SimulationContext, build_edit_dag
+from helix.edit.post import dedupe_terminal_nodes
 from helix.genome.digital import DigitalGenome as CoreDigitalGenome
 
 from . import rules  # noqa: F401
 from .model import PegRNA, PrimeEditor
+from .physics import PrimePhysics
 from helix.crispr.model import DigitalGenome as LegacyDigitalGenome
 
 
@@ -28,12 +30,14 @@ def build_prime_edit_dag(
         rng=random.Random(rng_seed),
         max_depth=max_depth,
         min_log_prob=math.log(min_prob),
-        rules=("prime.rtt_clean", "prime.no_edit"),
+        rules=("prime.rtt_clean", "prime.flap_resolution", "prime.no_edit"),
         extra={
             "legacy_genome": genome,
             "core_genome": core_genome,
             "peg": peg,
             "editor": editor,
+            "prime_physics": PrimePhysics.from_config(editor, peg),
         },
     )
-    return build_edit_dag(core_genome.view(), context)
+    dag = build_edit_dag(core_genome.view(), context)
+    return dedupe_terminal_nodes(dag)

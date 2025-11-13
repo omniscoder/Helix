@@ -1,0 +1,350 @@
+{
+  "artifact": "helix.crispr.edit_dag.v1.1",
+  "version": "1.1",
+  "schema_version": "1.1",
+  "meta": {
+    "mechanism": "crispr",
+    "demo": "playground",
+    "schema_version": "1.1",
+    "rule_version": "1.0",
+    "created_at": "2025-11-13T06:32:43.297691+00:00"
+  },
+  "nodes": {
+    "n_9705ccaae45a0b9b": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 0,
+        "stage": "root"
+      },
+      "parent_ids": [],
+      "seq_hashes": {
+        "chr_demo": "59409f131a0f69288f9f246bad57617e81e26801214ae6e23e96f170a77115e9"
+      },
+      "sequences": {
+        "chr_demo": "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    },
+    "n_63ee121447ebb33c": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "cut_position": 6,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chr_demo": "59409f131a0f69288f9f246bad57617e81e26801214ae6e23e96f170a77115e9"
+      },
+      "diffs": [
+        {
+          "chrom": "chr_demo",
+          "start": 6,
+          "end": 6,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chr_demo",
+            "site_start": 3,
+            "site_end": 23,
+            "cut_position": 6,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    },
+    "n_310c461a6891dd1c": {
+      "log_prob": -2.3025850929940455,
+      "metadata": {
+        "time_step": 1,
+        "stage": "no_edit"
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chr_demo": "59409f131a0f69288f9f246bad57617e81e26801214ae6e23e96f170a77115e9"
+      },
+      "diffs": [
+        {
+          "chrom": "__none__",
+          "start": 0,
+          "end": 0,
+          "replacement": "",
+          "metadata": {
+            "label": "no_edit",
+            "mechanism": "crispr",
+            "stage": "no_edit"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    },
+    "n_308909e4a575889e": {
+      "log_prob": -1.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "root"
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chr_demo": "59409f131a0f69288f9f246bad57617e81e26801214ae6e23e96f170a77115e9"
+      },
+      "diffs": [
+        {
+          "chrom": "__none__",
+          "start": 0,
+          "end": 0,
+          "replacement": "",
+          "metadata": {
+            "label": "no_edit_branch",
+            "mechanism": "crispr"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    },
+    "n_bba2b3edcde65910": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "cut_position": 6,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_63ee121447ebb33c"
+      ],
+      "seq_hashes": {
+        "chr_demo": "9f0ea40918e8aa5442bc1345a29b85d66b403e71f5aa2240c34ca03b9ddb440e"
+      },
+      "diffs": [
+        {
+          "chrom": "chr_demo",
+          "start": 3,
+          "end": 9,
+          "replacement": "GACCCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTGACCCAGAAACCCGGGTTTTAGGTTT"
+      }
+    },
+    "n_4bf1fceb51054da3": {
+      "log_prob": -0.5,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "cut_position": 6,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_63ee121447ebb33c"
+      ],
+      "seq_hashes": {
+        "chr_demo": "06768bc1558e7779955a34b50cb9067174e6b3bee68322617063a41b6a69ed96"
+      },
+      "diffs": [
+        {
+          "chrom": "chr_demo",
+          "start": 6,
+          "end": 7,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTACCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    },
+    "n_208dcb84a110dbcc": {
+      "log_prob": -0.05691956185863989,
+      "metadata": {
+        "time_step": 2,
+        "stage": "cut",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "cut_position": 6,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_63ee121447ebb33c"
+      ],
+      "seq_hashes": {
+        "chr_demo": "59409f131a0f69288f9f246bad57617e81e26801214ae6e23e96f170a77115e9"
+      },
+      "diffs": [
+        {
+          "chrom": "__none__",
+          "start": 0,
+          "end": 0,
+          "replacement": "",
+          "metadata": {
+            "label": "no_edit_branch",
+            "mechanism": "crispr"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_63ee121447ebb33c",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chr_demo",
+        "start": 6,
+        "end": 6,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chr_demo",
+          "site_start": 3,
+          "site_end": 23,
+          "cut_position": 6,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "cut_position": 6,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_310c461a6891dd1c",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "__none__",
+        "start": 0,
+        "end": 0,
+        "replacement": "",
+        "metadata": {
+          "label": "no_edit",
+          "mechanism": "crispr",
+          "stage": "no_edit"
+        }
+      },
+      "metadata": {
+        "stage": "no_edit"
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_308909e4a575889e",
+      "rule": "crispr.no_edit",
+      "event": {
+        "chrom": "__none__",
+        "start": 0,
+        "end": 0,
+        "replacement": "",
+        "metadata": {
+          "label": "no_edit_branch",
+          "mechanism": "crispr"
+        }
+      },
+      "metadata": {
+        "stage": "root"
+      }
+    },
+    {
+      "source": "n_63ee121447ebb33c",
+      "target": "n_bba2b3edcde65910",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chr_demo",
+        "start": 3,
+        "end": 9,
+        "replacement": "GACCCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_63ee121447ebb33c",
+      "target": "n_4bf1fceb51054da3",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chr_demo",
+        "start": 6,
+        "end": 7,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_63ee121447ebb33c",
+      "target": "n_208dcb84a110dbcc",
+      "rule": "crispr.no_edit",
+      "event": {
+        "chrom": "__none__",
+        "start": 0,
+        "end": 0,
+        "replacement": "",
+        "metadata": {
+          "label": "no_edit_branch",
+          "mechanism": "crispr"
+        }
+      },
+      "metadata": {
+        "stage": "cut"
+      }
+    }
+  ],
+  "root_id": "n_9705ccaae45a0b9b"
+}

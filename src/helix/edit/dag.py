@@ -1,8 +1,9 @@
 """Edit DAG data structures used by Helix simulators."""
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional, Sequence
 
 from helix.genome.digital import DigitalGenome, DigitalGenomeView
 
@@ -17,6 +18,9 @@ class EditNode:
     genome_view: DigitalGenomeView
     log_prob: float
     metadata: Dict[str, object] = field(default_factory=dict)
+    parents: Sequence[str] = field(default_factory=tuple)
+    seq_hashes: Dict[str, str] = field(default_factory=dict)
+    diffs: Sequence[EditEvent] = field(default_factory=tuple)
 
 
 @dataclass
@@ -44,20 +48,49 @@ class EditDAG:
         return [node for node_id, node in self.nodes.items() if node_id not in outgoing]
 
 
+def _compute_seq_hashes(view: DigitalGenomeView) -> Dict[str, str]:
+    hashes: Dict[str, str] = {}
+    for chrom, sequence in view.materialize_all().items():
+        hashes[chrom] = hashlib.sha256(sequence.encode("utf-8")).hexdigest()
+    return hashes
+
+
 def dag_from_payload(payload: Dict[str, object]) -> EditDAG:
     """Reconstruct an EditDAG from a serialized payload (artifact JSON)."""
     nodes: Dict[str, EditNode] = {}
     for node_id, node_entry in payload.get("nodes", {}).items():
+        metadata = node_entry.get("metadata", {}) if isinstance(node_entry, dict) else {}
+        log_prob = float(node_entry.get("log_prob", 0.0))
+        seq_hashes = node_entry.get("seq_hashes") or {}
+        parent_ids = node_entry.get("parent_ids")
+        if parent_ids is None:
+            parent_ids = node_entry.get("parents")
+        parents = tuple(parent_ids or [])
         sequences = node_entry.get("sequences", {}) if isinstance(node_entry, dict) else {}
         genome = DigitalGenome(sequences=dict(sequences))
         view = genome.view()
-        metadata = node_entry.get("metadata", {}) if isinstance(node_entry, dict) else {}
-        log_prob = float(node_entry.get("log_prob", 0.0))
+        diffs_raw = node_entry.get("diffs", [])
+        diff_events = tuple(
+            EditEvent(
+                chrom=entry.get("chrom", ""),
+                start=int(entry.get("start", 0)),
+                end=int(entry.get("end", 0)),
+                replacement=entry.get("replacement", ""),
+                metadata=entry.get("metadata", {}),
+            )
+            for entry in diffs_raw
+        )
+        if not sequences and diff_events:
+            for event in diff_events:
+                view = view.apply(event)
         nodes[node_id] = EditNode(
             id=node_id,
             genome_view=view,
             log_prob=log_prob,
             metadata=metadata,
+            parents=parents,
+            seq_hashes=dict(seq_hashes),
+            diffs=diff_events,
         )
 
     edges: List[EditEdge] = []

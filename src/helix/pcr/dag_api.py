@@ -6,6 +6,7 @@ import random
 
 from helix.edit.dag import EditDAG
 from helix.edit.simulate import SimulationContext, build_edit_dag
+from helix.edit.post import dedupe_terminal_nodes
 from helix.genome.digital import DigitalGenome as CoreDigitalGenome
 from helix.crispr.model import DigitalGenome as LegacyDigitalGenome
 
@@ -50,4 +51,4 @@ def pcr_edit_dag(
     if root:
         root.metadata.setdefault("stage", "root")
         root.metadata.setdefault("time_step", 0)
-    return dag
+    return dedupe_terminal_nodes(dag)

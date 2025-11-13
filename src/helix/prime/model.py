@@ -48,6 +48,8 @@ class PrimeEditor:
     efficiency_scale: float = 1.0
     indel_bias: float = 0.0
     mismatch_tolerance: int = 3
+    flap_balance: float = 0.5  # favor left vs right flap resolution (0..1)
+    reanneal_bias: float = 0.1  # probability mass for reanneal/no-edit branches
 
 
 @dataclass
@@ -65,3 +67,5 @@ class PrimeEditOutcome:
     edited_sequence: str
     logit_score: float  # unnormalized log-probability or score
     description: str = ""
+    stage: str = "done"
+    metadata: Dict[str, str] = field(default_factory=dict)

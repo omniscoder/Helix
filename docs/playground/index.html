@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- Cytoscape -->
   <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+  <!-- Chart.js for metrics panel -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --bg: #0b0e14; --fg: #e6e1cf; --muted: #9da5b4; --accent: #7aa2f7; --ok: #8bd5ca; --warn:#f5a97f; --danger:#ed8796;
@@ -33,7 +35,9 @@
     <div class="controls">
       <input id="file" type="file" accept=".json" />
       <button id="loadSample">Load sample</button>
-      <button id="loadPcrDemo" data-json="assets/viz/pcr_amplicon_dag.json">Load PCR demo</button>
+      <button class="demoBtn" data-json="assets/viz/crispr_playground_dag.json">Load CRISPR demo</button>
+      <button class="demoBtn" data-json="assets/viz/prime_playground_dag.json">Load Prime demo</button>
+      <button class="demoBtn" data-json="assets/viz/pcr_amplicon_dag.json">Load PCR demo</button>
       <label>Min prob <input id="pmin" type="range" min="0" max="1" step="0.001" value="0"></label>
       <label>Max time <input id="tmax" type="range" min="0" max="16" step="1" value="16"></label>
       <select id="layout">
@@ -51,6 +55,10 @@
       <div id="nodeMeta" class="kv">Select a node…</div>
       <h2>Sequence Diff <small class="hint">(root → node)</small></h2>
       <div id="diff" class="diff mono">—</div>
+      <h2>Metrics</h2>
+      <div id="metrics" class="kv">Load a DAG…</div>
+      <h2>Outcome Distribution</h2>
+      <canvas id="metricsChart" height="160"></canvas>
     </aside>
   </div>
 
@@ -164,12 +172,15 @@
     // ---------- UI plumbing ----------
     const fileInput = document.getElementById('file');
     const loadSampleBtn = document.getElementById('loadSample');
-    const loadPcrDemoBtn = document.getElementById('loadPcrDemo');
+    const demoButtons = document.querySelectorAll('.demoBtn');
     const pminSlider = document.getElementById('pmin');
     const tmaxSlider = document.getElementById('tmax');
     const layoutSel = document.getElementById('layout');
     const nodeMeta = document.getElementById('nodeMeta');
     const diffBox = document.getElementById('diff');
+    const metricsBox = document.getElementById('metrics');
+    const metricsCanvas = document.getElementById('metricsChart');
+    let metricsChart = null;
 
     let payload = null; let rootSeqs = null;
 
@@ -195,6 +206,7 @@
         e.style('display', (s.style('display') !== 'none' && t.style('display') !== 'none') ? 'element' : 'none');
       });
       runLayout(layoutSel.value);
+      renderMetrics();
     }
 
     cy.on('tap', 'node', evt => {
@@ -243,10 +255,154 @@
       URL.revokeObjectURL(a.href);
     });
 
+    function hammingDistance(a, b){
+      if (!a || !b) return 0;
+      const n = Math.min(a.length, b.length);
+      let d = Math.abs(a.length - b.length);
+      for (let i=0;i<n;i++){ if (a[i] !== b[i]) d++; }
+      return d;
+    }
+
+    function computeDagStats(payload){
+      if (!payload || !payload.nodes) return null;
+      const nodes = payload.nodes;
+      const edges = payload.edges || [];
+      const rootId = payload.root_id;
+      const rootNode = nodes[rootId];
+      if (!rootNode) return null;
+      const pmin = parseFloat(pminSlider.value || '0');
+      const tmax = parseInt(tmaxSlider.value || '999', 10);
+      const numNodes = Object.keys(nodes).length;
+      const numEdges = edges.length;
+      const maxTime = Object.values(nodes).reduce((acc, n) => {
+        const t = (n.metadata && n.metadata.time_step) ?? 0;
+        return Math.max(acc, t);
+      }, 0);
+      const outgoing = new Set(edges.map(e => e.source));
+      const terminalIds = Object.keys(nodes).filter(id => !outgoing.has(id));
+      const weights = terminalIds.map(id => Math.exp(nodes[id].log_prob || 0));
+      const totalWeight = weights.reduce((a,b) => a + b, 0) || 1;
+      const filtered = terminalIds.filter((id, idx) => {
+        const prob = weights[idx] / totalWeight;
+        const timeStep = (nodes[id].metadata && nodes[id].metadata.time_step) ?? 0;
+        return prob >= pmin && timeStep <= tmax;
+      });
+      if (!filtered.length) return {
+        numNodes,
+        numEdges,
+        maxTime,
+        terminalCount: 0,
+        classMass: {},
+        entropy: 0,
+        effectiveModes: 0,
+        distances: null,
+      };
+      const classMass = {};
+      const probs = [];
+      const distances = [];
+      const rootSeqs = (rootNode.sequences) || {};
+      filtered.forEach(id => {
+        const idx = terminalIds.indexOf(id);
+        const prob = weights[idx] / totalWeight;
+        probs.push(prob);
+        const label = (nodes[id].metadata && nodes[id].metadata.label) || (nodes[id].metadata && nodes[id].metadata.stage) || "unlabeled";
+        classMass[label] = (classMass[label] || 0) + prob;
+        const nodeSeqs = nodes[id].sequences || {};
+        const chrom = Object.keys(nodeSeqs)[0];
+        if (chrom && rootSeqs[chrom]){
+          distances.push(hammingDistance(rootSeqs[chrom], nodeSeqs[chrom]));
+        }
+      });
+      let entropy = 0;
+      Object.values(classMass).forEach(prob => {
+        if (prob > 0) entropy -= prob * Math.log(prob);
+      });
+      const effectiveModes = Math.exp(entropy);
+      const distSummary = distances.length ? {
+        mean: distances.reduce((a,b)=>a+b,0)/distances.length,
+        median: distances.slice().sort((a,b)=>a-b)[Math.floor(distances.length/2)],
+        max: Math.max(...distances),
+      } : null;
+      return {
+        numNodes,
+        numEdges,
+        maxTime,
+        terminalCount: filtered.length,
+        classMass,
+        entropy,
+        effectiveModes,
+        distances: distSummary,
+      };
+    }
+
+    function renderMetrics(){
+      const stats = computeDagStats(payload);
+      if (!stats){
+        metricsBox.textContent = "Load a DAG…";
+        if (metricsChart){ metricsChart.destroy(); metricsChart = null; }
+        return;
+      }
+      const lines = [
+        `nodes: ${stats.numNodes}`,
+        `edges: ${stats.numEdges}`,
+        `terminal nodes: ${stats.terminalCount}`,
+        `max time_step: ${stats.maxTime}`,
+        `entropy: ${stats.entropy.toFixed(3)}`,
+        `effective modes: ${stats.effectiveModes.toFixed(2)}`,
+      ];
+      if (stats.distances){
+        lines.push(`edit distance mean/median/max: ${stats.distances.mean.toFixed(1)} / ${stats.distances.median} / ${stats.distances.max}`);
+      }
+      metricsBox.innerHTML = lines.join('<br>');
+      const labels = Object.keys(stats.classMass);
+      const values = labels.map(label => stats.classMass[label]);
+      if (metricsChart){ metricsChart.destroy(); }
+      if (!labels.length){
+        metricsChart = null;
+        const ctx = metricsCanvas.getContext('2d');
+        ctx.clearRect(0, 0, metricsCanvas.width, metricsCanvas.height);
+        return;
+      }
+      metricsChart = new Chart(metricsCanvas.getContext('2d'), {
+        type: 'bar',
+        data: { labels, datasets: [{ data: values, backgroundColor: '#7aa2f7' }] },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 1,
+              ticks: { callback: value => Number(value).toFixed(2) },
+            }
+          }
+        }
+      });
+    }
+
+    function loadRemoteDag(url){
+      if (!url) return;
+      fetch(url, { cache: 'no-cache' })
+        .then(resp => {
+          if (!resp.ok){
+            throw new Error(`Failed to fetch ${url} (HTTP ${resp.status})`);
+          }
+          return resp.json();
+        })
+        .then(data => {
+          payload = data;
+          renderPayload();
+        })
+        .catch(err => alert(err));
+    }
+
+    demoButtons.forEach(btn => {
+      btn.addEventListener('click', () => loadRemoteDag(btn.dataset.json));
+    });
+
     loadSampleBtn.addEventListener('click', () => {
-      // Tiny inline sample; replace with your full demo JSON if you like.
       payload = {
-        artifact:"helix.crispr.edit_dag.v1", version:"1",
+        artifact:"helix.crispr.edit_dag.v1.1", version:"1.1",
         root_id:"node_0",
         nodes:{
           node_0:{log_prob:0.0, metadata:{stage:"root", time_step:0},
@@ -270,30 +426,17 @@
       renderPayload();
     });
 
-    if (loadPcrDemoBtn) {
-      loadPcrDemoBtn.addEventListener('click', () => {
-        const url = loadPcrDemoBtn.dataset.json;
-        fetch(url)
-          .then(resp => {
-            if (!resp.ok) {
-              throw new Error(`Failed to fetch ${url} (${resp.status})`);
-            }
-            return resp.json();
-          })
-          .then(data => {
-            payload = data;
-            renderPayload();
-          })
-          .catch(err => {
-            alert(`Could not load PCR demo: ${err.message}`);
-          });
-      });
-    }
-
-    // Optional: auto-load ?json= URL param
     const params = new URLSearchParams(location.search);
-    if (params.get('json')){
-      fetch(params.get('json')).then(r => r.json()).then(j => { payload=j; renderPayload(); });
+    const demoParam = params.get('demo');
+    const demoMap = {
+      crispr: 'assets/viz/crispr_playground_dag.json',
+      prime: 'assets/viz/prime_playground_dag.json',
+      pcr: 'assets/viz/pcr_amplicon_dag.json',
+    };
+    if (demoParam && demoMap[demoParam]){
+      loadRemoteDag(demoMap[demoParam]);
+    } else if (params.get('json')){
+      loadRemoteDag(params.get('json'));
     }
   </script>
 </body>

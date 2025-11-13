@@ -152,7 +152,7 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   ```bash
   helix crispr dag --genome genome.fna --guide-sequence GGGGTTTAGAGCTATGCT --max-depth 1 --json crispr_edit_dag.json
   ```
-  Builds the first-version “digital twin” graph using the new edit runtime. Nodes contain fully materialized genome views, edges capture each clean-cut event, and the JSON artifact (`helix.crispr.edit_dag.v1`) can feed notebooks and future viz surfaces.
+  Builds the first-version “digital twin” graph using the new edit runtime. Nodes contain fully materialized genome views, edges capture each clean-cut event, and the JSON artifact (`helix.crispr.edit_dag.v1.1`) can feed notebooks and future viz surfaces.
 
 - **Prime editing sandbox**
   ```bash
@@ -164,7 +164,7 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   ```bash
   helix prime dag --genome genome.fna --peg-config peg.json --editor-config pe3.json --json prime_edit_dag.json
   ```
-  Produces the prime-editing DAG artifact (`helix.prime.edit_dag.v1`) so you can inspect RTT-driven branches, log probabilities, and materialized genome snapshots per node.
+  Produces the prime-editing DAG artifact (`helix.prime.edit_dag.v1.1`) so you can inspect RTT-driven branches, log probabilities, and materialized genome snapshots per node.
 
 - **PCR amplicon DAG**
   ```bash

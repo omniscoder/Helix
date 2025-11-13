@@ -7,10 +7,12 @@ from typing import Optional
 
 from helix.edit.dag import EditDAG
 from helix.edit.simulate import SimulationContext, build_edit_dag
+from helix.edit.post import dedupe_terminal_nodes
 from helix.genome.digital import DigitalGenome as CoreDigitalGenome
 
 from . import rules  # noqa: F401
 from .model import CasSystem, DigitalGenome as LegacyDigitalGenome, GuideRNA
+from .physics import CRISPRPhysics
 
 
 def build_crispr_edit_dag(
@@ -42,6 +44,8 @@ def build_crispr_edit_dag(
             "max_sites": max_sites,
             "no_edit_prob": 0.1,
             "indel_window": 3,
+            "physics": CRISPRPhysics.from_system(cas, guide),
         },
     )
-    return build_edit_dag(core_genome.view(), context)
+    dag = build_edit_dag(core_genome.view(), context)
+    return dedupe_terminal_nodes(dag)

@@ -8,23 +8,16 @@ from helix.edit.events import EditEvent
 
 def apply_diffs(sequence: str, events: Iterable[EditEvent]) -> str:
     """
-    Apply ordered, non-overlapping edit events to a sequence and return the result.
+    Apply a sequence of edit events onto `sequence` in the order they were recorded.
 
-    For v1 we assume callers provide events sorted by start coordinate and that
-    ranges do not overlap. Later versions can enforce/sanitize this.
+    Events are interpreted as edits against the *current* sequence, which means
+    overlapping or out-of-order coordinates are allowed. This behaviour matches
+    how DigitalGenomeView.apply() composes edits during DAG simulations.
     """
 
-    events = list(events)
-    if not events:
-        return sequence
-
-    pieces = []
-    cursor = 0
+    result = sequence
     for event in events:
-        if event.start < cursor:
-            raise ValueError("EditEvents must be non-overlapping and sorted.")
-        pieces.append(sequence[cursor : event.start])
-        pieces.append(event.replacement)
-        cursor = event.end
-    pieces.append(sequence[cursor:])
-    return "".join(pieces)
+        start = max(0, min(len(result), event.start))
+        end = max(start, min(len(result), event.end))
+        result = result[:start] + event.replacement + result[end:]
+    return result

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .edit_spec import make_edit_spec
 from .model import PegRNA, PrimeEditOutcome, PrimeEditor
+from .physics import PrimePhysics, PrimeBranchDistribution
 from .simulator import locate_prime_target_site, simulate_prime_edit
 from .dag_api import build_prime_edit_dag
 from . import design, simulate
@@ -14,6 +15,8 @@ __all__ = [
     "PegRNA",
     "PrimeEditor",
     "PrimeEditOutcome",
+    "PrimePhysics",
+    "PrimeBranchDistribution",
     "locate_prime_target_site",
     "simulate_prime_edit",
     "build_prime_edit_dag",

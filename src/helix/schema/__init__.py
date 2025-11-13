@@ -260,6 +260,8 @@ if PYDANTIC_AVAILABLE:
         edited_sequence: str
         logit_score: float
         description: Optional[str] = None
+        stage: Optional[str] = None
+        metadata: Optional[Dict[str, Any]] = None
 
 
     class PrimeEditSimPayload(_BaseSchemaModel):

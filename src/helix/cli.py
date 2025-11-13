@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import random
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +49,7 @@ from .prime.dag_api import build_prime_edit_dag
 from .pcr.model import Primer, PrimerPair, PCRConfig
 from .pcr.dag_api import pcr_edit_dag
 from .edit.dag import EditDAG, dag_from_payload
+from .edit.report import render_html_report
 from .schema import (
     SchemaError,
     SPEC_VERSION,
@@ -163,6 +166,47 @@ def _load_dag_viz_exporter():
             "Install them via 'pip install helix[viz]' or 'pip install networkx matplotlib'."
         ) from exc
     return save_edit_dag_png
+
+
+def _load_dag_compare_exporter():
+    try:
+        from .visualization.dag_viz import save_edit_dag_compare_png
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise SystemExit(
+            "Edit DAG visualization requires optional dependencies 'networkx' and 'matplotlib'. "
+            "Install them via 'pip install helix[viz]' or 'pip install networkx matplotlib'."
+        ) from exc
+    return save_edit_dag_compare_png
+
+
+def _compute_dag_diff_summary(dag_a: EditDAG, dag_b: EditDAG, *, label_a: str, label_b: str) -> Dict[str, Any]:
+    nodes_a = set(dag_a.nodes.keys())
+    nodes_b = set(dag_b.nodes.keys())
+    unique_a = sorted(nodes_a - nodes_b)
+    unique_b = sorted(nodes_b - nodes_a)
+    shared = sorted(nodes_a & nodes_b)
+
+    terminals_a = {node.id for node in dag_a.terminal_nodes()}
+    terminals_b = {node.id for node in dag_b.terminal_nodes()}
+
+    return {
+        "label_a": label_a,
+        "label_b": label_b,
+        "nodes": {
+            "unique_to_a": unique_a,
+            "unique_to_b": unique_b,
+            "shared": shared,
+        },
+        "terminal_nodes": {
+            "unique_to_a": sorted(terminals_a - terminals_b),
+            "unique_to_b": sorted(terminals_b - terminals_a),
+            "shared": sorted(terminals_a & terminals_b),
+        },
+        "top_outcomes": {
+            label_a: _top_outcomes_from_dag(dag_a, topk=5),
+            label_b: _top_outcomes_from_dag(dag_b, topk=5),
+        },
+    }
 
 
 def _load_dag_animator():
@@ -473,6 +517,8 @@ def _serialize_prime_editor(editor: PrimeEditor) -> Dict[str, Any]:
         "efficiency_scale": editor.efficiency_scale,
         "indel_bias": editor.indel_bias,
         "mismatch_tolerance": editor.mismatch_tolerance,
+        "flap_balance": editor.flap_balance,
+        "reanneal_bias": editor.reanneal_bias,
     }
 
 
@@ -495,6 +541,8 @@ def _serialize_prime_outcome(outcome: PrimeEditOutcome) -> Dict[str, Any]:
         "edited_sequence": outcome.edited_sequence,
         "logit_score": outcome.logit_score,
         "description": outcome.description,
+        "stage": outcome.stage,
+        "metadata": outcome.metadata,
     }
 
 
@@ -564,6 +612,8 @@ def _load_prime_editor_from_args(args: argparse.Namespace) -> PrimeEditor:
     efficiency_scale = float(_override("efficiency_scale", "efficiency_scale", 1.0))
     indel_bias = float(_override("indel_bias", "indel_bias", 0.0))
     mismatch_tolerance = int(_override("mismatch_tolerance", "mismatch_tolerance", 3))
+    flap_balance = float(_override("flap_balance", "flap_balance", 0.5))
+    reanneal_bias = float(_override("reanneal_bias", "reanneal_bias", 0.1))
     return PrimeEditor(
         name=name,
         cas=cas,
@@ -571,6 +621,8 @@ def _load_prime_editor_from_args(args: argparse.Namespace) -> PrimeEditor:
         efficiency_scale=efficiency_scale,
         indel_bias=indel_bias,
         mismatch_tolerance=mismatch_tolerance,
+        flap_balance=flap_balance,
+        reanneal_bias=reanneal_bias,
     )
 
 
@@ -628,13 +680,31 @@ def _load_pcr_config_from_args(args: argparse.Namespace) -> PCRConfig:
 
 
 def _edit_dag_to_payload(dag: EditDAG, *, artifact: str, metadata: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = dict(metadata)
+    metadata.setdefault("schema_version", "1.1")
+    metadata.setdefault("rule_version", "1.0")
+    metadata.setdefault("created_at", datetime.now(timezone.utc).isoformat())
     nodes_payload: Dict[str, Any] = {}
     for node_id, node in dag.nodes.items():
-        nodes_payload[node_id] = {
+        entry: Dict[str, Any] = {
             "log_prob": node.log_prob,
             "metadata": node.metadata,
-            "sequences": node.genome_view.materialize_all(),
+            "parent_ids": list(node.parents),
+            "seq_hashes": node.seq_hashes,
         }
+        if node.diffs:
+            entry["diffs"] = [
+                {
+                    "chrom": event.chrom,
+                    "start": event.start,
+                    "end": event.end,
+                    "replacement": event.replacement,
+                    "metadata": event.metadata,
+                }
+                for event in node.diffs
+            ]
+        entry["sequences"] = node.genome_view.materialize_all()
+        nodes_payload[node_id] = entry
     edges_payload = []
     for edge in dag.edges:
         edges_payload.append(
@@ -654,11 +724,33 @@ def _edit_dag_to_payload(dag: EditDAG, *, artifact: str, metadata: Dict[str, Any
         )
     return {
         "artifact": artifact,
+        "version": "1.1",
+        "schema_version": "1.1",
         "meta": metadata,
         "nodes": nodes_payload,
         "edges": edges_payload,
         "root_id": dag.root_id,
     }
+
+
+def _top_outcomes_from_dag(dag: EditDAG, *, topk: int) -> List[Dict[str, object]]:
+    terminals = dag.terminal_nodes()
+    if not terminals:
+        return []
+    weights = [math.exp(node.log_prob) for node in terminals]
+    total = sum(weights) or 1.0
+    probs = [w / total for w in weights]
+    ranked = sorted(zip(terminals, probs), key=lambda pair: pair[1], reverse=True)
+    results = []
+    for node, prob in ranked[:topk]:
+        results.append(
+            {
+                "node_id": node.id,
+                "probability": round(prob, 6),
+                "stage": node.metadata.get("stage"),
+            }
+        )
+    return results
 
 
 def command_dna(args: argparse.Namespace) -> None:
@@ -989,7 +1081,7 @@ def command_crispr_dag(args: argparse.Namespace) -> None:
     )
     payload = _edit_dag_to_payload(
         dag,
-        artifact="helix.crispr.edit_dag.v1",
+        artifact="helix.crispr.edit_dag.v1.1",
         metadata={
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1048,7 +1140,7 @@ def command_prime_dag(args: argparse.Namespace) -> None:
     )
     payload = _edit_dag_to_payload(
         dag,
-        artifact="helix.prime.edit_dag.v1",
+        artifact="helix.prime.edit_dag.v1.1",
         metadata={
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1088,7 +1180,13 @@ def command_edit_dag_viz(args: argparse.Namespace) -> None:
     payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
     dag = dag_from_payload(payload)
     save_edit_dag_png = _load_dag_viz_exporter()
-    save_edit_dag_png(dag, str(args.out))
+    save_edit_dag_png(
+        dag,
+        str(args.out),
+        layout=args.layout,
+        min_prob_filter=args.min_prob,
+        max_time_filter=args.max_time,
+    )
     print(f"Edit DAG visualization saved to {args.out}.")
 
 
@@ -1107,8 +1205,124 @@ def command_edit_dag_animate(args: argparse.Namespace) -> None:
         stage_cmap=args.stage_cmap,
         highlight_color=args.highlight_color,
         dpi=args.dpi,
+        min_prob=args.min_prob,
+        max_time_filter=args.max_time,
     )
     print(f"Edit DAG animation saved to {args.out} at {args.fps} fps.")
+
+
+def command_edit_dag_compare(args: argparse.Namespace) -> None:
+    payload_a = json.loads(Path(args.a).read_text(encoding="utf-8"))
+    payload_b = json.loads(Path(args.b).read_text(encoding="utf-8"))
+    dag_a = dag_from_payload(payload_a)
+    dag_b = dag_from_payload(payload_b)
+    save_compare = _load_dag_compare_exporter()
+    save_compare(
+        dag_a,
+        dag_b,
+        str(args.out),
+        label_a=args.label_a,
+        label_b=args.label_b,
+        layout=args.layout,
+        min_prob_filter=args.min_prob,
+        max_time_filter=args.max_time,
+    )
+    print(f"Edit DAG comparison saved to {args.out}.")
+    if args.summary:
+        summary = _compute_dag_diff_summary(dag_a, dag_b, label_a=args.label_a, label_b=args.label_b)
+        Path(args.summary).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        print(f"Diff summary saved to {args.summary}.")
+
+
+def command_edit_dag_report(args: argparse.Namespace) -> None:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    dag = dag_from_payload(payload)
+    html = render_html_report(dag, png_path=args.png, title=args.title)
+    Path(args.out).write_text(html, encoding="utf-8")
+    print(f"Edit DAG report saved to {args.out}.")
+
+
+def _random_dna(rng: random.Random, length: int) -> str:
+    bases = "ACGT"
+    return "".join(rng.choice(bases) for _ in range(length))
+
+
+def _random_crispr_dag(rng: random.Random) -> EditDAG:
+    genome_seq = _random_dna(rng, 120)
+    genome = CrisprDigitalGenome({"chr": genome_seq})
+    start = rng.randrange(0, len(genome_seq) - 21)
+    guide_seq = genome_seq[start : start + 20]
+    guide = GuideRNA(sequence=guide_seq)
+    cas = CasSystem(
+        name="dataset-cas9",
+        system_type=CasSystemType.CAS9,
+        pam_rules=[PAMRule(pattern="NGG")],
+        cut_offset=3,
+        max_mismatches=3,
+    )
+    return build_crispr_edit_dag(
+        genome,
+        cas,
+        guide,
+        rng_seed=rng.randint(0, 10_000),
+        max_depth=1,
+        max_sites=5,
+    )
+
+
+def _random_prime_dag(rng: random.Random) -> EditDAG:
+    genome_seq = _random_dna(rng, 140)
+    genome = CrisprDigitalGenome({"chr": genome_seq})
+    start = rng.randrange(0, len(genome_seq) - 25)
+    spacer = genome_seq[start : start + 20]
+    pbs = genome_seq[start : start + 5]
+    rtt = genome_seq[start + 5 : start + 12]
+    peg = PegRNA(spacer=spacer, pbs=pbs, rtt=rtt)
+    cas = CasSystem(
+        name="dataset-cas9",
+        system_type=CasSystemType.CAS9,
+        pam_rules=[PAMRule(pattern="NGG")],
+        cut_offset=3,
+        max_mismatches=3,
+    )
+    editor = PrimeEditor(name="dataset-prime", cas=cas, nick_to_edit_offset=1)
+    return build_prime_edit_dag(
+        genome,
+        editor,
+        peg,
+        rng_seed=rng.randint(0, 10_000),
+        max_depth=2,
+    )
+
+
+def command_edit_dag_generate_dataset(args: argparse.Namespace) -> None:
+    rng = random.Random(args.seed)
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as handle:
+        for idx in range(args.n):
+            if args.mechanism == "crispr":
+                dag = _random_crispr_dag(rng)
+                artifact_name = "helix.crispr.edit_dag.v1.1"
+            else:
+                dag = _random_prime_dag(rng)
+                artifact_name = "helix.prime.edit_dag.v1.1"
+            metadata = {
+                "helix_version": HELIX_VERSION,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "mechanism": args.mechanism,
+            }
+            payload = _edit_dag_to_payload(dag, artifact=artifact_name, metadata=metadata)
+            record = {
+                "id": idx,
+                "mechanism": args.mechanism,
+                "node_count": len(dag.nodes),
+                "edge_count": len(dag.edges),
+                "top_outcomes": _top_outcomes_from_dag(dag, topk=args.topk),
+                "artifact": payload,
+            }
+            handle.write(json.dumps(record) + "\n")
+    print(f"Edit DAG dataset written to {args.out}.")
 
 
 def command_protein(args: argparse.Namespace) -> None:
@@ -2202,6 +2416,8 @@ def build_parser() -> argparse.ArgumentParser:
     prime_sim.add_argument("--efficiency-scale", type=float, help="Override efficiency scale.")
     prime_sim.add_argument("--indel-bias", type=float, help="Override indel bias.")
     prime_sim.add_argument("--mismatch-tolerance", type=int, help="Override mismatch tolerance.")
+    prime_sim.add_argument("--flap-balance", type=float, help="Relative weight for left vs right flap resolution (0-1).")
+    prime_sim.add_argument("--reanneal-bias", type=float, help="Probability mass for reanneal/no-edit branches.")
     prime_sim.add_argument("--max-outcomes", type=int, default=16, help="Maximum number of outcomes to emit (default: 16).")
     prime_sim.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
     prime_sim.set_defaults(func=command_prime_simulate)
@@ -2225,6 +2441,8 @@ def build_parser() -> argparse.ArgumentParser:
     prime_dag.add_argument("--efficiency-scale", type=float, help="Override efficiency scale.")
     prime_dag.add_argument("--indel-bias", type=float, help="Override indel bias.")
     prime_dag.add_argument("--mismatch-tolerance", type=int, help="Override mismatch tolerance.")
+    prime_dag.add_argument("--flap-balance", type=float, help="Relative weight for left vs right flap resolution (0-1).")
+    prime_dag.add_argument("--reanneal-bias", type=float, help="Probability mass for reanneal/no-edit branches.")
     prime_dag.add_argument("--max-depth", type=int, default=1, help="Maximum DAG depth (default: 1).")
     prime_dag.add_argument("--min-prob", type=float, default=1e-4, help="Minimum branch probability (default: 1e-4).")
     prime_dag.add_argument("--seed", type=int, default=0, help="Random seed (default: 0).")
@@ -2268,7 +2486,30 @@ def build_parser() -> argparse.ArgumentParser:
     edit_dag_viz = edit_dag_sub.add_parser("viz", help="Render an edit DAG artifact as a PNG.")
     edit_dag_viz.add_argument("--input", type=Path, required=True, help="Path to an edit DAG JSON artifact.")
     edit_dag_viz.add_argument("--out", type=Path, required=True, help="PNG output path.")
+    edit_dag_viz.add_argument(
+        "--layout",
+        choices=["timeline", "spring", "kamada-kawai", "spectral", "circular", "shell", "planar", "random"],
+        default="timeline",
+        help="Graph layout algorithm (default: timeline).",
+    )
+    edit_dag_viz.add_argument(
+        "--min-prob",
+        type=float,
+        default=0.0,
+        help="Hide nodes with normalized probability below this threshold (default: 0).",
+    )
+    edit_dag_viz.add_argument(
+        "--max-time",
+        type=int,
+        help="Hide nodes with time_step greater than this value.",
+    )
     edit_dag_viz.set_defaults(func=command_edit_dag_viz)
+    edit_dag_report = edit_dag_sub.add_parser("report", help="Generate an HTML report for an edit DAG.")
+    edit_dag_report.add_argument("--input", type=Path, required=True, help="Path to an edit DAG JSON artifact.")
+    edit_dag_report.add_argument("--out", type=Path, required=True, help="HTML output path.")
+    edit_dag_report.add_argument("--png", type=Path, help="Optional pre-rendered PNG to embed.")
+    edit_dag_report.add_argument("--title", default="Helix Edit DAG Report", help="Title for the report.")
+    edit_dag_report.set_defaults(func=command_edit_dag_report)
     edit_dag_anim = edit_dag_sub.add_parser("animate", help="Render an edit DAG animation (GIF).")
     edit_dag_anim.add_argument("--input", type=Path, required=True, help="Path to an edit DAG JSON artifact.")
     edit_dag_anim.add_argument("--out", type=Path, required=True, help="GIF output path.")
@@ -2294,7 +2535,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="Accent color for new nodes/edges (default: #f5a97f).",
     )
     edit_dag_anim.add_argument("--dpi", type=int, default=150, help="Figure DPI (default: 150).")
+    edit_dag_anim.add_argument(
+        "--min-prob",
+        type=float,
+        default=0.0,
+        help="Hide nodes with normalized probability below this threshold before animating.",
+    )
+    edit_dag_anim.add_argument(
+        "--max-time",
+        type=int,
+        help="Hide nodes with time_step greater than this value before animating.",
+    )
     edit_dag_anim.set_defaults(func=command_edit_dag_animate)
+    edit_dag_compare = edit_dag_sub.add_parser("compare", help="Compare two edit DAG artifacts.")
+    edit_dag_compare.add_argument("--a", type=Path, required=True, help="Path to the first edit DAG JSON artifact.")
+    edit_dag_compare.add_argument("--b", type=Path, required=True, help="Path to the second edit DAG JSON artifact.")
+    edit_dag_compare.add_argument("--out", type=Path, required=True, help="PNG output path.")
+    edit_dag_compare.add_argument(
+        "--layout",
+        choices=["timeline", "spring", "kamada-kawai", "spectral", "circular", "shell", "planar", "random"],
+        default="timeline",
+        help="Graph layout algorithm (default: timeline).",
+    )
+    edit_dag_compare.add_argument(
+        "--min-prob",
+        type=float,
+        default=0.0,
+        help="Hide nodes with normalized probability below this threshold.",
+    )
+    edit_dag_compare.add_argument("--max-time", type=int, help="Hide nodes with time_step greater than this value.")
+    edit_dag_compare.add_argument("--label-a", default="A", help="Legend label for the first DAG.")
+    edit_dag_compare.add_argument("--label-b", default="B", help="Legend label for the second DAG.")
+    edit_dag_compare.add_argument("--summary", type=Path, help="Optional JSON file to write diff summary.")
+    edit_dag_compare.set_defaults(func=command_edit_dag_compare)
+    edit_dag_dataset = edit_dag_sub.add_parser(
+        "generate-dataset", help="Synthesize edit DAG records for downstream ML workflows."
+    )
+    edit_dag_dataset.add_argument("--mechanism", choices=["crispr", "prime"], default="crispr")
+    edit_dag_dataset.add_argument("--n", type=int, required=True, help="Number of records to generate.")
+    edit_dag_dataset.add_argument("--topk", type=int, default=5, help="How many outcomes to summarize per record.")
+    edit_dag_dataset.add_argument("--out", type=Path, required=True, help="Output JSONL path.")
+    edit_dag_dataset.add_argument("--seed", type=int, default=7, help="Random seed (default: 7).")
+    edit_dag_dataset.set_defaults(func=command_edit_dag_generate_dataset)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
     protein.add_argument("--sequence", help="Inline amino-acid string.")

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from typing import Mapping, Optional, Tuple
+from typing import Dict, Mapping, Optional, Tuple
 
 import numpy as np
 from matplotlib import colors as mcolors
@@ -13,6 +13,12 @@ import networkx as nx
 
 from helix.edit.dag import EditDAG, EditNode
 from ._dag_utils import compute_layout, stage_palette, format_stage_label
+
+COMPARE_COLORS = {
+    "a": "#7dd3fc",
+    "b": "#f4a261",
+    "shared": "#f0f4ff",
+}
 
 
 def _node_probability(node: EditNode) -> float:
@@ -56,6 +62,11 @@ def _build_nx_graph(dag: EditDAG) -> Tuple[nx.DiGraph, Mapping[str, float]]:
     return graph, probs
 
 
+def _normalize_probabilities(probs: Mapping[str, float]) -> Dict[str, float]:
+    total = sum(probs.values()) or 1.0
+    return {node: value / total for node, value in probs.items()}
+
+
 def plot_edit_dag(
     dag: EditDAG,
     *,
@@ -68,6 +79,8 @@ def plot_edit_dag(
     show_colorbar: bool = True,
     background_color: str = "#0b0e14",
     seed: int = 0,
+    min_prob_filter: float = 0.0,
+    max_time_filter: Optional[int] = None,
     ax: Optional[plt.Axes] = None,
 ) -> plt.Axes:
     """
@@ -77,6 +90,26 @@ def plot_edit_dag(
     Edge labels show rule names.
     """
     graph, probs = _build_nx_graph(dag)
+    normalized_probs = _normalize_probabilities(probs)
+    prob_values_full = list(probs.values())
+    total_prob = sum(prob_values_full) or 1.0
+    normalized_probs = {node: probs[node] / total_prob for node in graph.nodes}
+    prob_threshold = max(0.0, min_prob_filter)
+
+    def _visible(node: str) -> bool:
+        if normalized_probs.get(node, 0.0) < prob_threshold:
+            return False
+        node_time = graph.nodes[node].get("subset", 0) or 0
+        if max_time_filter is not None and node_time > max_time_filter:
+            return False
+        return True
+
+    visible_nodes = [node for node in graph.nodes if _visible(node)]
+    if not visible_nodes:
+        raise ValueError("No nodes satisfy the filtering criteria; relax --min-prob/--max-time.")
+    graph = graph.subgraph(visible_nodes).copy()
+    probs = {node: probs[node] for node in graph.nodes}
+    normalized_probs = {node: normalized_probs[node] for node in graph.nodes}
 
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
@@ -122,8 +155,6 @@ def plot_edit_dag(
 
     # Temporal bands
     if time_positions:
-        x_min = min(x for x, _ in pos.values())
-        x_max = max(x for x, _ in pos.values())
         for t_value, xs in sorted(time_positions.items()):
             center = sum(xs) / len(xs)
             ax.axvline(center, color="#ffffff10", linewidth=1.0, linestyle="--")
@@ -197,7 +228,7 @@ def plot_edit_dag(
             connectionstyle=_connection_style(rule),
             **margin_args,
         )
-        edge_labels[(edge[0], edge[1])] = f"{rule or 'process'} p={probs.get(edge[1], 0.0):.2f}"
+        edge_labels[(edge[0], edge[1])] = f"{rule or 'process'} p={normalized_probs.get(edge[1], 0.0):.2f}"
 
     if with_labels:
         labels = {node: graph.nodes[node]["display_label"] for node in graph.nodes}
@@ -267,9 +298,9 @@ def plot_edit_dag(
 
     leaves = [node for node, out_degree in graph.out_degree() if out_degree == 0]
     if leaves:
-        top_leaves = sorted(leaves, key=lambda node: graph.nodes[node]["prob"], reverse=True)[:5]
+        top_leaves = sorted(leaves, key=lambda node: normalized_probs.get(node, 0.0), reverse=True)[:5]
         labels = [format_stage_label(graph.nodes[node].get("stage", "Outcome")) for node in top_leaves]
-        values = [graph.nodes[node]["prob"] for node in top_leaves]
+        values = [normalized_probs.get(node, 0.0) for node in top_leaves]
         inset = inset_axes(ax, width="25%", height="30%", loc="lower right", borderpad=1.0)
         inset.barh(range(len(values)), values, color="#7aa2f7")
         inset.set_yticks(range(len(values)))
@@ -301,6 +332,208 @@ def save_edit_dag_png(
     """Render an EditDAG and save it as a PNG."""
     fig, ax = plt.subplots(figsize=figsize)
     plot_edit_dag(dag, ax=ax, figsize=figsize, **plot_kwargs)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+
+
+def plot_edit_dag_compare(
+    dag_a: EditDAG,
+    dag_b: EditDAG,
+    *,
+    label_a: str = "A",
+    label_b: str = "B",
+    layout: str = "timeline",
+    min_prob_filter: float = 0.0,
+    max_time_filter: Optional[int] = None,
+    figsize: Tuple[int, int] = (10, 8),
+    background_color: str = "#0b0e14",
+    seed: int = 0,
+    ax: Optional[plt.Axes] = None,
+) -> plt.Axes:
+    """Overlay two DAGs and highlight unique/shared branches."""
+    graph_a, probs_a = _build_nx_graph(dag_a)
+    graph_b, probs_b = _build_nx_graph(dag_b)
+    norm_a = _normalize_probabilities(probs_a)
+    norm_b = _normalize_probabilities(probs_b)
+
+    combined = nx.DiGraph()
+    nodes_a = set(graph_a.nodes)
+    nodes_b = set(graph_b.nodes)
+    for node in nodes_a | nodes_b:
+        attrs = {}
+        if node in graph_a:
+            attrs.update(graph_a.nodes[node])
+        if node in graph_b:
+            attrs.setdefault("stage", graph_b.nodes[node].get("stage"))
+            attrs.setdefault("subset", graph_b.nodes[node].get("subset"))
+        combined.add_node(node, **attrs)
+
+    edges_union = set(graph_a.edges) | set(graph_b.edges)
+    for edge in edges_union:
+        in_a = edge in graph_a.edges
+        in_b = edge in graph_b.edges
+        rule = None
+        if in_a:
+            rule = graph_a.edges[edge].get("rule")
+        if rule is None and in_b:
+            rule = graph_b.edges[edge].get("rule")
+        combined.add_edge(
+            edge[0],
+            edge[1],
+            in_a=in_a,
+            in_b=in_b,
+            rule=rule,
+        )
+
+    def _visible(node: str) -> bool:
+        prob = max(norm_a.get(node, 0.0), norm_b.get(node, 0.0))
+        if prob < min_prob_filter:
+            return False
+        time_value = combined.nodes[node].get("subset", 0) or 0
+        if max_time_filter is not None and time_value > max_time_filter:
+            return False
+        return True
+
+    allowed_nodes = [node for node in combined.nodes if _visible(node)]
+    if not allowed_nodes:
+        allowed_nodes = list(combined.nodes)
+    combined = combined.subgraph(allowed_nodes).copy()
+    graph = combined
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)
+
+    pos = compute_layout(graph, layout, seed=seed)
+    ax.set_facecolor(background_color)
+    ax.figure.set_facecolor(background_color)
+
+    stages = [graph.nodes[node].get("stage", "unknown") for node in graph.nodes]
+    stage_colors = stage_palette(stages, "tab10")
+
+    node_sizes = []
+    node_colors = []
+    for node in graph.nodes:
+        weight = max(norm_a.get(node, 0.0), norm_b.get(node, 0.0))
+        base_size = 800 + 600 * weight
+        node_sizes.append(base_size)
+        in_a = node in nodes_a
+        in_b = node in nodes_b
+        if in_a and in_b:
+            node_colors.append(COMPARE_COLORS["shared"])
+        elif in_a:
+            node_colors.append(COMPARE_COLORS["a"])
+        else:
+            node_colors.append(COMPARE_COLORS["b"])
+
+    border_colors = [
+        stage_colors.get(graph.nodes[node].get("stage", "unknown"), "#FFFFFF")
+        for node in graph.nodes
+    ]
+
+    nx.draw_networkx_nodes(
+        graph,
+        pos,
+        ax=ax,
+        node_size=node_sizes,
+        node_color=node_colors,
+        edgecolors=border_colors,
+        linewidths=2.0,
+    )
+
+    for edge in graph.edges:
+        in_a = graph.edges[edge].get("in_a")
+        in_b = graph.edges[edge].get("in_b")
+        if in_a and in_b:
+            color = "#d8dee9"
+        elif in_a:
+            color = COMPARE_COLORS["a"]
+        else:
+            color = COMPARE_COLORS["b"]
+        nx.draw_networkx_edges(
+            graph,
+            pos,
+            edgelist=[edge],
+            ax=ax,
+            arrows=True,
+            arrowstyle="-|>",
+            arrowsize=16,
+            edge_color=color,
+            width=2.0,
+            alpha=0.9,
+        )
+
+    labels = {node: graph.nodes[node].get("label", node) for node in graph.nodes}
+    nx.draw_networkx_labels(
+        graph,
+        pos,
+        labels,
+        font_size=7,
+        font_color="#f0f4ff",
+        bbox=dict(boxstyle="round,pad=0.2", facecolor="#00000055", edgecolor="none"),
+        ax=ax,
+    )
+
+    legend_handles = [
+        Patch(facecolor=COMPARE_COLORS["a"], edgecolor="none", label=f"{label_a} only"),
+        Patch(facecolor=COMPARE_COLORS["b"], edgecolor="none", label=f"{label_b} only"),
+        Patch(facecolor=COMPARE_COLORS["shared"], edgecolor="none", label="Shared"),
+    ]
+    ax.legend(handles=legend_handles, loc="upper right", frameon=False, fontsize=8, labelcolor="#e6e1cf")
+
+    leaves_a = sorted(
+        (node for node in graph.nodes if graph.out_degree(node) == 0 and node in nodes_a),
+        key=lambda node: norm_a.get(node, 0.0),
+        reverse=True,
+    )[:3]
+    leaves_b = sorted(
+        (node for node in graph.nodes if graph.out_degree(node) == 0 and node in nodes_b),
+        key=lambda node: norm_b.get(node, 0.0),
+        reverse=True,
+    )[:3]
+    if leaves_a or leaves_b:
+        inset = inset_axes(ax, width="30%", height="35%", loc="lower right", borderpad=1.0)
+        y = list(range(len(leaves_a) + len(leaves_b)))
+        bars = []
+        for node in leaves_a:
+            bars.append((format_stage_label(graph.nodes[node].get("stage", "Outcome")), norm_a.get(node, 0.0), label_a))
+        for node in leaves_b:
+            bars.append((format_stage_label(graph.nodes[node].get("stage", "Outcome")), norm_b.get(node, 0.0), label_b))
+        bar_labels = [f"{entry[0]} ({entry[2]})" for entry in bars]
+        values = [entry[1] for entry in bars]
+        colors = [
+            COMPARE_COLORS["a"] if entry[2] == label_a else COMPARE_COLORS["b"] for entry in bars
+        ]
+        inset.barh(range(len(bars)), values, color=colors)
+        inset.set_yticks(range(len(bars)))
+        inset.set_yticklabels(bar_labels, fontsize=7, color="#e6e1cf")
+        inset.set_xlim(0, max(values) * 1.1 if values else 1)
+        inset.set_xticks([])
+        inset.set_facecolor("#0b0e14")
+        inset.set_title("Top outcomes", fontsize=8, color="#e6e1cf")
+        for spine in inset.spines.values():
+            spine.set_color("#2a2f3a")
+
+    ax.axis("off")
+    ax.set_title(
+        f"Helix Edit DAG Comparison\n{label_a} vs {label_b}",
+        color="#e6e1cf",
+        fontsize=13,
+        loc="left",
+    )
+    return ax
+
+
+def save_edit_dag_compare_png(
+    dag_a: EditDAG,
+    dag_b: EditDAG,
+    out_path: str,
+    *,
+    figsize: Tuple[int, int] = (10, 8),
+    **plot_kwargs,
+) -> None:
+    fig, ax = plt.subplots(figsize=figsize)
+    plot_edit_dag_compare(dag_a, dag_b, ax=ax, figsize=figsize, **plot_kwargs)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)

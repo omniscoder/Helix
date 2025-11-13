@@ -1,0 +1,293 @@
+{
+  "artifact": "helix.prime.edit_dag.v1.1",
+  "version": "1.1",
+  "schema_version": "1.1",
+  "meta": {
+    "mechanism": "prime",
+    "demo": "playground",
+    "schema_version": "1.1",
+    "rule_version": "1.0",
+    "created_at": "2025-11-13T06:32:43.298212+00:00"
+  },
+  "nodes": {
+    "n_9705ccaae45a0b9b": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 0,
+        "stage": "root"
+      },
+      "parent_ids": [],
+      "seq_hashes": {
+        "chr_demo": "59409f131a0f69288f9f246bad57617e81e26801214ae6e23e96f170a77115e9"
+      },
+      "sequences": {
+        "chr_demo": "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    },
+    "n_2c7ebc597f8f4ad8": {
+      "log_prob": -0.4338645826298623,
+      "metadata": {
+        "time_step": 1,
+        "stage": "prime_rtt",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "physics_mismatch_count": 0,
+        "physics_local_gc": 0.4482758620689655
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chr_demo": "71f199ab786dd84de8089402d7819ab501ec60cbd0ce3844f1c72dfa19e14769"
+      },
+      "diffs": [
+        {
+          "chrom": "chr_demo",
+          "start": 3,
+          "end": 23,
+          "replacement": "TTTTAA",
+          "metadata": {
+            "label": "prime_rtt_clean",
+            "mechanism": "prime",
+            "stage": "prime_rtt",
+            "site_start": 3,
+            "site_end": 23
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTTTTTAAAGGTTT"
+      }
+    },
+    "n_308909e4a575889e": {
+      "log_prob": -1.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "root"
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chr_demo": "59409f131a0f69288f9f246bad57617e81e26801214ae6e23e96f170a77115e9"
+      },
+      "diffs": [
+        {
+          "chrom": "__none__",
+          "start": 0,
+          "end": 0,
+          "replacement": "",
+          "metadata": {
+            "label": "prime_no_edit",
+            "mechanism": "prime"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    },
+    "n_a926b883765b4ef0": {
+      "log_prob": -0.12060289511163957,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "physics_mismatch_count": 0,
+        "physics_local_gc": 0.4482758620689655,
+        "branch": "flap_left",
+        "physics_efficiency": 0.648
+      },
+      "parent_ids": [
+        "n_2c7ebc597f8f4ad8"
+      ],
+      "seq_hashes": {
+        "chr_demo": "71f199ab786dd84de8089402d7819ab501ec60cbd0ce3844f1c72dfa19e14769"
+      },
+      "diffs": [
+        {
+          "chrom": "chr_demo",
+          "start": 2,
+          "end": 23,
+          "replacement": "TTTTTAAAGGTTT",
+          "metadata": {
+            "label": "prime_flap_left",
+            "mechanism": "prime"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTTTTTAAAGGTTT"
+      }
+    },
+    "n_ebea80a9e1cc678d": {
+      "log_prob": -2.3309845675157437,
+      "metadata": {
+        "time_step": 2,
+        "stage": "error",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "physics_mismatch_count": 0,
+        "physics_local_gc": 0.4482758620689655,
+        "physics_efficiency": 0.648
+      },
+      "parent_ids": [
+        "n_2c7ebc597f8f4ad8"
+      ],
+      "seq_hashes": {
+        "chr_demo": "53f2ce19a7f21ea867849ead189bafff0a491aca75aedf5334fd4aee9bbb342b"
+      },
+      "diffs": [
+        {
+          "chrom": "chr_demo",
+          "start": 3,
+          "end": 15,
+          "replacement": "",
+          "metadata": {
+            "label": "prime_indel",
+            "mechanism": "prime"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTT"
+      }
+    },
+    "n_c4b55d076d857dd9": {
+      "log_prob": -2.0,
+      "metadata": {
+        "time_step": 2,
+        "stage": "root"
+      },
+      "parent_ids": [
+        "n_308909e4a575889e"
+      ],
+      "seq_hashes": {
+        "chr_demo": "59409f131a0f69288f9f246bad57617e81e26801214ae6e23e96f170a77115e9"
+      },
+      "diffs": [
+        {
+          "chrom": "__none__",
+          "start": 0,
+          "end": 0,
+          "replacement": "",
+          "metadata": {
+            "label": "prime_no_edit",
+            "mechanism": "prime"
+          }
+        }
+      ],
+      "sequences": {
+        "chr_demo": "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_2c7ebc597f8f4ad8",
+      "rule": "prime.rtt_clean",
+      "event": {
+        "chrom": "chr_demo",
+        "start": 3,
+        "end": 23,
+        "replacement": "TTTTAA",
+        "metadata": {
+          "label": "prime_rtt_clean",
+          "mechanism": "prime",
+          "stage": "prime_rtt",
+          "site_start": 3,
+          "site_end": 23
+        }
+      },
+      "metadata": {
+        "stage": "prime_rtt",
+        "site_chrom": "chr_demo",
+        "site_start": 3,
+        "site_end": 23,
+        "physics_mismatch_count": 0,
+        "physics_local_gc": 0.4482758620689655
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_308909e4a575889e",
+      "rule": "prime.no_edit",
+      "event": {
+        "chrom": "__none__",
+        "start": 0,
+        "end": 0,
+        "replacement": "",
+        "metadata": {
+          "label": "prime_no_edit",
+          "mechanism": "prime"
+        }
+      },
+      "metadata": {
+        "stage": "root"
+      }
+    },
+    {
+      "source": "n_2c7ebc597f8f4ad8",
+      "target": "n_a926b883765b4ef0",
+      "rule": "prime.flap_resolution",
+      "event": {
+        "chrom": "chr_demo",
+        "start": 2,
+        "end": 23,
+        "replacement": "TTTTTAAAGGTTT",
+        "metadata": {
+          "label": "prime_flap_left",
+          "mechanism": "prime"
+        }
+      },
+      "metadata": {
+        "stage": "repaired",
+        "branch": "flap_left",
+        "physics_efficiency": 0.648
+      }
+    },
+    {
+      "source": "n_2c7ebc597f8f4ad8",
+      "target": "n_ebea80a9e1cc678d",
+      "rule": "prime.flap_resolution",
+      "event": {
+        "chrom": "chr_demo",
+        "start": 3,
+        "end": 15,
+        "replacement": "",
+        "metadata": {
+          "label": "prime_indel",
+          "mechanism": "prime"
+        }
+      },
+      "metadata": {
+        "stage": "error",
+        "physics_efficiency": 0.648
+      }
+    },
+    {
+      "source": "n_308909e4a575889e",
+      "target": "n_c4b55d076d857dd9",
+      "rule": "prime.no_edit",
+      "event": {
+        "chrom": "__none__",
+        "start": 0,
+        "end": 0,
+        "replacement": "",
+        "metadata": {
+          "label": "prime_no_edit",
+          "mechanism": "prime"
+        }
+      },
+      "metadata": {
+        "stage": "root"
+      }
+    }
+  ],
+  "root_id": "n_9705ccaae45a0b9b"
+}

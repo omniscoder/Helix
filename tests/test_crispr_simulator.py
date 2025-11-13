@@ -39,6 +39,15 @@ def _demo_genome() -> tuple[DigitalGenome, str]:
     return genome, guide
 
 
+def _degenerate_cas() -> CasSystem:
+    return CasSystem(
+        name="demo-degenerate",
+        system_type=CasSystemType.CAS9,
+        pam_rules=[PAMRule(pattern="NRG", description="degenerate-demo")],
+        cut_offset=3,
+    )
+
+
 def test_find_candidate_sites_detects_both_strands():
     genome, guide_seq = _demo_genome()
     cas = _demo_cas()
@@ -69,6 +78,46 @@ def test_rank_off_targets_limits_candidates():
     assert len(ranked) == 1
 
 
+def test_pam_enforcement_rejects_invalid_sites():
+    genome, guide_seq = _demo_genome()
+    cas = CasSystem(
+        name="pam-aaa",
+        system_type=CasSystemType.CAS9,
+        pam_rules=[PAMRule(pattern="AAA", description="strict")],
+        cut_offset=3,
+    )
+    guide = GuideRNA(sequence=guide_seq)
+    sites = find_candidate_sites(genome, cas, guide)
+    assert not sites
+
+
+def test_iupac_pam_patterns_supported():
+    genome, guide_seq = _demo_genome()
+    cas = _degenerate_cas()
+    guide = GuideRNA(sequence=guide_seq)
+    sites = find_candidate_sites(genome, cas, guide)
+    assert sites  # AGG satisfies NRG (N=any, R=AG)
+
+
+def test_seed_weight_penalizes_pam_proximal_mismatch():
+    guide_seq = "ACCCAGGAAACCCGGGTTTT"
+    pam = "AGG"
+    near = guide_seq[:-1] + ("A" if guide_seq[-1] != "A" else "C")
+    far = ("A" if guide_seq[0] != "A" else "C") + guide_seq[1:]
+    genome = DigitalGenome(
+        {
+            "near_chr": f"TTT{near}{pam}TTT",
+            "far_chr": f"TTT{far}{pam}TTT",
+        }
+    )
+    cas = _demo_cas()
+    guide = GuideRNA(sequence=guide_seq)
+    sites = find_candidate_sites(genome, cas, guide)
+    scores = {site.chrom: site.on_target_score for site in sites}
+    assert {"near_chr", "far_chr"} <= scores.keys()
+    assert scores["far_chr"] > scores["near_chr"]
+
+
 def test_prime_locate_and_simulate_outcomes():
     genome, guide_seq = _demo_genome()
     peg = PegRNA(spacer=guide_seq[:15], pbs="GAAAC", rtt="TTTTAA")
@@ -81,10 +130,12 @@ def test_prime_locate_and_simulate_outcomes():
     )
     site = locate_prime_target_site(genome, peg)
     assert site is not None
-    outcomes = simulate_prime_edit(genome, editor, peg, max_outcomes=3)
+    outcomes = simulate_prime_edit(genome, editor, peg, max_outcomes=5)
     assert outcomes
-    assert 0 < len(outcomes) <= 3
+    assert len(outcomes) >= 3
     assert all(outcome.logit_score >= 0 for outcome in outcomes)
+    stages = {outcome.stage for outcome in outcomes}
+    assert {"flap", "reanneal", "error", "root"} & stages
 
 
 def test_cli_crispr_genome_sim(tmp_path: Path):
@@ -181,7 +232,7 @@ def test_cli_crispr_dag(tmp_path: Path):
         str(out_path),
     )
     payload = json.loads(out_path.read_text())
-    assert payload["artifact"] == "helix.crispr.edit_dag.v1"
+    assert payload["artifact"] == "helix.crispr.edit_dag.v1.1"
     assert payload["nodes"]
 
 
@@ -225,8 +276,23 @@ def test_cli_prime_dag(tmp_path: Path):
         str(out_path),
     )
     payload = json.loads(out_path.read_text())
-    assert payload["artifact"] == "helix.prime.edit_dag.v1"
+    assert payload["artifact"] == "helix.prime.edit_dag.v1.1"
     assert payload["nodes"]
+
+
+def test_prime_dag_contains_flap_stage():
+    genome, guide_seq = _demo_genome()
+    peg = PegRNA(spacer=guide_seq[:15], pbs="GAAAC", rtt="TTTTAA")
+    editor = PrimeEditor(
+        name="pe-demo",
+        cas=_demo_cas(),
+        nick_to_edit_offset=1,
+        efficiency_scale=0.8,
+        indel_bias=0.2,
+    )
+    dag = build_prime_edit_dag(genome, editor, peg, max_depth=2)
+    stages = {node.metadata.get("stage") for node in dag.nodes.values()}
+    assert "repaired" in stages
 
 
 def test_crispr_edit_dag_builder():

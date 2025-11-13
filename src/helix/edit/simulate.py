@@ -8,8 +8,9 @@ from typing import Dict, List, Sequence
 
 from helix.genome.digital import DigitalGenomeView
 
-from .dag import EditDAG, EditEdge, EditNode
+from .dag import EditDAG, EditEdge, EditNode, _compute_seq_hashes
 from .events import EditEvent
+from .hashing import hash_event, hash_node_id
 from .physics import get_rule
 
 
@@ -50,16 +51,18 @@ def build_edit_dag(
     nodes: Dict[str, EditNode] = {}
     edges: List[EditEdge] = []
 
+    root_id = hash_node_id((), "", "root", 0)
     root = EditNode(
-        id="node_0",
+        id=root_id,
         genome_view=root_view,
         log_prob=0.0,
         metadata={"time_step": 0, "stage": "root"},
+        parents=(),
+        seq_hashes=_compute_seq_hashes(root_view),
+        diffs=(),
     )
     nodes[root.id] = root
     frontier: List[EditNode] = [root]
-
-    next_id = 1
 
     for depth in range(ctx.max_depth):
         if not frontier:
@@ -78,8 +81,10 @@ def build_edit_dag(
                     parent_stage = node.metadata.get("stage", "root")
                     new_time = parent_time + 1
                     new_stage = metadata.get("stage", parent_stage)
-                    node_id = f"node_{next_id}"
-                    next_id += 1
+                    parents = (node.id,)
+                    ev_hash = hash_event(event.chrom, event.start, event.end, event.replacement, str(new_stage))
+                    node_id = hash_node_id(parents, ev_hash, str(new_stage), new_time)
+                    seq_hashes = _compute_seq_hashes(new_view)
                     new_node = EditNode(
                         id=node_id,
                         genome_view=new_view,
@@ -90,6 +95,9 @@ def build_edit_dag(
                             "time_step": new_time,
                             "stage": new_stage,
                         },
+                        parents=parents,
+                        seq_hashes=seq_hashes,
+                        diffs=(event,),
                     )
                     nodes[new_node.id] = new_node
                     edges.append(

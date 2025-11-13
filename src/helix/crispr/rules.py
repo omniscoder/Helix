@@ -10,6 +10,7 @@ from helix.edit.physics import edit_rule
 from helix.edit.simulate import SimulationContext
 
 from .model import CasSystem, DigitalGenome, GuideRNA
+from .physics import CRISPRPhysics
 from .simulator import find_candidate_sites
 
 
@@ -18,6 +19,13 @@ def _get_context_objects(ctx: SimulationContext) -> Tuple[DigitalGenome, CasSyst
     cas: CasSystem = ctx.extra["cas"]
     guide: GuideRNA = ctx.extra["guide"]
     return genome, cas, guide
+
+
+def _get_physics(ctx: SimulationContext) -> CRISPRPhysics | None:
+    physics = ctx.extra.get("physics")
+    if isinstance(physics, CRISPRPhysics):
+        return physics
+    return None
 
 
 @edit_rule("crispr.clean_cut")
@@ -30,7 +38,8 @@ def crispr_clean_cut(node: EditNode, ctx: SimulationContext) -> Iterable[Tuple[E
     max_sites = ctx.extra.get("max_sites", 3) or 3
     no_edit_prob = ctx.extra.get("no_edit_prob", 0.1)
 
-    candidates = find_candidate_sites(genome, cas, guide, max_sites=max_sites)
+    physics = _get_physics(ctx)
+    candidates = find_candidate_sites(genome, cas, guide, max_sites=max_sites, physics=physics)
     proposals: List[Tuple[EditEvent, float, Dict]] = []
 
     if not candidates:
