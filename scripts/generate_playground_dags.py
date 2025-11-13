@@ -65,14 +65,26 @@ def generate_prime_payload() -> dict:
 
 
 def main() -> None:
-    out_dir = ROOT / "docs" / "assets" / "viz"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    outputs = {
-        "crispr_playground_dag.json": generate_crispr_payload(),
-        "prime_playground_dag.json": generate_prime_payload(),
+    viz_dir = ROOT / "docs" / "assets" / "viz"
+    data_dir = ROOT / "docs" / "data"
+    viz_dir.mkdir(parents=True, exist_ok=True)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    crispr_payload = generate_crispr_payload()
+    prime_payload = generate_prime_payload()
+    assets = {
+        "crispr_playground_dag.json": crispr_payload,
+        "prime_playground_dag.json": prime_payload,
     }
-    for filename, payload in outputs.items():
-        path = out_dir / filename
+    demos = {
+        "crispr_demo.edit_dag.json": crispr_payload,
+        "prime_demo.edit_dag.json": prime_payload,
+    }
+    for filename, payload in assets.items():
+        path = viz_dir / filename
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"Wrote {path.relative_to(ROOT)}")
+    for filename, payload in demos.items():
+        path = data_dir / filename
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"Wrote {path.relative_to(ROOT)}")
 

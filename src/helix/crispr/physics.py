@@ -1,19 +1,20 @@
 """
-Physics-inspired scoring helpers for CRISPR simulations.
+CRISPR physics interfaces and CPU reference implementation.
 
-These utilities stay entirely within the digital genome world; they do not
-describe laboratory protocols. The goal is to separate the "how do we score
-candidate sites?" logic from the simulators so that more detailed physics
-models (PAM penalties, seed weighting, bulges, GC bias, etc.) can be swapped
-in without rewriting the scanners.
+These helpers remain purely computational: they operate on digital sequences,
+compute mismatch/PAM penalties, and feed candidate sites back to higher-level
+simulators. Swapping the backend (CPU vs. GPU) only requires changing the
+physics factory.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Sequence, Tuple
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Mapping, Sequence
 
 from .. import bioinformatics
-from .model import CasSystem, GuideRNA
+from .kmm import k_mismatch_positions
+from .model import CasSystem, GuideRNA, TargetSite
 
 _IUPAC: dict[str, str] = {
     "A": "A",
@@ -36,141 +37,239 @@ _IUPAC: dict[str, str] = {
 
 
 @dataclass
-class CRISPRPhysics:
-    """
-    Tunable scoring surface for candidate CRISPR cut sites.
+class CRISPRPhysicsResult:
+    site: TargetSite
+    mismatch_cost: float
+    pam_ok: bool
+    score: float
 
-    Parameters
-    ----------
-    guide_sequence:
-        Spacer sequence (5'→3'). Automatically normalized to uppercase DNA.
-    pam_pattern:
-        IUPAC string describing the PAM requirement. Empty string disables PAM
-        checks (useful for near-PAM-less editors).
-    seed_length:
-        Number of PAM-proximal bases that receive heavier mismatch penalties.
-    mismatch_weights:
-        Optional per-position weights. If omitted, the class generates a seed-
-        weighted profile automatically.
-    bulge_penalty:
-        Cost added per inserted/deleted base when the alignment length differs
-        from the guide length.
-    pam_weak_penalty / pam_fail_penalty:
-        Penalties for single-symbol PAM mismatches vs outright failures.
-    gc_opt_range:
-        Acceptable GC range before GC penalties kick in (inclusive bounds).
+
+class CRISPRPhysicsBase(ABC):
+    """
+    Base class for CRISPR physics implementations.
     """
 
-    guide_sequence: str
-    pam_pattern: str = "NGG"
-    seed_length: int = 10
-    mismatch_weights: Sequence[float] | None = None
-    bulge_penalty: float = 2.0
-    pam_weak_penalty: float = 1.5
-    pam_fail_penalty: float = 4.0
-    gc_opt_range: Tuple[float, float] = (0.4, 0.8)
-    min_score: float = 1e-6
-
-    _weights: Tuple[float, ...] = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        self.guide_sequence = bioinformatics.normalize_sequence(self.guide_sequence)
-        self.pam_pattern = (self.pam_pattern or "").upper()
-        if not self.guide_sequence:
-            raise ValueError("CRISPRPhysics requires a non-empty guide sequence.")
-        if self.mismatch_weights:
-            weights = tuple(float(w) for w in self.mismatch_weights)
-            if len(weights) < len(self.guide_sequence):
-                pad = (1.0,) * (len(self.guide_sequence) - len(weights))
-                self._weights = weights + pad
-            else:
-                self._weights = weights[: len(self.guide_sequence)]
-        else:
-            self._weights = self._seed_weight_vector(len(self.guide_sequence))
-
-    @classmethod
-    def from_system(cls, cas: CasSystem, guide: GuideRNA) -> "CRISPRPhysics":
-        """
-        Convenience constructor that derives reasonable defaults from a Cas system.
-        """
-
-        pam_pattern = guide.pam or (cas.pam_rules[0].pattern if cas.pam_rules else "")
-        seed_len = min(len(bioinformatics.normalize_sequence(guide.sequence)), 12)
-        bulge_penalty = max(0.5, cas.weight_mismatch_penalty * 2.0)
-        pam_weak = max(0.5, cas.weight_pam_penalty or 1.0)
-        pam_fail = max(pam_weak * 2.0, 2.0)
-        return cls(
-            guide_sequence=guide.sequence,
-            pam_pattern=pam_pattern,
-            seed_length=seed_len,
-            mismatch_weights=None,
-            bulge_penalty=bulge_penalty,
-            pam_weak_penalty=pam_weak,
-            pam_fail_penalty=pam_fail,
+    def __init__(self, cas: CasSystem, guide: GuideRNA):
+        self.cas = cas
+        self.guide = GuideRNA(
+            sequence=bioinformatics.normalize_sequence(guide.sequence),
+            pam=guide.pam,
+            name=guide.name,
+            metadata=dict(guide.metadata),
         )
+        if not self.guide.sequence:
+            raise ValueError("Guide sequence must be non-empty.")
 
-    def _seed_weight_vector(self, length: int) -> Tuple[float, ...]:
-        weights = [1.0] * length
-        seed_len = max(0, min(self.seed_length, length))
-        seed_start = length - seed_len
-        for idx in range(seed_start, length):
-            weights[idx] = 1.5
-        return tuple(weights)
+    @abstractmethod
+    def score_sites(
+        self,
+        genome_sequences: Mapping[str, str],
+        *,
+        max_sites: int | None = None,
+    ) -> List[CRISPRPhysicsResult]:
+        """
+        Return candidate sites ranked by physics score.
+        """
 
-    def _pam_penalty(self, pam_seq: str) -> tuple[bool, float]:
-        if not self.pam_pattern:
-            return True, 0.0
-        if len(pam_seq) != len(self.pam_pattern):
-            return False, self.pam_fail_penalty
-        mismatches = 0
-        for pattern_char, base in zip(self.pam_pattern, pam_seq.upper()):
-            allowed = _IUPAC.get(pattern_char, pattern_char)
-            if base not in allowed:
-                mismatches += 1
-                if mismatches > 1:
-                    return False, self.pam_fail_penalty
-        if mismatches == 0:
-            return True, 0.0
-        return True, self.pam_weak_penalty * mismatches
+
+def _seed_weight_vector(length: int, seed_length: int) -> Sequence[float]:
+    weights = [1.0] * length
+    seed_len = max(0, min(seed_length, length))
+    seed_start = length - seed_len
+    for idx in range(seed_start, length):
+        weights[idx] = 1.5
+    return weights
+
+
+def _pam_ok(pam_pattern: str, pam_seq: str) -> tuple[bool, float]:
+    if not pam_pattern:
+        return True, 0.0
+    if len(pam_seq) != len(pam_pattern):
+        return False, 1.0
+    mismatches = 0
+    for pattern_char, base in zip(pam_pattern.upper(), pam_seq.upper()):
+        allowed = _IUPAC.get(pattern_char, pattern_char)
+        if base not in allowed:
+            mismatches += 1
+            if mismatches > 1:
+                return False, 1.0
+    return True, float(mismatches)
+
+
+def _gc_penalty(seq: str, lo: float, hi: float) -> float:
+    if not seq:
+        return 0.0
+    gc = bioinformatics.gc_content(seq)
+    if lo <= gc <= hi:
+        return 0.0
+    delta = min(abs(gc - lo), abs(gc - hi))
+    return delta * 2.0
+
+
+def _base_candidate_positions(
+    sequence: str,
+    guide_seq: str,
+    max_mismatches: int | None,
+) -> Iterable[int]:
+    limit = len(sequence) - len(guide_seq) + 1
+    if limit <= 0:
+        return []
+    if max_mismatches is None:
+        return range(0, limit)
+    return k_mismatch_positions(sequence, guide_seq, max_mismatches)
+
+
+def _pam_filter_positions(
+    sequence: str,
+    positions: Iterable[int],
+    guide_len: int,
+    pam_pattern: str,
+) -> List[int]:
+    pam_len = len(pam_pattern)
+    if pam_len == 0:
+        return list(positions)
+    seq_upper = sequence.upper()
+    filtered: List[int] = []
+    for start in positions:
+        pam_start = start + guide_len
+        if pam_start + pam_len > len(seq_upper):
+            continue
+        pam_seq = seq_upper[pam_start : pam_start + pam_len]
+        ok, _ = _pam_ok(pam_pattern, pam_seq)
+        if ok:
+            filtered.append(start)
+    return filtered
+
+
+def _compute_score(
+    mismatch_cost: float,
+    gc_penalty: float,
+    pam_penalty: float,
+    guide_len: int,
+    min_score: float,
+) -> float:
+    total_cost = mismatch_cost + gc_penalty + pam_penalty
+    span = max(1.0, float(guide_len))
+    score = max(min_score, 1.0 - (total_cost / span))
+    return min(1.0, score)
+
+
+class CRISPRPhysicsCPU(CRISPRPhysicsBase):
+    """
+    Reference CPU implementation used for correctness and fallback.
+    """
+
+    def __init__(self, cas: CasSystem, guide: GuideRNA):
+        super().__init__(cas, guide)
+        pam_pattern = guide.pam or (cas.pam_rules[0].pattern if cas.pam_rules else "")
+        self.pam_pattern = pam_pattern.upper()
+        seed_len = min(len(self.guide.sequence), 12)
+        self._weights = tuple(_seed_weight_vector(len(self.guide.sequence), seed_len))
+        self.seed_length = seed_len
+        self.bulge_penalty = max(0.5, cas.weight_mismatch_penalty * 2.0)
+        self.pam_weak_penalty = max(0.5, cas.weight_pam_penalty or 1.0)
+        self.pam_fail_penalty = max(self.pam_weak_penalty * 2.0, 2.0)
+        self.gc_opt_range = (0.4, 0.8)
+        self.min_score = 1e-6
+
+    def score_sites(
+        self,
+        genome_sequences: Mapping[str, str],
+        *,
+        max_sites: int | None = None,
+    ) -> List[CRISPRPhysicsResult]:
+        results: List[CRISPRPhysicsResult] = []
+        for chrom, seq in genome_sequences.items():
+            normalized = bioinformatics.normalize_sequence(seq)
+            results.extend(self._score_strand(chrom, normalized, strand=1))
+            results.extend(self._score_strand(chrom, normalized, strand=-1))
+        results.sort(key=lambda r: r.score, reverse=True)
+        if max_sites is not None:
+            results = results[:max_sites]
+        return results
+
+    def _score_strand(self, chrom: str, seq: str, strand: int) -> List[CRISPRPhysicsResult]:
+        guide_len = len(self.guide.sequence)
+        pam_pattern = self.pam_pattern
+        max_mm = self.cas.max_mismatches
+        if strand == -1:
+            seq_to_scan = bioinformatics.reverse_complement(seq)
+        else:
+            seq_to_scan = seq
+        base_positions = _base_candidate_positions(seq_to_scan, self.guide.sequence, max_mm)
+        positions = _pam_filter_positions(seq_to_scan, base_positions, guide_len, pam_pattern)
+        results: List[CRISPRPhysicsResult] = []
+        for start in positions:
+            pam_seq = ""
+            if pam_pattern:
+                pam_start = start + guide_len
+                pam_seq = seq_to_scan[pam_start : pam_start + len(pam_pattern)]
+            pam_ok, pam_penalty_raw = _pam_ok(pam_pattern, pam_seq)
+            if not pam_ok:
+                continue
+            target_seq = seq_to_scan[start : start + guide_len]
+            mismatch_cost = self._mismatch_cost(target_seq)
+            gc_penalty = _gc_penalty(target_seq, *self.gc_opt_range)
+            score = _compute_score(
+                mismatch_cost,
+                gc_penalty,
+                pam_penalty_raw * self.pam_weak_penalty,
+                guide_len,
+                self.min_score,
+            )
+            if score <= 0:
+                continue
+            if strand == -1:
+                orig_start = len(seq) - (start + guide_len)
+                orig_end = orig_start + guide_len
+                sequence = bioinformatics.reverse_complement(target_seq)
+            else:
+                orig_start = start
+                orig_end = start + guide_len
+                sequence = target_seq
+            site = TargetSite(
+                chrom=chrom,
+                start=orig_start,
+                end=orig_end,
+                strand=strand,
+                sequence=sequence,
+                on_target_score=score,
+            )
+            results.append(
+                CRISPRPhysicsResult(
+                    site=site,
+                    mismatch_cost=mismatch_cost,
+                    pam_ok=True,
+                    score=score,
+                )
+            )
+        return results
 
     def _mismatch_cost(self, target_seq: str) -> float:
-        n = min(len(target_seq), len(self.guide_sequence))
         cost = 0.0
-        for idx in range(n):
-            if target_seq[idx] != self.guide_sequence[idx]:
+        for idx, base in enumerate(target_seq):
+            if idx >= len(self.guide.sequence):
+                cost += self.bulge_penalty
+                continue
+            if base != self.guide.sequence[idx]:
                 weight = self._weights[idx] if idx < len(self._weights) else 1.0
                 cost += weight
-        extra = abs(len(target_seq) - len(self.guide_sequence))
+        extra = abs(len(target_seq) - len(self.guide.sequence))
         if extra:
             cost += extra * self.bulge_penalty
         return cost
 
-    def _gc_penalty(self, seq: str) -> float:
-        if not seq:
-            return 0.0
-        gc = bioinformatics.gc_content(seq)
-        lo, hi = self.gc_opt_range
-        if lo <= gc <= hi:
-            return 0.0
-        delta = min(abs(gc - lo), abs(gc - hi))
-        return delta * 2.0
 
-    def score_site(self, target_seq: str, pam_seq: str, strand: int = 1) -> float:
-        """
-        Return a normalized score (0..1) for a guide/PAM pairing on the given strand.
-
-        The strand argument is currently informational but kept for future
-        orientation-specific effects.
-        """
-
-        del strand  # strand-specific parameters can be incorporated later.
-        normalized_target = bioinformatics.normalize_sequence(target_seq)
-        pam_ok, pam_cost = self._pam_penalty(pam_seq.upper())
-        if not pam_ok:
-            return 0.0
-        mismatch_cost = self._mismatch_cost(normalized_target)
-        gc_cost = self._gc_penalty(normalized_target)
-        total_cost = mismatch_cost + gc_cost + pam_cost
-        span = max(1.0, float(len(self.guide_sequence)))
-        score = max(self.min_score, 1.0 - (total_cost / span))
-        return min(1.0, score)
+def create_crispr_physics(
+    cas: CasSystem,
+    guide: GuideRNA,
+    *,
+    use_gpu: bool = False,
+) -> CRISPRPhysicsBase:
+    if use_gpu:
+        try:
+            from .physics_gpu import CRISPRPhysicsGPU  # pragma: no cover - optional
+        except Exception as exc:  # pragma: no cover - GPU optional
+            raise RuntimeError("GPU backend requested, but CUDA/Numba is unavailable.") from exc
+        return CRISPRPhysicsGPU(cas, guide)
+    return CRISPRPhysicsCPU(cas, guide)

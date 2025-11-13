@@ -4,7 +4,9 @@ from __future__ import annotations
 import math
 import random
 
-from helix.edit.dag import EditDAG
+from typing import Callable, Optional
+
+from helix.edit.dag import EditDAG, EditDAGFrame
 from helix.edit.simulate import SimulationContext, build_edit_dag
 from helix.edit.post import dedupe_terminal_nodes
 from helix.genome.digital import DigitalGenome as CoreDigitalGenome
@@ -23,6 +25,7 @@ def build_prime_edit_dag(
     rng_seed: int = 0,
     max_depth: int = 1,
     min_prob: float = 1e-4,
+    frame_consumer: Optional[Callable[[EditDAGFrame], None]] = None,
 ) -> EditDAG:
     min_prob = max(min_prob, 1e-12)
     core_genome = CoreDigitalGenome(sequences=dict(genome.sequences))
@@ -39,5 +42,5 @@ def build_prime_edit_dag(
             "prime_physics": PrimePhysics.from_config(editor, peg),
         },
     )
-    dag = build_edit_dag(core_genome.view(), context)
+    dag = build_edit_dag(core_genome.view(), context, frame_consumer=frame_consumer)
     return dedupe_terminal_nodes(dag)

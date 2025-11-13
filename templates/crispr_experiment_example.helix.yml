@@ -1,0 +1,20 @@
+kind: helix.crispr.experiment.v1
+name: example_crispr_experiment
+description: "Describe the goal of this CRISPR experiment."
+
+genome:
+  fasta: path/to/reference.fa
+  region: chrDemo:1-500
+
+cas:
+  config: path/to/cas9.json
+
+guide:
+  sequence: ACGTACGTACGTACGTACGT
+  name: GUIDE_NAME
+
+simulation:
+  max_depth: 2
+  min_prob: 1.0e-4
+  max_sites: 20
+  seed: 0

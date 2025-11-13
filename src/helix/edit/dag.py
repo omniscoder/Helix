@@ -48,6 +48,17 @@ class EditDAG:
         return [node for node_id, node in self.nodes.items() if node_id not in outgoing]
 
 
+@dataclass
+class EditDAGFrame:
+    """
+    Incremental snapshot of new nodes/edges introduced during DAG expansion.
+    """
+
+    step: int
+    new_nodes: Dict[str, EditNode]
+    new_edges: List[EditEdge]
+
+
 def _compute_seq_hashes(view: DigitalGenomeView) -> Dict[str, str]:
     hashes: Dict[str, str] = {}
     for chrom, sequence in view.materialize_all().items():

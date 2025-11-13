@@ -33,6 +33,48 @@ report = hx.triage_report(sequence="AUGGCCUUUUAA", k=3)
 fold   = hx.fold_rna("GGGAAACCC", min_loop_length=0)
 ```
 
+### Interactive edit-DAG demos
+
+Two end-to-end recipes ship in `examples/` so you can go from FASTA/configs → DAG → Playground in seconds:
+
+- **CRISPR demo (guide library)**
+
+  ```bash
+  helix crispr dag \
+    --genome examples/hg19_chr_demo.fa \
+    --cas-config examples/cas9.json \
+    --guides-file examples/guides.tsv \
+    --region chrDemo:1-500 \
+    --out-dir out/crispr_dags/
+  ```
+
+  Artifacts appear in `out/crispr_dags/` and a prebuilt copy lives at [`docs/data/crispr_demo.edit_dag.json`](docs/data/crispr_demo.edit_dag.json).
+  [Open in Playground](playground/?json=docs/data/crispr_demo.edit_dag.json)
+
+- **Prime editing demo (peg sweep)**
+
+  ```bash
+  helix prime dag \
+    --genome examples/hg19_chr_demo.fa \
+    --editor-config examples/prime_editor.json \
+    --pegs-file examples/pegs.tsv \
+    --region chrDemo:1-500 \
+    --out-dir out/prime_dags/
+  ```
+
+  Produces `helix.prime.edit_dag.v1.1` artifacts per peg (see `docs/data/prime_demo.edit_dag.json` for a hosted example).
+  [Open in Playground](playground/?json=docs/data/prime_demo.edit_dag.json)
+
+- **Experiment configs**
+
+  ```bash
+  helix experiment new --type crispr --out experiments/demo_crispr.helix.yml
+  helix experiment run --config experiments/demo_crispr.helix.yml --out out/demo_crispr.edit_dag.json
+  helix experiment report --config experiments/demo_crispr.helix.yml --out out/demo_crispr.html
+  ```
+
+  A single YAML file describes the entire “edit experiment” (genome, Cas/Prime configs, guides/pegs, simulation knobs). Helix can regenerate DAGs, PNGs, and HTML reports from that spec at any time; see `templates/*.helix.yml` for starter files.
+
 ---
 
 ## Deep Wiki (Project Map)
@@ -56,10 +98,12 @@ Use this “deep wiki” map to jump directly to the concept or tool you need:
   - Motif Logo → [Motif Logo](visualization/motif-logo.md)
   - Distance Heatmap → [Distance Heatmap](visualization/distance-heatmap.md)
   - Minimizer Density → [Minimizer Density](visualization/minimizer-density.md)
+- Edit DAG internals → [Edit DAG Overview](edit_dag_overview.md)
 - Schema Reference (all kinds, versions, and samples) → [Schema Reference](schema-reference.md)
 - Performance Dashboard (CI trends for time + memory) → [Benchmarks](benchmarks.md)
 - What’s New (highlights across releases) → [What’s New](whats-new.md)
 - Contributing (style, tests, ideas) → [Contributing](contributing.md)
+- Realtime Playground → [Live Simulator](playground/realtime.html)
 
 ---
 

@@ -41,8 +41,11 @@ nav:
       - Motif Logo: visualization/motif-logo.md
       - Distance Heatmap: visualization/distance-heatmap.md
       - Minimizer Density: visualization/minimizer-density.md
+  - Edit DAG Overview: edit_dag_overview.md
   - Edit DAG Viz: edit-dag-viz.md
-  - Playground: playground/index.html
+  - Playground:
+      - Static Playground: playground/index.html
+      - Real-Time Simulator: playground/realtime.html
   - Schema Reference: schema-reference.md
   - Benchmarks: benchmarks.md
   - Contributing: contributing.md

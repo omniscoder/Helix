@@ -50,6 +50,7 @@ class PrimeEditor:
     mismatch_tolerance: int = 3
     flap_balance: float = 0.5  # favor left vs right flap resolution (0..1)
     reanneal_bias: float = 0.1  # probability mass for reanneal/no-edit branches
+    metadata: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

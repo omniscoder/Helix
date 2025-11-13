@@ -4,11 +4,11 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Dict, List, Sequence
+from typing import Callable, Dict, Iterator, List, Optional, Sequence
 
 from helix.genome.digital import DigitalGenomeView
 
-from .dag import EditDAG, EditEdge, EditNode, _compute_seq_hashes
+from .dag import EditDAG, EditEdge, EditNode, EditDAGFrame, _compute_seq_hashes
 from .events import EditEvent
 from .hashing import hash_event, hash_node_id
 from .physics import get_rule
@@ -40,17 +40,11 @@ class SimulationContext:
     extra: Dict[str, object] = field(default_factory=dict)
 
 
-def build_edit_dag(
+def iter_edit_dag_frames(
     root_view: DigitalGenomeView,
     ctx: SimulationContext,
-) -> EditDAG:
-    """
-    Construct an edit DAG by applying registered rules up to `max_depth`.
-    """
-
+) -> Iterator[EditDAGFrame]:
     nodes: Dict[str, EditNode] = {}
-    edges: List[EditEdge] = []
-
     root_id = hash_node_id((), "", "root", 0)
     root = EditNode(
         id=root_id,
@@ -63,11 +57,14 @@ def build_edit_dag(
     )
     nodes[root.id] = root
     frontier: List[EditNode] = [root]
-
+    yield EditDAGFrame(step=0, new_nodes={root.id: root}, new_edges=[])
+    frame_index = 1
     for depth in range(ctx.max_depth):
         if not frontier:
             break
         new_frontier: List[EditNode] = []
+        new_nodes: Dict[str, EditNode] = {}
+        new_edges: List[EditEdge] = []
         for node in frontier:
             for rule_name in ctx.rules:
                 rule = get_rule(rule_name)
@@ -99,17 +96,46 @@ def build_edit_dag(
                         seq_hashes=seq_hashes,
                         diffs=(event,),
                     )
-                    nodes[new_node.id] = new_node
-                    edges.append(
-                        EditEdge(
-                            source=node.id,
-                            target=new_node.id,
-                            rule_name=rule_name,
-                            event=event,
-                            metadata=metadata,
-                        )
+                    new_edge = EditEdge(
+                        source=node.id,
+                        target=new_node.id,
+                        rule_name=rule_name,
+                        event=event,
+                        metadata=metadata,
                     )
+                    new_nodes[new_node.id] = new_node
+                    new_edges.append(new_edge)
                     new_frontier.append(new_node)
         frontier = new_frontier
+        if new_nodes or new_edges:
+            yield EditDAGFrame(step=frame_index, new_nodes=new_nodes, new_edges=new_edges)
+            frame_index += 1
 
-    return EditDAG(nodes=nodes, edges=edges, root_id=root.id)
+
+def build_edit_dag(
+    root_view: DigitalGenomeView,
+    ctx: SimulationContext,
+    *,
+    frame_consumer: Optional[Callable[[EditDAGFrame], None]] = None,
+) -> EditDAG:
+    """
+    Construct an edit DAG by applying registered rules up to `max_depth`.
+    Optionally stream intermediate frames via `frame_consumer`.
+    """
+
+    nodes: Dict[str, EditNode] = {}
+    edges: List[EditEdge] = []
+    root_id: Optional[str] = None
+
+    for frame in iter_edit_dag_frames(root_view, ctx):
+        if frame_consumer:
+            frame_consumer(frame)
+        nodes.update(frame.new_nodes)
+        edges.extend(frame.new_edges)
+        if root_id is None and frame.new_nodes:
+            root_id = next(iter(frame.new_nodes))
+
+    if root_id is None:
+        raise RuntimeError("Failed to build edit DAG: no root node generated.")
+
+    return EditDAG(nodes=nodes, edges=edges, root_id=root_id)

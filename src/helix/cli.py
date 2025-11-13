@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import math
 import random
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
+from types import SimpleNamespace
+import sys
 
 from . import bioinformatics, cyclospectrum, triage
 from .crispr import guide as crispr_guide
@@ -48,8 +52,58 @@ from .crispr.dag_api import build_crispr_edit_dag
 from .prime.dag_api import build_prime_edit_dag
 from .pcr.model import Primer, PrimerPair, PCRConfig
 from .pcr.dag_api import pcr_edit_dag
-from .edit.dag import EditDAG, dag_from_payload
+from .edit.dag import EditDAG, EditDAGFrame, EditEdge, EditNode, dag_from_payload
 from .edit.report import render_html_report
+from .experiment.spec import (
+    CrisprExperimentSpec,
+    ExperimentSpecError,
+    PrimeExperimentSpec,
+    load_experiment_spec,
+)
+
+_CRISPR_EXPERIMENT_TEMPLATE = """\
+kind: helix.crispr.experiment.v1
+name: example_crispr_experiment
+description: "Describe the goal of this CRISPR experiment."
+
+genome:
+  fasta: path/to/reference.fa
+  region: chrDemo:1-500
+
+cas:
+  config: path/to/cas9.json
+
+guide:
+  sequence: ACGTACGTACGTACGTACGT
+  name: GUIDE_NAME
+
+simulation:
+  max_depth: 2
+  min_prob: 1.0e-4
+  max_sites: 20
+  seed: 0
+"""
+
+_PRIME_EXPERIMENT_TEMPLATE = """\
+kind: helix.prime.experiment.v1
+name: example_prime_experiment
+description: "Describe the goal of this prime editing experiment."
+
+genome:
+  fasta: path/to/reference.fa
+  region: chrDemo:1-500
+
+editor:
+  config: path/to/prime_editor.json
+
+peg:
+  config: path/to/peg_config.json
+
+simulation:
+  max_depth: 3
+  min_prob: 1.0e-4
+  seed: 0
+"""
 from .schema import (
     SchemaError,
     SPEC_VERSION,
@@ -376,11 +430,20 @@ def _load_json_config(path: Path) -> Dict[str, Any]:
 def _cas_system_from_config(config: Mapping[str, Any]) -> CasSystem:
     try:
         name = str(config["name"])
-        system_type = CasSystemType(str(config["system_type"]).lower())
         cut_offset = int(config["cut_offset"])
     except KeyError as exc:  # pragma: no cover - defensive, CLI validated via tests
         raise ValueError(f"CasSystem config missing required field: {exc}") from exc
-    pam_entries = config.get("pam_rules") or []
+    system_type_value = config.get("system_type") or config.get("type")
+    if not system_type_value:
+        raise ValueError("CasSystem config requires a 'system_type' (or legacy 'type') field.")
+    system_type = CasSystemType(str(system_type_value).lower())
+    pam_entries = config.get("pam_rules")
+    if not pam_entries:
+        pam_pattern = config.get("pam_pattern")
+        if pam_pattern:
+            pam_entries = [{"pattern": pam_pattern, "description": config.get("pam_description", "")}]
+        else:
+            pam_entries = []
     if not pam_entries:
         raise ValueError("CasSystem config requires at least one PAM rule.")
     pam_rules: List[PAMRule] = []
@@ -422,17 +485,11 @@ def _resolve_cas_system(
 
 
 def _load_digital_genome(path: Path) -> CrisprDigitalGenome:
-    fasta_path = Path(path)
-    if not fasta_path.exists():
-        raise SystemExit(f"Genome FASTA '{fasta_path}' not found.")
-    records = read_fasta(fasta_path)
-    if not records:
-        raise SystemExit(f"No sequences found in {fasta_path}.")
-    sequences: Dict[str, str] = {}
-    for idx, (header, seq) in enumerate(records, start=1):
-        chrom = header or f"sequence_{idx}"
-        sequences[chrom] = bioinformatics.normalize_sequence(seq)
-    return CrisprDigitalGenome(sequences=sequences)
+    try:
+        core = CoreDigitalGenome.from_fasta(path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+    return CrisprDigitalGenome(sequences=dict(core.sequences))
 
 
 def _digital_genome_summary(genome: CrisprDigitalGenome, *, source: Optional[Path] = None) -> Dict[str, Any]:
@@ -453,6 +510,100 @@ def _digital_genome_summary(genome: CrisprDigitalGenome, *, source: Optional[Pat
 
 def _core_genome_from_legacy(genome: CrisprDigitalGenome) -> CoreDigitalGenome:
     return CoreDigitalGenome(sequences=dict(genome.sequences))
+
+
+def _genome_from_experiment(fasta: Path, region: Optional[str]) -> CrisprDigitalGenome:
+    core = CoreDigitalGenome.from_fasta(fasta)
+    if region:
+        core = core.slice_region(region)
+    return CrisprDigitalGenome(sequences=dict(core.sequences))
+
+
+def _run_experiment_to_dag(
+    config_path: Path,
+    *,
+    use_gpu_override: Optional[bool] = None,
+    frame_consumer: Optional[Callable[[EditDAGFrame], None]] = None,
+) -> tuple[EditDAG, Dict[str, Any], str]:
+    try:
+        spec = load_experiment_spec(config_path)
+    except ExperimentSpecError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    if isinstance(spec, CrisprExperimentSpec):
+        genome = _genome_from_experiment(spec.genome.fasta, spec.genome.region)
+        cas = _cas_system_from_config(_load_json_config(spec.cas_config))
+        guide = GuideRNA(
+            sequence=bioinformatics.normalize_sequence(spec.guide_sequence),
+            pam=spec.guide_pam,
+            name=spec.guide_name,
+        )
+        use_gpu = use_gpu_override if use_gpu_override is not None else spec.simulation.use_gpu
+        dag = build_crispr_edit_dag(
+            genome,
+            cas,
+            guide,
+            rng_seed=spec.simulation.seed,
+            max_depth=spec.simulation.max_depth,
+            min_prob=spec.simulation.min_prob,
+            max_sites=spec.simulation.max_sites,
+            use_gpu=use_gpu,
+            frame_consumer=frame_consumer,
+        )
+        metadata = {
+            "experiment_name": spec.name,
+            "experiment_description": spec.description,
+            "experiment_kind": spec.kind,
+            "experiment_config": str(config_path),
+            "genome_fasta": str(spec.genome.fasta),
+            "genome_region": spec.genome.region,
+            "cas_config": str(spec.cas_config),
+            "guide_name": spec.guide_name,
+            "physics_backend": "gpu" if use_gpu else "cpu",
+        }
+        artifact = "helix.crispr.edit_dag.v1.1"
+        return dag, metadata, artifact
+
+    if isinstance(spec, PrimeExperimentSpec):
+        genome = _genome_from_experiment(spec.genome.fasta, spec.genome.region)
+        editor = _load_prime_editor_from_config(spec.editor_config)
+        if spec.peg_config:
+            peg = _load_peg_from_json(spec.peg_config)
+        elif spec.peg_inline:
+            peg_data = spec.peg_inline
+            peg = PegRNA(
+                spacer=bioinformatics.normalize_sequence(peg_data["spacer"]),
+                pbs=bioinformatics.normalize_sequence(peg_data["pbs"]),
+                rtt=bioinformatics.normalize_sequence(peg_data["rtt"]),
+                name=peg_data.get("name"),
+            )
+        else:  # pragma: no cover - defensive
+            raise SystemExit("Prime experiment missing peg definition.")
+        dag = build_prime_edit_dag(
+            genome,
+            editor,
+            peg,
+            rng_seed=spec.simulation.seed,
+            max_depth=spec.simulation.max_depth,
+            min_prob=spec.simulation.min_prob,
+            frame_consumer=frame_consumer,
+        )
+        metadata = {
+            "experiment_name": spec.name,
+            "experiment_description": spec.description,
+            "experiment_kind": spec.kind,
+            "experiment_config": str(config_path),
+            "genome_fasta": str(spec.genome.fasta),
+            "genome_region": spec.genome.region,
+            "editor_config": str(spec.editor_config),
+            "peg_name": peg.name,
+        }
+        artifact = "helix.prime.edit_dag.v1.1"
+        if use_gpu_override:
+            print("Warning: --use-gpu is not currently available for prime experiments; running on CPU.")
+        return dag, metadata, artifact
+
+    raise SystemExit("Unsupported experiment specification.")
 
 
 def _serialize_pam_rule(rule: PAMRule) -> Dict[str, Any]:
@@ -556,9 +707,85 @@ def _write_json_output(payload: Dict[str, Any], output_path: Optional[Path]) -> 
         print(text)
 
 
-def _build_guide(sequence: str, *, name: Optional[str], pam: Optional[str]) -> GuideRNA:
+def _build_guide(
+    sequence: str,
+    *,
+    name: Optional[str],
+    pam: Optional[str],
+    metadata: Optional[Mapping[str, str]] = None,
+) -> GuideRNA:
     normalized = bioinformatics.normalize_sequence(sequence)
-    return GuideRNA(sequence=normalized, pam=pam, name=name)
+    guide = GuideRNA(sequence=normalized, pam=pam, name=name)
+    if metadata:
+        guide.metadata.update({key: str(value) for key, value in metadata.items()})
+    return guide
+
+
+def _normalize_region_hint(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed or trimmed == ".":
+        return None
+    return trimmed
+
+
+def _load_guides_from_tsv(path: Path) -> List[GuideRNA]:
+    guides: List[GuideRNA] = []
+    with Path(path).open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if not reader.fieldnames or "sequence" not in reader.fieldnames:
+            raise SystemExit("Guides TSV must contain at least a 'sequence' column.")
+        for idx, row in enumerate(reader, start=1):
+            sequence = (row.get("sequence") or "").strip()
+            if not sequence:
+                raise SystemExit(f"Guide row {idx} missing 'sequence'.")
+            name = (row.get("name") or "").strip() or None
+            region_hint = _normalize_region_hint(row.get("region"))
+            metadata = {"region": region_hint} if region_hint else None
+            guides.append(_build_guide(sequence, name=name, pam=None, metadata=metadata))
+    if not guides:
+        raise SystemExit(f"No guides found in {path}.")
+    return guides
+
+
+def _load_guides_from_json(path: Path) -> List[GuideRNA]:
+    data = _load_json_config(path)
+    entries: List[Mapping[str, Any]]
+    if isinstance(data, list):
+        entries = data  # type: ignore[assignment]
+    else:
+        maybe_guides = data.get("guides")
+        if not isinstance(maybe_guides, list):
+            raise SystemExit("Guide JSON must be a list or contain a top-level 'guides' list.")
+        entries = maybe_guides  # type: ignore[assignment]
+    guides: List[GuideRNA] = []
+    for idx, entry in enumerate(entries, start=1):
+        sequence = str(entry.get("sequence", "")).strip()
+        if not sequence:
+            raise SystemExit(f"Guide entry {idx} missing 'sequence'.")
+        name_value = entry.get("name")
+        name = str(name_value).strip() if name_value else None
+        region_hint = _normalize_region_hint(entry.get("region"))
+        metadata = {"region": region_hint} if region_hint else None
+        guides.append(_build_guide(sequence, name=name, pam=None, metadata=metadata))
+    if not guides:
+        raise SystemExit(f"No guides found in {path}.")
+    return guides
+
+
+def _load_guides_file(path: Path) -> List[GuideRNA]:
+    suffix = path.suffix.lower()
+    if suffix in (".tsv", ".txt"):
+        return _load_guides_from_tsv(path)
+    if suffix == ".json":
+        return _load_guides_from_json(path)
+    raise SystemExit("Guide files must be .tsv or .json.")
+
+
+def _safe_guide_label(name: str) -> str:
+    label = re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    return label or "guide"
 
 
 def _load_peg_from_args(args: argparse.Namespace) -> PegRNA:
@@ -590,6 +817,106 @@ def _load_peg_from_args(args: argparse.Namespace) -> PegRNA:
     )
 
 
+def _load_peg_from_json(path: Path) -> PegRNA:
+    data = _load_json_config(path)
+    spacer = str(data.get("spacer", "")).strip()
+    pbs = str(data.get("pbs", "")).strip()
+    rtt = str(data.get("rtt", "")).strip()
+    if not spacer or not pbs or not rtt:
+        raise SystemExit(f"PegRNA config at {path} must include spacer, pbs, and rtt.")
+    metadata = data.get("metadata") or {}
+    if metadata and not isinstance(metadata, dict):
+        raise SystemExit("peg metadata must be a JSON object.")
+    name = data.get("name")
+    return PegRNA(
+        spacer=bioinformatics.normalize_sequence(spacer),
+        pbs=bioinformatics.normalize_sequence(pbs),
+        rtt=bioinformatics.normalize_sequence(rtt),
+        name=name,
+        metadata=dict(metadata),
+    )
+
+
+def _load_pegs_from_tsv(path: Path) -> List[PegRNA]:
+    pegs: List[PegRNA] = []
+    with Path(path).open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        required = {"spacer", "pbs", "rtt"}
+        if not reader.fieldnames or not required.issubset(reader.fieldnames):
+            missing = required - set(reader.fieldnames or [])
+            raise SystemExit(f"Peg TSV must include columns: {', '.join(sorted(missing))}.")
+        for idx, row in enumerate(reader, start=1):
+            spacer = (row.get("spacer") or "").strip()
+            pbs = (row.get("pbs") or "").strip()
+            rtt = (row.get("rtt") or "").strip()
+            if not spacer or not pbs or not rtt:
+                raise SystemExit(f"Peg row {idx} missing spacer/pbs/rtt.")
+            name = (row.get("name") or "").strip() or None
+            meta: Dict[str, str] = {}
+            region_hint = _normalize_region_hint(row.get("region"))
+            if region_hint:
+                meta["region"] = region_hint
+            pegs.append(
+                PegRNA(
+                    spacer=bioinformatics.normalize_sequence(spacer),
+                    pbs=bioinformatics.normalize_sequence(pbs),
+                    rtt=bioinformatics.normalize_sequence(rtt),
+                    name=name,
+                    metadata=meta,
+                )
+            )
+    if not pegs:
+        raise SystemExit(f"No pegRNAs found in {path}.")
+    return pegs
+
+
+def _load_pegs_from_json(path: Path) -> List[PegRNA]:
+    data = _load_json_config(path)
+    entries: List[Mapping[str, Any]]
+    if isinstance(data, list):
+        entries = data  # type: ignore[assignment]
+    else:
+        maybe_pegs = data.get("pegs")
+        if not isinstance(maybe_pegs, list):
+            raise SystemExit("Peg JSON must be a list or contain a top-level 'pegs' list.")
+        entries = maybe_pegs  # type: ignore[assignment]
+    pegs: List[PegRNA] = []
+    for idx, entry in enumerate(entries, start=1):
+        spacer = str(entry.get("spacer", "")).strip()
+        pbs = str(entry.get("pbs", "")).strip()
+        rtt = str(entry.get("rtt", "")).strip()
+        if not spacer or not pbs or not rtt:
+            raise SystemExit(f"Peg entry {idx} missing spacer/pbs/rtt.")
+        metadata = entry.get("metadata") or {}
+        if metadata and not isinstance(metadata, dict):
+            raise SystemExit("Peg metadata must be a JSON object.")
+        region_hint = _normalize_region_hint(entry.get("region"))
+        if region_hint:
+            metadata = dict(metadata)
+            metadata["region"] = region_hint
+        pegs.append(
+            PegRNA(
+                spacer=bioinformatics.normalize_sequence(spacer),
+                pbs=bioinformatics.normalize_sequence(pbs),
+                rtt=bioinformatics.normalize_sequence(rtt),
+                name=entry.get("name"),
+                metadata=dict(metadata),
+            )
+        )
+    if not pegs:
+        raise SystemExit(f"No pegRNAs found in {path}.")
+    return pegs
+
+
+def _load_pegs_file(path: Path) -> List[PegRNA]:
+    suffix = path.suffix.lower()
+    if suffix in (".tsv", ".txt"):
+        return _load_pegs_from_tsv(path)
+    if suffix == ".json":
+        return _load_pegs_from_json(path)
+    raise SystemExit("Peg files must be .tsv or .json.")
+
+
 def _load_prime_editor_from_args(args: argparse.Namespace) -> PrimeEditor:
     config: Dict[str, Any] = {}
     if getattr(args, "editor_config", None):
@@ -614,6 +941,9 @@ def _load_prime_editor_from_args(args: argparse.Namespace) -> PrimeEditor:
     mismatch_tolerance = int(_override("mismatch_tolerance", "mismatch_tolerance", 3))
     flap_balance = float(_override("flap_balance", "flap_balance", 0.5))
     reanneal_bias = float(_override("reanneal_bias", "reanneal_bias", 0.1))
+    metadata = config.get("metadata") or {}
+    if metadata and not isinstance(metadata, dict):
+        raise SystemExit("Prime editor metadata must be a JSON object.")
     return PrimeEditor(
         name=name,
         cas=cas,
@@ -623,7 +953,24 @@ def _load_prime_editor_from_args(args: argparse.Namespace) -> PrimeEditor:
         mismatch_tolerance=mismatch_tolerance,
         flap_balance=flap_balance,
         reanneal_bias=reanneal_bias,
+        metadata=dict(metadata),
     )
+
+
+def _load_prime_editor_from_config(path: Path) -> PrimeEditor:
+    args = SimpleNamespace(
+        editor_config=path,
+        editor_name=None,
+        cas=None,
+        cas_config=None,
+        nick_offset=None,
+        efficiency_scale=None,
+        indel_bias=None,
+        mismatch_tolerance=None,
+        flap_balance=None,
+        reanneal_bias=None,
+    )
+    return _load_prime_editor_from_args(args)
 
 
 def _load_primer_pair_from_args(args: argparse.Namespace) -> PrimerPair:
@@ -686,42 +1033,10 @@ def _edit_dag_to_payload(dag: EditDAG, *, artifact: str, metadata: Dict[str, Any
     metadata.setdefault("created_at", datetime.now(timezone.utc).isoformat())
     nodes_payload: Dict[str, Any] = {}
     for node_id, node in dag.nodes.items():
-        entry: Dict[str, Any] = {
-            "log_prob": node.log_prob,
-            "metadata": node.metadata,
-            "parent_ids": list(node.parents),
-            "seq_hashes": node.seq_hashes,
-        }
-        if node.diffs:
-            entry["diffs"] = [
-                {
-                    "chrom": event.chrom,
-                    "start": event.start,
-                    "end": event.end,
-                    "replacement": event.replacement,
-                    "metadata": event.metadata,
-                }
-                for event in node.diffs
-            ]
-        entry["sequences"] = node.genome_view.materialize_all()
-        nodes_payload[node_id] = entry
+        nodes_payload[node_id] = _edit_node_to_payload(node)
     edges_payload = []
     for edge in dag.edges:
-        edges_payload.append(
-            {
-                "source": edge.source,
-                "target": edge.target,
-                "rule": edge.rule_name,
-                "event": {
-                    "chrom": edge.event.chrom,
-                    "start": edge.event.start,
-                    "end": edge.event.end,
-                    "replacement": edge.event.replacement,
-                    "metadata": edge.event.metadata,
-                },
-                "metadata": edge.metadata,
-            }
-        )
+        edges_payload.append(_edit_edge_to_payload(edge))
     return {
         "artifact": artifact,
         "version": "1.1",
@@ -731,6 +1046,62 @@ def _edit_dag_to_payload(dag: EditDAG, *, artifact: str, metadata: Dict[str, Any
         "edges": edges_payload,
         "root_id": dag.root_id,
     }
+
+
+def _edit_node_to_payload(node: EditNode) -> Dict[str, Any]:
+    entry: Dict[str, Any] = {
+        "log_prob": node.log_prob,
+        "metadata": node.metadata,
+        "parent_ids": list(node.parents),
+        "seq_hashes": node.seq_hashes,
+    }
+    if node.diffs:
+        entry["diffs"] = [
+            {
+                "chrom": event.chrom,
+                "start": event.start,
+                "end": event.end,
+                "replacement": event.replacement,
+                "metadata": event.metadata,
+            }
+            for event in node.diffs
+        ]
+    entry["sequences"] = node.genome_view.materialize_all()
+    return entry
+
+
+def _edit_edge_to_payload(edge: EditEdge) -> Dict[str, Any]:
+    return {
+        "source": edge.source,
+        "target": edge.target,
+        "rule": edge.rule_name,
+        "event": {
+            "chrom": edge.event.chrom,
+            "start": edge.event.start,
+            "end": edge.event.end,
+            "replacement": edge.event.replacement,
+            "metadata": edge.event.metadata,
+        },
+        "metadata": edge.metadata,
+    }
+
+
+def _frame_to_payload(frame: EditDAGFrame) -> Dict[str, Any]:
+    return {
+        "kind": "helix.edit_dag.frame.v1",
+        "step": frame.step,
+        "new_nodes": {node_id: _edit_node_to_payload(node) for node_id, node in frame.new_nodes.items()},
+        "new_edges": [_edit_edge_to_payload(edge) for edge in frame.new_edges],
+    }
+
+
+def _open_frame_stream(path_value: str) -> tuple[TextIO, bool]:
+    if path_value == "-":
+        return sys.stdout, False
+    frame_path = Path(path_value)
+    frame_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = frame_path.open("w", encoding="utf-8")
+    return handle, True
 
 
 def _top_outcomes_from_dag(dag: EditDAG, *, topk: int) -> List[Dict[str, object]]:
@@ -1067,30 +1438,105 @@ def command_crispr_genome_sim(args: argparse.Namespace) -> None:
 
 
 def command_crispr_dag(args: argparse.Namespace) -> None:
-    genome = _load_digital_genome(args.genome)
+    try:
+        base_core = CoreDigitalGenome.from_fasta(args.genome)
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
     cas_system = _resolve_cas_system(args.cas, args.cas_config)
-    guide = _build_guide(args.guide_sequence, name=args.guide_name, pam=args.guide_pam)
-    dag = build_crispr_edit_dag(
-        genome,
-        cas_system,
-        guide,
-        rng_seed=args.seed or 0,
-        max_depth=args.max_depth,
-        min_prob=args.min_prob,
-        max_sites=args.max_sites,
-    )
-    payload = _edit_dag_to_payload(
-        dag,
-        artifact="helix.crispr.edit_dag.v1.1",
-        metadata={
+    guides: List[GuideRNA]
+    if args.guides_file:
+        guides = _load_guides_file(args.guides_file)
+    else:
+        if not args.guide_sequence:
+            raise SystemExit("Provide --guide-sequence or --guides-file.")
+        region_meta = {}
+        region_hint = _normalize_region_hint(args.region)
+        if region_hint:
+            region_meta["region"] = region_hint
+        guides = [
+            _build_guide(
+                args.guide_sequence,
+                name=args.guide_name,
+                pam=args.guide_pam,
+                metadata=region_meta or None,
+            )
+        ]
+
+    global_region = _normalize_region_hint(args.region)
+    out_single = args.out or args.json
+    multiple_guides = len(guides) > 1
+
+    if multiple_guides and not args.out_dir:
+        raise SystemExit("Multi-guide runs require --out-dir.")
+    if args.out_dir:
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    frame_stream = None
+    close_stream = False
+    if args.frames:
+        frame_stream, close_stream = _open_frame_stream(args.frames)
+
+    for idx, guide in enumerate(guides, start=1):
+        guide_region = _normalize_region_hint(guide.metadata.get("region")) if guide.metadata else None
+        region = guide_region or global_region
+        working_core = base_core.slice_region(region) if region else base_core
+        genome = CrisprDigitalGenome(sequences=dict(working_core.sequences))
+        frame_consumer = None
+        if frame_stream:
+            label = guide.name or f"guide_{idx}"
+
+            def frame_consumer(frame: EditDAGFrame, handle=frame_stream, guide_label=label):
+                payload = _frame_to_payload(frame)
+                payload.setdefault("meta", {})["guide_name"] = guide_label
+                payload["meta"]["mechanism"] = "crispr"
+                handle.write(json.dumps(payload) + "\n")
+                handle.flush()
+
+        dag = build_crispr_edit_dag(
+            genome,
+            cas_system,
+            guide,
+            rng_seed=args.seed or 0,
+            max_depth=args.max_depth,
+            min_prob=args.min_prob,
+            max_sites=args.max_sites,
+            use_gpu=bool(getattr(args, "use_gpu", False)),
+            frame_consumer=frame_consumer,
+        )
+        metadata: Dict[str, Any] = {
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "genome_source": str(args.genome),
-        },
-    )
-    _write_json_output(payload, args.json)
-    if not dag.edges:
-        print("No edit events generated; DAG contains only the root state.")
+            "guide_name": guide.name or f"guide_{idx}",
+            "guide_sequence": guide.sequence,
+        }
+        if region:
+            metadata["region"] = region
+        if args.guides_file:
+            metadata["guides_file"] = str(args.guides_file)
+        metadata["physics_backend"] = "gpu" if getattr(args, "use_gpu", False) else "cpu"
+
+        payload = _edit_dag_to_payload(
+            dag,
+            artifact="helix.crispr.edit_dag.v1.1",
+            metadata=metadata,
+        )
+
+        if args.out_dir:
+            safe_name = _safe_guide_label(guide.name or f"guide_{idx}")
+            filename = f"crispr_{idx:03d}_{safe_name}.edit_dag.json"
+            out_path = args.out_dir / filename
+        else:
+            out_path = out_single
+
+        _write_json_output(payload, out_path)
+        if out_path:
+            print(f"CRISPR edit DAG saved to {out_path}.")
+        if not dag.edges:
+            label = guide.name or f"guide_{idx}"
+            print(f"No edit events generated for guide '{label}'; DAG contains only the root state.")
+    if frame_stream and close_stream:
+        frame_stream.close()
 
 
 def command_prime_simulate(args: argparse.Namespace) -> None:
@@ -1127,29 +1573,85 @@ def command_prime_simulate(args: argparse.Namespace) -> None:
 
 
 def command_prime_dag(args: argparse.Namespace) -> None:
-    genome = _load_digital_genome(args.genome)
-    peg = _load_peg_from_args(args)
+    try:
+        base_core = CoreDigitalGenome.from_fasta(args.genome)
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
     editor = _load_prime_editor_from_args(args)
-    dag = build_prime_edit_dag(
-        genome,
-        editor,
-        peg,
-        rng_seed=args.seed or 0,
-        max_depth=args.max_depth,
-        min_prob=args.min_prob,
-    )
-    payload = _edit_dag_to_payload(
-        dag,
-        artifact="helix.prime.edit_dag.v1.1",
-        metadata={
+    if args.pegs_file:
+        pegs = _load_pegs_file(args.pegs_file)
+    elif args.peg_config:
+        pegs = [_load_peg_from_json(args.peg_config)]
+    else:
+        peg = _load_peg_from_args(args)
+        pegs = [peg]
+
+    global_region = _normalize_region_hint(args.region)
+    out_single = args.out or args.json
+    multiple_pegs = len(pegs) > 1
+    if multiple_pegs and not args.out_dir:
+        raise SystemExit("Multi-peg runs require --out-dir.")
+    if args.out_dir:
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    frame_stream = None
+    close_stream = False
+    if args.frames:
+        frame_stream, close_stream = _open_frame_stream(args.frames)
+
+    for idx, peg in enumerate(pegs, start=1):
+        peg_region = _normalize_region_hint(peg.metadata.get("region")) if peg.metadata else None
+        region = peg_region or global_region
+        working_core = base_core.slice_region(region) if region else base_core
+        genome = CrisprDigitalGenome(sequences=dict(working_core.sequences))
+        frame_consumer = None
+        if frame_stream:
+            label = peg.name or f"peg_{idx}"
+
+            def frame_consumer(frame: EditDAGFrame, handle=frame_stream, peg_label=label):
+                payload = _frame_to_payload(frame)
+                payload.setdefault("meta", {})["peg_name"] = peg_label
+                payload["meta"]["mechanism"] = "prime"
+                handle.write(json.dumps(payload) + "\n")
+                handle.flush()
+
+        dag = build_prime_edit_dag(
+            genome,
+            editor,
+            peg,
+            rng_seed=args.seed or 0,
+            max_depth=args.max_depth,
+            min_prob=args.min_prob,
+            frame_consumer=frame_consumer,
+        )
+        metadata: Dict[str, Any] = {
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "genome_source": str(args.genome),
-        },
-    )
-    _write_json_output(payload, args.json)
-    if not dag.edges:
-        print("No prime editing DAG edges were generated.")
+            "peg_name": peg.name or f"peg_{idx}",
+        }
+        if region:
+            metadata["region"] = region
+        if args.pegs_file:
+            metadata["pegs_file"] = str(args.pegs_file)
+        payload = _edit_dag_to_payload(
+            dag,
+            artifact="helix.prime.edit_dag.v1.1",
+            metadata=metadata,
+        )
+        if args.out_dir:
+            safe_name = _safe_guide_label(peg.name or f"peg_{idx}")
+            out_path = args.out_dir / f"prime_{idx:03d}_{safe_name}.edit_dag.json"
+        else:
+            out_path = out_single
+        _write_json_output(payload, out_path)
+        if out_path:
+            print(f"Prime edit DAG saved to {out_path}.")
+        if not dag.edges:
+            label = peg.name or f"peg_{idx}"
+            print(f"No prime edit events generated for peg '{label}'; DAG contains only the root state.")
+    if frame_stream and close_stream:
+        frame_stream.close()
 
 
 def command_pcr_dag(args: argparse.Namespace) -> None:
@@ -1240,6 +1742,73 @@ def command_edit_dag_report(args: argparse.Namespace) -> None:
     html = render_html_report(dag, png_path=args.png, title=args.title)
     Path(args.out).write_text(html, encoding="utf-8")
     print(f"Edit DAG report saved to {args.out}.")
+
+
+def command_experiment_new(args: argparse.Namespace) -> None:
+    template = _CRISPR_EXPERIMENT_TEMPLATE if args.type == "crispr" else _PRIME_EXPERIMENT_TEMPLATE
+    out_path = Path(args.out)
+    if out_path.exists() and not args.force:
+        raise SystemExit(f"Refusing to overwrite existing file: {out_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(template, encoding="utf-8")
+    print(f"Wrote experiment template to {out_path}.")
+
+
+def command_experiment_run(args: argparse.Namespace) -> None:
+    if args.out is None:
+        raise SystemExit("--out is required for 'experiment run'.")
+    frame_stream = None
+    close_stream = False
+    frame_consumer = None
+    if args.frames:
+        frame_stream, close_stream = _open_frame_stream(args.frames)
+
+        def frame_consumer(frame: EditDAGFrame, handle=frame_stream):
+            payload = _frame_to_payload(frame)
+            payload.setdefault("meta", {})["experiment_config"] = str(args.config)
+            handle.write(json.dumps(payload) + "\n")
+            handle.flush()
+
+    try:
+        dag, metadata, artifact = _run_experiment_to_dag(
+            args.config,
+            use_gpu_override=getattr(args, "use_gpu", None),
+            frame_consumer=frame_consumer,
+        )
+    finally:
+        if frame_stream and close_stream:
+            frame_stream.close()
+    clean_meta = {k: v for k, v in metadata.items() if v is not None}
+    payload = _edit_dag_to_payload(dag, artifact=artifact, metadata=clean_meta)
+    _write_json_output(payload, args.out)
+    print(f"Experiment DAG saved to {args.out}.")
+
+
+def command_experiment_viz(args: argparse.Namespace) -> None:
+    dag, _, _ = _run_experiment_to_dag(args.config, use_gpu_override=getattr(args, "use_gpu", None))
+    save_edit_dag_png = _load_dag_viz_exporter()
+    save_edit_dag_png(
+        dag,
+        str(args.out),
+        layout=args.layout,
+        min_prob_filter=args.min_prob,
+        max_time_filter=args.max_time,
+    )
+    print(f"Experiment visualization saved to {args.out}.")
+
+
+def command_experiment_report(args: argparse.Namespace) -> None:
+    dag, _, _ = _run_experiment_to_dag(args.config, use_gpu_override=getattr(args, "use_gpu", None))
+    html = render_html_report(dag, png_path=args.png, title=args.title)
+    Path(args.out).write_text(html, encoding="utf-8")
+    print(f"Experiment report saved to {args.out}.")
+
+
+def command_experiment_validate(args: argparse.Namespace) -> None:
+    dag, _, _ = _run_experiment_to_dag(args.config, use_gpu_override=getattr(args, "use_gpu", None))
+    print(
+        f"Experiment '{args.config}' is valid (nodes={len(dag.nodes)}, edges={len(dag.edges)})."
+    )
 
 
 def _random_dna(rng: random.Random, length: int) -> str:
@@ -2378,20 +2947,33 @@ def build_parser() -> argparse.ArgumentParser:
 
     crispr_dag = crispr_sub.add_parser("dag", help="Construct a CRISPR edit DAG.")
     crispr_dag.add_argument("--genome", type=Path, required=True, help="Genome FASTA file.")
-    crispr_dag.add_argument("--guide-sequence", required=True, help="Guide RNA sequence (5'->3').")
+    crispr_dag.add_argument("--guide-sequence", help="Guide RNA sequence (5'->3').")
     crispr_dag.add_argument("--guide-name", help="Optional guide identifier.")
     crispr_dag.add_argument("--guide-pam", help="Optional PAM label stored with the guide metadata.")
+    crispr_dag.add_argument("--guides-file", type=Path, help="TSV/JSON file describing multiple guides.")
+    crispr_dag.add_argument(
+        "--region",
+        help="Restrict simulations to a genomic slice (chrom:start-end). Overridden by guide-specific regions.",
+    )
     crispr_dag.add_argument(
         "--cas",
         default="cas9",
         help=f"Cas preset to use (options: {', '.join(sorted(CAS_PRESET_CONFIGS))}; default: cas9).",
     )
     crispr_dag.add_argument("--cas-config", type=Path, help="JSON file describing a custom CasSystem.")
-    crispr_dag.add_argument("--max-sites", type=int, default=5, help="Maximum candidate sites per layer (default: 5).")
-    crispr_dag.add_argument("--max-depth", type=int, default=1, help="Maximum DAG depth (default: 1).")
+    crispr_dag.add_argument("--max-sites", type=int, default=50, help="Maximum candidate sites per guide (default: 50).")
+    crispr_dag.add_argument("--max-depth", type=int, default=2, help="Maximum DAG depth (default: 2).")
     crispr_dag.add_argument("--min-prob", type=float, default=1e-4, help="Minimum branch probability (default: 1e-4).")
     crispr_dag.add_argument("--seed", type=int, default=0, help="Random seed for stochastic rules (default: 0).")
-    crispr_dag.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
+    crispr_dag.add_argument("--out", type=Path, help="Output path for single-guide simulations.")
+    crispr_dag.add_argument("--out-dir", type=Path, help="Directory for per-guide DAG outputs.")
+    crispr_dag.add_argument("--json", type=Path, help="Deprecated alias for --out (defaults to stdout).")
+    crispr_dag.add_argument("--use-gpu", action="store_true", help="Use GPU-accelerated scoring (Numba/CUDA).")
+    crispr_dag.add_argument(
+        "--frames",
+        type=str,
+        help="Optional JSONL path to stream DAG frames (use '-' for stdout).",
+    )
     crispr_dag.set_defaults(func=command_crispr_dag)
 
     prime_cmd = subparsers.add_parser("prime", help="Prime editing helpers.")
@@ -2443,10 +3025,19 @@ def build_parser() -> argparse.ArgumentParser:
     prime_dag.add_argument("--mismatch-tolerance", type=int, help="Override mismatch tolerance.")
     prime_dag.add_argument("--flap-balance", type=float, help="Relative weight for left vs right flap resolution (0-1).")
     prime_dag.add_argument("--reanneal-bias", type=float, help="Probability mass for reanneal/no-edit branches.")
-    prime_dag.add_argument("--max-depth", type=int, default=1, help="Maximum DAG depth (default: 1).")
+    prime_dag.add_argument("--max-depth", type=int, default=2, help="Maximum DAG depth (default: 2).")
     prime_dag.add_argument("--min-prob", type=float, default=1e-4, help="Minimum branch probability (default: 1e-4).")
     prime_dag.add_argument("--seed", type=int, default=0, help="Random seed (default: 0).")
-    prime_dag.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
+    prime_dag.add_argument("--pegs-file", type=Path, help="TSV/JSON file describing multiple pegRNAs.")
+    prime_dag.add_argument("--region", help="Restrict simulations to chrom:start-end.")
+    prime_dag.add_argument("--out", type=Path, help="Output path for single-peg runs.")
+    prime_dag.add_argument("--out-dir", type=Path, help="Directory for per-peg outputs.")
+    prime_dag.add_argument("--json", type=Path, help="Deprecated alias for --out (defaults to stdout).")
+    prime_dag.add_argument(
+        "--frames",
+        type=str,
+        help="Optional JSONL path to stream DAG frames (use '-' for stdout).",
+    )
     prime_dag.set_defaults(func=command_prime_dag)
 
     pcr_cmd = subparsers.add_parser("pcr", help="PCR amplification helpers.")
@@ -2577,6 +3168,48 @@ def build_parser() -> argparse.ArgumentParser:
     edit_dag_dataset.add_argument("--out", type=Path, required=True, help="Output JSONL path.")
     edit_dag_dataset.add_argument("--seed", type=int, default=7, help="Random seed (default: 7).")
     edit_dag_dataset.set_defaults(func=command_edit_dag_generate_dataset)
+
+    experiment_cmd = subparsers.add_parser("experiment", help="Experiment utilities.")
+    experiment_sub = experiment_cmd.add_subparsers(dest="experiment_command", required=True)
+
+    experiment_new = experiment_sub.add_parser("new", help="Create a starter experiment config.")
+    experiment_new.add_argument("--type", choices=("crispr", "prime"), required=True, help="Experiment type.")
+    experiment_new.add_argument("--out", type=Path, required=True, help="Output path for the template.")
+    experiment_new.add_argument("--force", action="store_true", help="Overwrite existing files.")
+    experiment_new.set_defaults(func=command_experiment_new)
+
+    experiment_run = experiment_sub.add_parser("run", help="Execute an experiment config and write a DAG.")
+    experiment_run.add_argument("--config", type=Path, required=True, help="Experiment config (.helix.yml).")
+    experiment_run.add_argument("--out", type=Path, required=True, help="Output DAG JSON path.")
+    experiment_run.add_argument("--use-gpu", action="store_true", help="Use GPU backend when available.")
+    experiment_run.add_argument(
+        "--frames",
+        type=str,
+        help="Optional JSONL path to stream DAG frames (use '-' for stdout).",
+    )
+    experiment_run.set_defaults(func=command_experiment_run)
+
+    experiment_viz = experiment_sub.add_parser("viz", help="Run an experiment and render a PNG.")
+    experiment_viz.add_argument("--config", type=Path, required=True, help="Experiment config (.helix.yml).")
+    experiment_viz.add_argument("--out", type=Path, required=True, help="PNG output path.")
+    experiment_viz.add_argument("--layout", default="cose", help="Graph layout (default: cose).")
+    experiment_viz.add_argument("--min-prob", type=float, default=0.0, help="Minimum branch probability filter.")
+    experiment_viz.add_argument("--max-time", type=int, help="Maximum time_step to display.")
+    experiment_viz.add_argument("--use-gpu", action="store_true", help="Use GPU backend when available.")
+    experiment_viz.set_defaults(func=command_experiment_viz)
+
+    experiment_report = experiment_sub.add_parser("report", help="Run an experiment and generate an HTML report.")
+    experiment_report.add_argument("--config", type=Path, required=True, help="Experiment config (.helix.yml).")
+    experiment_report.add_argument("--out", type=Path, required=True, help="HTML output path.")
+    experiment_report.add_argument("--png", type=Path, help="Optional PNG to embed in the report.")
+    experiment_report.add_argument("--title", default="Helix Experiment Report", help="Report title.")
+    experiment_report.add_argument("--use-gpu", action="store_true", help="Use GPU backend when available.")
+    experiment_report.set_defaults(func=command_experiment_report)
+
+    experiment_validate = experiment_sub.add_parser("validate", help="Validate an experiment config.")
+    experiment_validate.add_argument("--config", type=Path, required=True, help="Experiment config (.helix.yml).")
+    experiment_validate.add_argument("--use-gpu", action="store_true", help="Use GPU backend when available.")
+    experiment_validate.set_defaults(func=command_experiment_validate)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
     protein.add_argument("--sequence", help="Inline amino-acid string.")

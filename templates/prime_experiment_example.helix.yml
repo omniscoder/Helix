@@ -1,0 +1,18 @@
+kind: helix.prime.experiment.v1
+name: example_prime_experiment
+description: "Describe the goal of this prime editing experiment."
+
+genome:
+  fasta: path/to/reference.fa
+  region: chrDemo:1-500
+
+editor:
+  config: path/to/prime_editor.json
+
+peg:
+  config: path/to/peg_config.json
+
+simulation:
+  max_depth: 3
+  min_prob: 1.0e-4
+  seed: 0

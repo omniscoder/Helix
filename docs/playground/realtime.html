@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Helix Real-Time Edit Simulator</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+        background: #0f172a;
+        color: #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      header {
+        padding: 12px 20px;
+        border-bottom: 1px solid #1e293b;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+      }
+      header h1 {
+        font-size: 18px;
+        margin: 0;
+      }
+      main {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 0;
+        min-height: 0;
+      }
+      aside {
+        border-right: 1px solid #1e293b;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        overflow-y: auto;
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 13px;
+        color: #cbd5f5;
+      }
+      input[type="text"],
+      textarea,
+      select,
+      input[type="number"] {
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        padding: 6px 8px;
+        color: #e2e8f0;
+        font-family: inherit;
+      }
+      textarea {
+        min-height: 90px;
+        resize: vertical;
+      }
+      button {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #1e293b;
+      }
+      #rt-cy {
+        height: 100%;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 12px;
+      }
+      .metrics {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #94a3b8;
+      }
+      .slider-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      input[type="range"] {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Helix Real-Time CRISPR Simulator</h1>
+      <p style="margin:0;color:#94a3b8;font-size:13px">
+        Stream edit DAG frames directly in the browser — no backend required.
+      </p>
+    </header>
+    <main>
+      <aside>
+        <label>
+          Genome (FASTA or plain sequence)
+          <textarea id="rt-genome">&gt;chrDemo
+TTTACCCAGGAAACCCGGGTTTTAGGTTT</textarea>
+        </label>
+        <label>
+          CRISPR guide (5' → 3')
+          <input id="rt-guide" type="text" value="ACCCAGGAAACCCGGGTTTT" />
+        </label>
+        <label>
+          PAM pattern
+          <input id="rt-pam" type="text" value="NGG" />
+        </label>
+        <label>
+          Mismatch tolerance
+          <input id="rt-mismatch" type="number" min="0" max="10" value="3" />
+        </label>
+        <label>
+          Max candidate sites
+          <input id="rt-max-sites" type="number" min="1" max="50" value="5" />
+        </label>
+        <label>
+          Indel window
+          <input id="rt-window" type="number" min="1" max="20" value="5" />
+        </label>
+        <div class="controls">
+          <button id="rt-run">Simulate</button>
+          <button id="rt-reset" class="secondary">Reset</button>
+        </div>
+        <div class="controls">
+          <button id="rt-play">Play/Pause</button>
+          <label style="flex:1">
+            Speed (ms)
+            <input id="rt-speed" type="number" min="100" step="100" value="500" />
+          </label>
+        </div>
+        <div class="slider-row">
+          <input id="rt-slider" type="range" min="0" max="0" value="0" />
+          <span id="rt-frame-label">0</span>
+        </div>
+        <div id="rt-metrics" class="metrics">Load a simulation…</div>
+      </aside>
+      <section id="rt-cy"></section>
+    </main>
+    <script src="js/realtime.js" type="module"></script>
+  </body>
+</html>

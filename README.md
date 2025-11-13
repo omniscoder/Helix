@@ -154,6 +154,40 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   ```
   Builds the first-version “digital twin” graph using the new edit runtime. Nodes contain fully materialized genome views, edges capture each clean-cut event, and the JSON artifact (`helix.crispr.edit_dag.v1.1`) can feed notebooks and future viz surfaces.
 
+- **CRISPR edit DAG (FASTA-native, multi-guide)**
+  ```bash
+  helix crispr dag \
+    --genome examples/hg19_chr_demo.fa \
+    --cas-config examples/cas9.json \
+    --guides-file examples/guides.tsv \
+    --region chr7:55000000-55005000 \
+    --max-depth 2 \
+    --min-prob 1e-4 \
+    --max-sites 20 \
+    --seed 0 \
+    --out-dir out/crispr_dags/
+  ```
+  - `cas9.json` (Cas/physics config)  
+    ```json
+    {
+      "name": "SpCas9",
+      "system_type": "cas9",
+      "pam_pattern": "NGG",
+      "cut_offset": 3,
+      "max_mismatches": 3,
+      "weight_mismatch_penalty": 1.0,
+      "weight_pam_penalty": 2.0
+    }
+    ```
+  - `guides.tsv` (guide library)  
+    ```text
+    name	sequence	                region
+    G1	  ACGTACGTACGTACGTACGT	    chr7:55000010-55000040
+    G2	  TGCATGCATGCATGCATGCA	    chr7:55003000-55003025
+    G3	  CCCCCGGGGGAAAAATTTTT	    .
+    ```
+  The CLI slices the FASTA per guide (falling back to `--region`), fans out over each design, and writes one artifact per guide (e.g., `out/crispr_dags/crispr_001_G1.edit_dag.json`). Artifacts stay compatible with the viz/report/Playground surfaces.
+
 - **Prime editing sandbox**
   ```bash
   helix prime simulate --genome genome.fna --peg-config peg.json --editor-config pe3.json --max-outcomes 16 --json prime_edits.json
@@ -165,6 +199,65 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   helix prime dag --genome genome.fna --peg-config peg.json --editor-config pe3.json --json prime_edit_dag.json
   ```
   Produces the prime-editing DAG artifact (`helix.prime.edit_dag.v1.1`) so you can inspect RTT-driven branches, log probabilities, and materialized genome snapshots per node.
+
+- **Prime edit DAG (config-driven, multi-peg)**
+  ```bash
+  helix prime dag \
+    --genome examples/hg19_chr_demo.fa \
+    --editor-config examples/prime_editor.json \
+    --pegs-file examples/pegs.tsv \
+    --region chr11:5227000-5227500 \
+    --max-depth 3 \
+    --min-prob 1e-4 \
+    --seed 0 \
+    --out-dir out/prime_dags/
+  ```
+  - `prime_editor.json`
+    ```json
+    {
+      "name": "PE2-like",
+      "cas": {
+        "name": "SpCas9-H840A",
+        "type": "cas9",
+        "pam_pattern": "NGG",
+        "cut_offset": 3,
+        "max_mismatches": 2
+      },
+      "nick_to_rtt_offset": 0,
+      "efficiency_scale": 0.6,
+      "mismatch_tolerance": 2,
+      "indel_bias": 0.1,
+      "metadata": {
+        "flap_model": "left>right (demo)"
+      }
+    }
+    ```
+  - `pegs.tsv`
+    ```text
+    name	spacer	                     pbs	      rtt	                        region
+    peg1	ACGTACGTACGTACGTACGT	     GCTAGCTA	  TCTGACTCTCTCAGGAGTC	     chr11:5227000-5227100
+    peg2	TGCATGCATGCATGCATGCA	     AACCGGTT	  AAGGTTCCGGAACTTG	         chr11:5227200-5227300
+    ```
+  Each peg row emits a dedicated `helix.prime.edit_dag.v1.1` artifact, mirroring the CRISPR workflow. The Playground buttons (`?demo=prime`) load the same format, so teams can plug their configs directly into visualization/reporting pipelines.
+
+- **Experiment configs (YAML → DAG)**
+  ```bash
+  helix experiment new --type crispr --out experiments/demo_crispr.helix.yml
+  helix experiment run --config experiments/demo_crispr.helix.yml --out out/demo_crispr.edit_dag.json
+  helix experiment viz --config experiments/demo_crispr.helix.yml --out out/demo_crispr.png
+  ```
+  A `*.helix.yml` file captures everything humans care about—FASTA path, optional region, Cas/Prime config, guide or peg design, and simulation knobs. Helix regenerates DAG JSON, PNGs, and HTML reports from that single spec (`helix experiment run/viz/report`). Starter templates live in `templates/`, and `helix experiment new` bootstraps a fresh config with placeholders ready to fill in.
+
+- **Real-time DAG frames (JSONL)**
+  ```bash
+  helix crispr dag \
+    --genome examples/hg19_chr_demo.fa \
+    --cas-config examples/cas9.json \
+    --guide-sequence ACGTACGTACGTACGTACGT \
+    --frames - \
+    --out out/crispr_rt.edit_dag.json
+  ```
+  Use `--frames` (or `--frames -` for stdout) on any CRISPR/Prime DAG command to stream incremental frames as JSON Lines—perfect for powering live Cytoscape animations or piping into notebooks for “real-time” plotting. Each frame carries new nodes/edges and updated probabilities, so you can watch the edit process unfold.
 
 - **PCR amplicon DAG**
   ```bash

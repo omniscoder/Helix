@@ -1,0 +1,9 @@
+{
+  "name": "SpCas9-demo",
+  "system_type": "cas9",
+  "pam_pattern": "NGG",
+  "cut_offset": 3,
+  "max_mismatches": 3,
+  "weight_mismatch_penalty": 1.0,
+  "weight_pam_penalty": 2.0
+}

@@ -1,0 +1,17 @@
+{
+  "name": "PE2-demo",
+  "cas": {
+    "name": "SpCas9-H840A",
+    "type": "cas9",
+    "pam_pattern": "NGG",
+    "cut_offset": 3,
+    "max_mismatches": 2
+  },
+  "nick_to_rtt_offset": 1,
+  "efficiency_scale": 0.6,
+  "mismatch_tolerance": 2,
+  "indel_bias": 0.1,
+  "metadata": {
+    "notes": "Demo PE2-like editor"
+  }
+}

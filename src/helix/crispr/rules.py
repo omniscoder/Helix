@@ -10,7 +10,7 @@ from helix.edit.physics import edit_rule
 from helix.edit.simulate import SimulationContext
 
 from .model import CasSystem, DigitalGenome, GuideRNA
-from .physics import CRISPRPhysics
+from .physics import CRISPRPhysicsBase
 from .simulator import find_candidate_sites
 
 
@@ -21,9 +21,9 @@ def _get_context_objects(ctx: SimulationContext) -> Tuple[DigitalGenome, CasSyst
     return genome, cas, guide
 
 
-def _get_physics(ctx: SimulationContext) -> CRISPRPhysics | None:
+def _get_physics(ctx: SimulationContext) -> CRISPRPhysicsBase | None:
     physics = ctx.extra.get("physics")
-    if isinstance(physics, CRISPRPhysics):
+    if isinstance(physics, CRISPRPhysicsBase):
         return physics
     return None
 
