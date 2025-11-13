@@ -135,6 +135,28 @@ TTTACCCAGGAAACCCGGGTTTTAGGTTT</textarea>
           Indel window
           <input id="rt-window" type="number" min="1" max="20" value="5" />
         </label>
+        <fieldset>
+          <legend>CDS (optional)</legend>
+          <label>
+            CDS start (1-based)
+            <input id="rt-cds-start" type="number" min="1" placeholder="e.g., 100" />
+          </label>
+          <label>
+            CDS end (1-based)
+            <input id="rt-cds-end" type="number" min="1" placeholder="e.g., 450" />
+          </label>
+          <label>
+            Strand
+            <select id="rt-cds-strand">
+              <option value="+" selected>+</option>
+              <option value="-">-</option>
+            </select>
+          </label>
+          <label>
+            Exons (start-end, comma-separated)
+            <input id="rt-exons" type="text" placeholder="100-150,200-250,300-360" />
+          </label>
+        </fieldset>
         <div class="controls">
           <button id="rt-run">Simulate</button>
           <button id="rt-reset" class="secondary">Reset</button>
@@ -151,8 +173,67 @@ TTTACCCAGGAAACCCGGGTTTTAGGTTT</textarea>
           <input id="rt-slider" type="range" min="0" max="0" value="0" />
           <span id="rt-frame-label">0</span>
         </div>
+        <fieldset style="margin-top:8px;">
+          <legend style="color:#7aa2f7;font-size:12px;">Transcript config (JSON)</legend>
+          <label style="gap:6px">
+            Load transcript JSON
+            <input id="rt-transcript-file" type="file" accept="application/json" />
+          </label>
+          <label style="gap:6px">
+            Transcript
+            <select id="rt-transcript-select" disabled>
+              <option value="">(none loaded)</option>
+            </select>
+          </label>
+          <div class="controls">
+            <button id="rt-transcript-export" class="secondary">Export current transcript JSON</button>
+          </div>
+          <div class="metrics" style="font-size:12px">Schema: { transcripts: [{ id, name, strand, cds_start, cds_end, exons: [[start,end], ...] }] } (1-based)</div>
+        </fieldset>
+        <fieldset style="margin-top:8px;">
+          <legend style="color:#7aa2f7;font-size:12px;">Outcome filters</legend>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-intended" type="checkbox" checked /> Intended (repaired)
+          </label>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-error" type="checkbox" checked /> Indel / error
+          </label>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-noedit" type="checkbox" checked /> No edit
+          </label>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-other" type="checkbox" checked /> Other (cut/prime/flap/root)
+          </label>
+          <div style="height:8px"></div>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-desired" type="checkbox" checked /> Desired (intended/repaired)
+          </label>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-undesired" type="checkbox" checked /> Undesired (any error/indel)
+          </label>
+          <div style="height:8px"></div>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-only-desired" type="checkbox" /> Only desired nodes
+          </label>
+          <div style="height:8px"></div>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-only-terminal" type="checkbox" /> Only terminal nodes
+          </label>
+          <div style="height:8px"></div>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-ontarget" type="checkbox" checked /> On‑target
+          </label>
+          <label style="flex-direction:row;align-items:center;gap:8px">
+            <input id="filter-offtarget" type="checkbox" checked /> Off‑target
+          </label>
+        </fieldset>
         <div id="rt-metrics" class="metrics">Load a simulation…</div>
         <canvas id="rt-branch-chart" height="120" style="margin-top:8px;"></canvas>
+        <div style="margin-top:8px; font-size:12px;">
+          <strong>Selection</strong>
+          <div id="rt-details" class="metrics">Click a node to see details.</div>
+          <pre id="rt-seq" style="margin-top:6px;background:#0b0e14;border:1px solid #1f2937;padding:8px;border-radius:6px;white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto;"></pre>
+        </div>
       </aside>
       <section style="display:flex; flex-direction:column; min-height:0;">
         <div id="rt-cy" style="flex:1;"></div>
@@ -192,6 +273,7 @@ TTTACCCAGGAAACCCGGGTTTTAGGTTT</textarea>
         </div>
       </section>
     </main>
+    <div id="rt-tooltip" style="position:fixed; display:none; z-index:9999; background:#0b1220; color:#e5e7eb; border:1px solid #1f2937; border-radius:6px; padding:8px 10px; font-size:12px; max-width:360px; pointer-events:none; box-shadow:0 4px 16px rgba(0,0,0,0.35);"></div>
     <script src="js/realtime.js" type="module"></script>
   </body>
 </html>

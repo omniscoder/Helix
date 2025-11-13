@@ -78,6 +78,15 @@ def iter_edit_dag_frames(
                     parent_stage = node.metadata.get("stage", "root")
                     new_time = parent_time + 1
                     new_stage = metadata.get("stage", parent_stage)
+                    # desired/undesired classification (if not provided by rule)
+                    desired_flag = metadata.get("desired")
+                    if desired_flag is None:
+                        if new_stage == "repaired":
+                            desired_flag = True
+                        elif new_stage == "error":
+                            desired_flag = False
+                        else:
+                            desired_flag = None
                     parents = (node.id,)
                     ev_hash = hash_event(event.chrom, event.start, event.end, event.replacement, str(new_stage))
                     node_id = hash_node_id(parents, ev_hash, str(new_stage), new_time)
@@ -91,6 +100,7 @@ def iter_edit_dag_frames(
                             **metadata,
                             "time_step": new_time,
                             "stage": new_stage,
+                            **({"desired": desired_flag} if desired_flag is not None else {}),
                         },
                         parents=parents,
                         seq_hashes=seq_hashes,

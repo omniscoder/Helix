@@ -188,6 +188,17 @@ This exposes the `helix` console command and the `helix` Python package (`from h
     ```
   The CLI slices the FASTA per guide (falling back to `--region`), fans out over each design, and writes one artifact per guide (e.g., `out/crispr_dags/crispr_001_G1.edit_dag.json`). Artifacts stay compatible with the viz/report/Playground surfaces.
 
+- **Protein-impact annotations**
+  ```bash
+  helix crispr dag \
+    --genome examples/hg19_chr_demo.fa \
+    --guide-sequence ACGTACGTACGTACGTACGT \
+    --coding-json transcripts/BRCA1_tx.json \
+    --coding-transcript BRCA1-201 \
+    --out out/crispr_brca1.edit_dag.json
+  ```
+  Provide a transcript JSON (same schema used by the GUI loader) to annotate SNV outcomes with `protein_impact` metadata (`silent`, `missense`, `nonsense`). Works for both `helix crispr dag` and `helix prime dag`.
+
 - **Prime editing sandbox**
   ```bash
   helix prime simulate --genome genome.fna --peg-config peg.json --editor-config pe3.json --max-outcomes 16 --json prime_edits.json
@@ -282,6 +293,12 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   1. Open the [Realtime Playground](docs/playground/realtime.html).
   2. Guide A: `ACCCAGGAAACCCGGGTTTT`, Guide B: `TTTACCCAGGAAACCCGGGT`, PAM `NGG`.
   3. Hit “Compare” to watch probability mass shift between intended vs indel branches, then export the experiment `.helix.yml` for reproducible CLI runs.
+- **Desktop GUI (optional PySide6 extra)**
+  ```bash
+  pip install veri-helix[gui]
+  helix gui
+  ```
+  Ships a PySide6 desktop shell with a QWebEngineView + Cytoscape canvas. The GUI streams the same JSONL frames as the CLI/Playground, so you can iterate on CRISPR or Prime runs locally (even offline) and export specs later.
 
 - **PCR amplicon DAG**
   ```bash

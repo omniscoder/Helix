@@ -81,6 +81,7 @@ Two end-to-end recipes ship in `examples/` so you can go from FASTA/configs → 
   - Suggested demo: Guide A `ACCCAGGAAACCCGGGTTTT` vs Guide B `TTTACCCAGGAAACCCGGGT` (chrDemo) to see how probability mass shifts live.
   - Branch chart + entropy panel update every frame (`intended`, `indel`, `no-edit`) so you can watch probability flow in real time.
   - Export frames JSONL and hand them to `helix edit-dag generate-dataset --frames-input …` to append real experiments to your ML corpora (see [Edit DAG Frames](edit_dag_frames.md)).
+  - Prefer a desktop shell? `pip install veri-helix[gui] && helix gui` launches the PySide6 version with the same streaming frames and Cytoscape canvas.
 
 ---
 

@@ -10,6 +10,7 @@ import random
 import re
 import sys
 from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
@@ -53,6 +54,7 @@ from .prime.dag_api import build_prime_edit_dag
 from .pcr.model import Primer, PrimerPair, PCRConfig
 from .pcr.dag_api import pcr_edit_dag
 from .edit.dag import EditDAG, EditDAGFrame, EditEdge, EditNode, dag_from_payload
+from .edit.events import EditEvent
 from .edit.report import render_html_report
 from .experiment.spec import (
     CrisprExperimentSpec,
@@ -162,6 +164,211 @@ def _load_sequence_arg(sequence: str | None, path: Path | None, *, default: str 
     if default is not None:
         return default
     raise ValueError("Missing sequence data; provide a positional sequence or use --input.")
+
+
+@dataclass
+class TranscriptDef:
+    id: str
+    name: str
+    strand: str
+    cds_start: int
+    cds_end: int
+    exons: List[tuple[int, int]]
+    chrom: Optional[str] = None
+
+
+_CODON_TABLE = {
+    "TTT": "F", "TTC": "F", "TTA": "L", "TTG": "L",
+    "TCT": "S", "TCC": "S", "TCA": "S", "TCG": "S",
+    "TAT": "Y", "TAC": "Y", "TAA": "*", "TAG": "*",
+    "TGT": "C", "TGC": "C", "TGA": "*", "TGG": "W",
+    "CTT": "L", "CTC": "L", "CTA": "L", "CTG": "L",
+    "CCT": "P", "CCC": "P", "CCA": "P", "CCG": "P",
+    "CAT": "H", "CAC": "H", "CAA": "Q", "CAG": "Q",
+    "CGT": "R", "CGC": "R", "CGA": "R", "CGG": "R",
+    "ATT": "I", "ATC": "I", "ATA": "I", "ATG": "M",
+    "ACT": "T", "ACC": "T", "ACA": "T", "ACG": "T",
+    "AAT": "N", "AAC": "N", "AAA": "K", "AAG": "K",
+    "AGT": "S", "AGC": "S", "AGA": "R", "AGG": "R",
+    "GTT": "V", "GTC": "V", "GTA": "V", "GTG": "V",
+    "GCT": "A", "GCC": "A", "GCA": "A", "GCG": "A",
+    "GAT": "D", "GAC": "D", "GAA": "E", "GAG": "E",
+    "GGT": "G", "GGC": "G", "GGA": "G", "GGG": "G",
+}
+
+_RC_MAP = {"A": "T", "T": "A", "C": "G", "G": "C"}
+
+
+def _normalize_exon_ranges(exons: Sequence[Sequence[int | float | str]]) -> List[tuple[int, int]]:
+    normalized: List[tuple[int, int]] = []
+    for exon in exons:
+        if len(exon) < 2:
+            continue
+        try:
+            start = int(exon[0])
+            end = int(exon[1])
+        except (TypeError, ValueError):
+            continue
+        if start <= 0 or end <= 0:
+            continue
+        if end < start:
+            start, end = end, start
+        normalized.append((start, end))
+    return normalized
+
+
+def _load_transcripts_from_json(path: Path) -> List[TranscriptDef]:
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise SystemExit(f"Transcript JSON '{path}' not found.") from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Transcript JSON '{path}' is not valid JSON: {exc}") from exc
+    entries = raw
+    if isinstance(raw, dict) and "transcripts" in raw:
+        entries = raw["transcripts"]
+    if not isinstance(entries, list):
+        raise SystemExit(f"Transcript JSON '{path}' must contain a list of transcripts.")
+    transcripts: List[TranscriptDef] = []
+    for idx, entry in enumerate(entries):
+        if not isinstance(entry, Mapping):
+            continue
+        name = str(entry.get("name") or entry.get("id") or f"tx_{idx + 1}")
+        strand = (entry.get("strand") or "+").strip() or "+"
+        try:
+            cds_start = int(entry.get("cds_start") or entry.get("cdsStart"))
+            cds_end = int(entry.get("cds_end") or entry.get("cdsEnd"))
+        except (TypeError, ValueError):
+            continue
+        exons_raw = entry.get("exons") or []
+        exons = _normalize_exon_ranges(exons_raw) or [(cds_start, cds_end)]
+        if cds_start <= 0 or cds_end <= 0 or cds_end < cds_start:
+            continue
+        chrom = entry.get("chrom") or entry.get("chromosome")
+        transcripts.append(
+            TranscriptDef(
+                id=str(entry.get("id") or name),
+                name=name,
+                strand=strand,
+                cds_start=cds_start,
+                cds_end=cds_end,
+                exons=exons,
+                chrom=str(chrom) if chrom else None,
+            )
+        )
+    if not transcripts:
+        raise SystemExit(f"No valid transcripts found in {path}.")
+    return transcripts
+
+
+def _select_transcript(transcripts: List[TranscriptDef], selector: Optional[str]) -> TranscriptDef:
+    if not selector:
+        return transcripts[0]
+    selector_lower = selector.lower()
+    for transcript in transcripts:
+        if transcript.id.lower() == selector_lower or transcript.name.lower() == selector_lower:
+            return transcript
+    available = ", ".join(t.name for t in transcripts)
+    raise SystemExit(f"Transcript '{selector}' not found. Available: {available}.")
+
+
+def _build_coding_map_for_sequence(transcript: TranscriptDef, seq: str) -> List[int]:
+    blocks = sorted(transcript.exons, key=lambda item: item[0])
+    coding: List[int] = []
+    if transcript.strand == "+":
+        for start1, end1 in blocks:
+            start = max(1, start1)
+            end = min(len(seq), end1)
+            for pos in range(start - 1, end):
+                coding.append(pos)
+    else:
+        for start1, end1 in reversed(blocks):
+            start = max(1, start1)
+            end = min(len(seq), end1)
+            for pos in range(end - 1, start - 2, -1):
+                coding.append(pos)
+    return coding
+
+
+def _build_coding_maps(transcript: TranscriptDef, sequences: Mapping[str, str]) -> Dict[str, List[int]]:
+    coding_maps: Dict[str, List[int]] = {}
+    if transcript.chrom:
+        seq = sequences.get(transcript.chrom)
+        if seq:
+            cmap = _build_coding_map_for_sequence(transcript, seq)
+            coding_maps[transcript.chrom] = cmap
+        return coding_maps
+    for chrom, seq in sequences.items():
+        coding_maps[chrom] = _build_coding_map_for_sequence(transcript, seq)
+    return coding_maps
+
+
+def _protein_impact_for_event(event: EditEvent, ref_seq: str, strand: str, coding_map: Optional[List[int]]) -> Optional[str]:
+    if coding_map is None:
+        return None
+    length = max(0, int(event.end) - int(event.start))
+    ins = len(event.replacement or "")
+    if not (length == 1 and ins == 1):
+        return None
+    pos0 = int(event.start)
+    try:
+        t_idx = coding_map.index(pos0)
+    except ValueError:
+        return None
+    frame = t_idx % 3
+    if t_idx - frame < 0 or t_idx - frame + 2 >= len(coding_map):
+        return None
+    codon_positions = [coding_map[t_idx - frame + i] for i in range(3)]
+    bases = [ref_seq[p] if 0 <= p < len(ref_seq) else "N" for p in codon_positions]
+    if strand == "-":
+        ref_codon = "".join(_RC_MAP.get(b, b) for b in reversed(bases))
+        idx = frame
+        alt = list(ref_codon)
+        alt[idx] = _RC_MAP.get((event.replacement or "N")[0], (event.replacement or "N")[0])
+        alt_codon = "".join(alt)
+    else:
+        ref_codon = "".join(bases)
+        idx = frame
+        alt = list(ref_codon)
+        alt[idx] = (event.replacement or "N")[0]
+        alt_codon = "".join(alt)
+    aa0 = _CODON_TABLE.get(ref_codon)
+    aa1 = _CODON_TABLE.get(alt_codon)
+    if not aa0 or not aa1:
+        return None
+    if aa1 == "*":
+        return "nonsense"
+    if aa0 == aa1:
+        return "silent"
+    return "missense"
+
+
+def _annotate_dag_with_transcript(dag: EditDAG, sequences: Mapping[str, str], transcript: TranscriptDef) -> bool:
+    coding_maps = _build_coding_maps(transcript, sequences)
+    if not coding_maps:
+        return False
+    updated = False
+    for node in dag.nodes.values():
+        if not node.diffs:
+            continue
+        event = node.diffs[-1]
+        seq = sequences.get(event.chrom)
+        cmap = coding_maps.get(event.chrom) or next(iter(coding_maps.values()), None)
+        if seq is None or not cmap:
+            continue
+        impact = _protein_impact_for_event(event, seq, transcript.strand, cmap)
+        if impact:
+            node.metadata = dict(node.metadata)
+            node.metadata["protein_impact"] = impact
+            updated = True
+    return updated
+
+
+def _load_transcript_from_args(json_path: Optional[Path], transcript_name: Optional[str]) -> Optional[TranscriptDef]:
+    if not json_path:
+        return None
+    transcripts = _load_transcripts_from_json(json_path)
+    return _select_transcript(transcripts, transcript_name)
 
 
 def _parse_spectrum(text: str | None) -> List[int]:
@@ -1538,6 +1745,17 @@ def command_crispr_dag(args: argparse.Namespace) -> None:
             use_gpu=bool(getattr(args, "use_gpu", False)),
             frame_consumer=frame_consumer,
         )
+        transcript = _load_transcript_from_args(getattr(args, "coding_json", None), getattr(args, "coding_transcript", None))
+        if transcript:
+            if _annotate_dag_with_transcript(dag, genome.sequences, transcript):
+                metadata.setdefault("protein_annotation", {})
+                metadata["protein_annotation"].update(
+                    {
+                        "transcript": transcript.name,
+                        "transcript_id": transcript.id,
+                        "coding_source": str(args.coding_json),
+                    }
+                )
         metadata: Dict[str, Any] = {
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1659,6 +1877,17 @@ def command_prime_dag(args: argparse.Namespace) -> None:
             min_prob=args.min_prob,
             frame_consumer=frame_consumer,
         )
+        transcript = _load_transcript_from_args(getattr(args, "coding_json", None), getattr(args, "coding_transcript", None))
+        if transcript:
+            if _annotate_dag_with_transcript(dag, genome.sequences, transcript):
+                metadata.setdefault("protein_annotation", {})
+                metadata["protein_annotation"].update(
+                    {
+                        "transcript": transcript.name,
+                        "transcript_id": transcript.id,
+                        "coding_source": str(args.coding_json),
+                    }
+                )
         metadata: Dict[str, Any] = {
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1844,6 +2073,16 @@ def command_experiment_validate(args: argparse.Namespace) -> None:
     print(
         f"Experiment '{args.config}' is valid (nodes={len(dag.nodes)}, edges={len(dag.edges)})."
     )
+
+
+def command_gui(_args: argparse.Namespace) -> None:
+    try:
+        from helix.gui.main import run_gui
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise SystemExit(
+            "PySide6 is required for the Helix GUI. Install it via 'pip install veri-helix[gui]'."
+        ) from exc
+    run_gui()
 
 
 def _random_dna(rng: random.Random, length: int) -> str:
@@ -3028,6 +3267,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         help="Optional JSONL path to stream DAG frames (use '-' for stdout).",
     )
+    crispr_dag.add_argument(
+        "--coding-json",
+        type=Path,
+        help="Transcript JSON for protein-impact annotations (same schema as the GUI transcript loader).",
+    )
+    crispr_dag.add_argument(
+        "--coding-transcript",
+        help="Transcript ID or name to use from --coding-json (defaults to the first entry).",
+    )
     crispr_dag.set_defaults(func=command_crispr_dag)
 
     prime_cmd = subparsers.add_parser("prime", help="Prime editing helpers.")
@@ -3091,6 +3339,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--frames",
         type=str,
         help="Optional JSONL path to stream DAG frames (use '-' for stdout).",
+    )
+    prime_dag.add_argument(
+        "--coding-json",
+        type=Path,
+        help="Transcript JSON for protein-impact annotations (same schema as the GUI transcript loader).",
+    )
+    prime_dag.add_argument(
+        "--coding-transcript",
+        help="Transcript ID or name to use from --coding-json (defaults to the first entry).",
     )
     prime_dag.set_defaults(func=command_prime_dag)
 
@@ -3270,6 +3527,9 @@ def build_parser() -> argparse.ArgumentParser:
     experiment_validate.add_argument("--config", type=Path, required=True, help="Experiment config (.helix.yml).")
     experiment_validate.add_argument("--use-gpu", action="store_true", help="Use GPU backend when available.")
     experiment_validate.set_defaults(func=command_experiment_validate)
+
+    gui_cmd = subparsers.add_parser("gui", help="Launch the PySide6 realtime simulator.")
+    gui_cmd.set_defaults(func=command_gui)
 
     protein = subparsers.add_parser("protein", help="Summarize protein sequences (requires Biopython).")
     protein.add_argument("--sequence", help="Inline amino-acid string.")

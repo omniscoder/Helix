@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Helix Realtime Simulator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <!-- Try local vendor first; fall back to CDN if missing -->
+    <script src="vendor/cytoscape.min.js"
+            onerror="(function(){var s=document.createElement('script');s.src='https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js';document.head.appendChild(s);})();"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b0e14;
+        color: #e6e1cf;
+      }
+      header {
+        padding: 10px 16px;
+        border-bottom: 1px solid #1f2430;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 15px;
+        color: #7aa2f7;
+      }
+      #app {
+        display: grid;
+        grid-template-columns: minmax(320px, 360px) 1fr;
+        height: calc(100vh - 52px);
+      }
+      aside {
+        border-right: 1px solid #1f2430;
+        padding: 12px;
+        overflow: auto;
+        font-size: 12px;
+        background: #0f131a;
+      }
+      #cy {
+        width: 100%;
+        height: 100%;
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+      input,
+      select,
+      textarea,
+      button {
+        border-radius: 4px;
+        border: 1px solid #2a2f3a;
+        background: #121721;
+        color: #e6e1cf;
+        font-family: inherit;
+        padding: 6px 8px;
+        font-size: 12px;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 70px;
+      }
+      button {
+        cursor: pointer;
+        font-weight: 600;
+        border: 1px solid #3d59a1;
+        background: #3d59a1;
+      }
+      button.secondary {
+        background: transparent;
+        border-color: #2a2f3a;
+      }
+      fieldset {
+        border: 1px solid #1f2430;
+        border-radius: 6px;
+        padding: 8px 10px;
+        margin-bottom: 12px;
+      }
+      fieldset legend {
+        padding: 0 6px;
+        color: #7aa2f7;
+        font-size: 11px;
+      }
+      #log {
+        white-space: pre-wrap;
+        font-family: "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+        background: #0b0e14;
+        border: 1px solid #1f2430;
+        border-radius: 4px;
+        padding: 8px;
+        min-height: 90px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Helix Realtime CRISPR · Prime Simulator</h1>
+      <div style="font-size:12px;color:#9da5b4">
+        Purely in-silico — stream DAG frames straight from the core engine.
+      </div>
+    </header>
+  <div id="app">
+      <aside>
+        <label>
+          Genome FASTA path (or inline FASTA)
+          <textarea id="genome-path">examples/hg19_chr_demo.fa</textarea>
+        </label>
+        <label>
+          Region (optional, chr:start-end)
+          <input id="genome-region" type="text" placeholder="chrDemo:1-500" />
+        </label>
+        <fieldset>
+          <legend>Mode</legend>
+          <label>
+            Simulation mode
+            <select id="sim-mode">
+              <option value="crispr" selected>CRISPR</option>
+              <option value="prime">Prime Editing</option>
+            </select>
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>CDS (optional)</legend>
+          <label>
+            CDS start (1-based)
+            <input id="cds-start" type="number" min="1" placeholder="e.g., 100" />
+          </label>
+          <label>
+            CDS end (1-based)
+            <input id="cds-end" type="number" min="1" placeholder="e.g., 450" />
+          </label>
+          <label>
+            Strand
+            <select id="cds-strand">
+              <option value="+" selected>+</option>
+              <option value="-">-</option>
+            </select>
+          </label>
+          <label>
+            Exons (start-end, comma-separated)
+            <input id="cds-exons" type="text" placeholder="100-150,200-250,300-360" />
+          </label>
+          <fieldset style="margin-top:8px; border-color:#1f2430;">
+            <legend>Transcript config (JSON)</legend>
+            <label style="gap:6px">
+              Load transcript JSON
+              <input id="qt-transcript-file" type="file" accept="application/json" />
+            </label>
+            <label style="gap:6px">
+              Transcript
+              <select id="qt-transcript-select" disabled>
+                <option value="">(none loaded)</option>
+              </select>
+            </label>
+            <div class="controls">
+              <button id="qt-transcript-export" class="secondary">Export current transcript JSON</button>
+            </div>
+            <div class="metrics" style="font-size:12px">Schema: { transcripts: [{ id, name, strand, cds_start, cds_end, exons: [[start,end], ...] }] } (1-based)</div>
+          </fieldset>
+        </fieldset>
+        <fieldset data-mode="crispr">
+          <legend>CRISPR guide</legend>
+          <label>
+            Guide sequence (5'→3')
+            <input id="guide-seq" type="text" value="ACCCAGGAAACCCGGGTTTT" />
+          </label>
+          <label>
+            PAM pattern
+            <input id="pam-pattern" type="text" value="NGG" />
+          </label>
+          <label>
+            Max candidate sites
+            <input id="max-sites" type="number" min="1" max="100" value="20" />
+          </label>
+          <label>
+            Max depth
+            <input id="crispr-depth" type="number" min="1" max="5" value="2" />
+          </label>
+        </fieldset>
+        <fieldset data-mode="prime" style="display:none">
+          <legend>Prime Editing</legend>
+          <label>
+            Spacer
+            <input id="peg-spacer" type="text" value="ACCCAGGAAACCCGGGTTTT" />
+          </label>
+          <label>
+            PBS
+            <input id="peg-pbs" type="text" value="GAAAC" />
+          </label>
+          <label>
+            RTT
+            <input id="peg-rtt" type="text" value="TTTTAA" />
+          </label>
+          <label>
+            Max depth
+            <input id="prime-depth" type="number" min="1" max="5" value="3" />
+          </label>
+        </fieldset>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button id="run-btn">Run simulation</button>
+          <button id="reset-btn" class="secondary">Reset graph</button>
+  </div>
+  <div id="qt-tip" style="position:fixed; display:none; z-index:9999; background:#0b0e14; color:#e6e1cf; border:1px solid #1f2430; border-radius:6px; padding:8px 10px; font-size:12px; max-width:360px; pointer-events:none; box-shadow:0 4px 16px rgba(0,0,0,0.35);"></div>
+        <div style="margin-top:12px;">
+          <strong>Status</strong>
+          <div id="status-text">Idle</div>
+        </div>
+        <div style="margin-top:12px;">
+          <strong>Metrics</strong>
+          <div id="metrics">
+            Nodes: 0<br />
+            Edges: 0<br />
+            Last frame: –
+          </div>
+        </div>
+        <fieldset style="margin-top:12px;">
+          <legend>Outcome filters</legend>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-intended" type="checkbox" checked /> Intended (repaired)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-error" type="checkbox" checked /> Indel / error
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-noedit" type="checkbox" checked /> No edit
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-other" type="checkbox" checked /> Other (cut/prime/flap/root)
+          </label>
+          <div style="height:6px"></div>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-desired" type="checkbox" checked /> Desired (intended/repaired)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-undesired" type="checkbox" checked /> Undesired (any error/indel)
+          </label>
+          <div style="height:6px"></div>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-only-desired" type="checkbox" /> Only desired nodes
+          </label>
+          <div style="height:6px"></div>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-only-terminal" type="checkbox" /> Only terminal nodes
+          </label>
+          <div style="height:6px"></div>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-ontarget" type="checkbox" checked /> On‑target
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="filter-offtarget" type="checkbox" checked /> Off‑target
+          </label>
+        </fieldset>
+        <div style="margin-top:12px;">
+          <strong>Selection</strong>
+          <div id="details">Click a node to view details.</div>
+          <pre id="seqbox" style="margin-top:6px;background:#0b0e14;border:1px solid #1f2430;padding:8px;border-radius:6px;white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto;"></pre>
+        </div>
+        <div style="margin-top:12px;">
+          <strong>Log</strong>
+          <div id="log">Ready.</div>
+        </div>
+      </aside>
+      <div id="cy"></div>
+    </div>
+
+    <script>
+      let bridge = null;
+      if (typeof cytoscape === 'undefined') {
+        const msg = 'Cytoscape.js failed to load. If you are offline or QT blocks HTTPS, download cytoscape.min.js to src/helix/gui/resources/vendor/ and restart.';
+        document.getElementById('log').textContent = msg;
+        console.error(msg);
+      }
+      const cy = typeof cytoscape !== 'undefined' ? cytoscape({
+        container: document.getElementById("cy"),
+        layout: { name: "breadthfirst", directed: true, spacingFactor: 1.05 },
+        style: [
+          {
+            selector: "node",
+            style: {
+              "shape": "round-rectangle",
+              "background-color": function(ele){
+                const s = ele.data('stage');
+                if (s === 'prime_rtt') return '#10b981';
+                if (s === 'repaired') return '#3b82f6';
+                if (s === 'error') return '#ef4444';
+                if (s === 'no_edit') return '#64748b';
+                if (s && String(s).startsWith('flap')) return '#f59e0b';
+                return '#4f46e5';
+              },
+              "width": "mapData(prob, 0, 1, 24, 64)",
+              "height": "mapData(prob, 0, 1, 16, 48)",
+              "label": "data(label)",
+              "font-size": 8,
+              "text-wrap": "wrap",
+              "text-max-width": 140,
+              "padding": "4px",
+              "border-width": function(ele){
+                const ph = (ele.data('phenotype')||'').toString().toLowerCase();
+                if (ph === 'viable') return 3;
+                if (ph === 'lethal') return 1;
+                return 2;
+              },
+              "border-color": function(ele){
+                const d = ele.data('desired');
+                if (d === true) return '#10b981';
+                if (d === false) return '#ef4444';
+                return '#1f2430';
+              },
+              // subtle halo based on desired flag
+              "shadow-blur": function(ele){ return (typeof ele.data('desired') === 'boolean') ? 12 : 0; },
+              "shadow-color": function(ele){ return ele.data('desired') === true ? '#10b981' : (ele.data('desired') === false ? '#ef4444' : '#000000'); },
+              "shadow-opacity": function(ele){ return (typeof ele.data('desired') === 'boolean') ? 0.25 : 0; },
+              "shadow-offset-x": 0,
+              "shadow-offset-y": 0,
+              "color": "#e6e1cf",
+            },
+          },
+          {
+            selector: "edge",
+            style: {
+              "curve-style": "bezier",
+              "line-color": function(ele){
+                const r = ele.data('rule')||'';
+                if (r.includes('prime.rtt_clean')) return '#10b981';
+                if (r.includes('flap')) return '#f59e0b';
+                if (r.includes('indel') || r.includes('error')) return '#ef4444';
+                if (r.includes('clean_cut')) return '#8b5cf6';
+                return '#586380';
+              },
+              "target-arrow-color": "data(line-color)",
+              "target-arrow-shape": "triangle",
+              "width": "mapData(weight, 0, 1, 1, 4)",
+              "opacity": "mapData(weight, 0, 1, 0.25, 1)",
+              "label": "data(rule_human)",
+              "font-size": 11,
+              "color": "#e5e7eb",
+              "text-rotation": "autorotate",
+              "text-outline-width": 2,
+              "text-outline-color": "#0b0e14",
+              "text-background-color": function(ele){
+                const tag = ele.data('effect_tag');
+                if (tag === 'frameshift') return '#3b1d1d';
+                if (tag === 'inframe') return '#0d2f2f';
+                if (tag === 'snv') return '#1f2937';
+                return '#0b0e14';
+              },
+              "text-background-opacity": 0.55,
+              "text-background-padding": 2,
+              "text-background-shape": "roundrectangle",
+              "text-wrap": "wrap",
+              "text-margin-y": -6,
+            },
+          },
+          { selector: ".faded", style: { opacity: 0.12 } },
+          { selector: ".hidden", style: { display: "none" } },
+        ],
+        wheelSensitivity: 0.2,
+      }) : null;
+
+      const statusText = document.getElementById("status-text");
+      const metricsBox = document.getElementById("metrics");
+      const logBox = document.getElementById("log");
+      const modeSelect = document.getElementById("sim-mode");
+
+      function appendLog(message) {
+        const timestamp = new Date().toLocaleTimeString();
+        logBox.textContent = `[${timestamp}] ${message}\n` + logBox.textContent;
+      }
+
+      function updateModeVisibility() {
+        const mode = modeSelect.value;
+        document
+          .querySelectorAll("fieldset[data-mode]")
+          .forEach((fieldset) => {
+            fieldset.style.display = fieldset.dataset.mode === mode ? "" : "none";
+          });
+      }
+
+      modeSelect.addEventListener("change", updateModeVisibility);
+
+      function connectBridge() {
+        new QWebChannel(qt.webChannelTransport, (channel) => {
+          bridge = channel.objects.HelixBridge;
+          bridge.frameReceived.connect(onFrame);
+          bridge.simFinished.connect(onFinished);
+          bridge.simErrored.connect(onError);
+        });
+      }
+
+      let rootSeq = null;
+      let rootChrom = null;
+
+      function renderFrame(frame) {
+        function fmtNum(n){ try { return Number(n).toLocaleString(); } catch { return String(n); } }
+        function effectLabel(ev){
+          if (!ev) return null;
+          const len = Math.max(0, (ev.end||0) - (ev.start||0));
+          const ins = (ev.replacement||'').length;
+          const delta = ins - len;
+          if (delta !== 0) return Math.abs(delta) % 3 === 0 ? 'in‑frame' : 'frameshift';
+          if (len > 0 && ins > 0) return len === 1 ? 'SNV' : 'substitution';
+          return null;
+        }
+        function changeSummary(ev){
+          if (!ev) return '';
+          const len = Math.max(0, (ev.end||0) - (ev.start||0));
+          const ins = (ev.replacement||'').length;
+          const pos = `${ev.chrom||'chr'}:${fmtNum((ev.start||0)+1)}`;
+          const eff = effectLabel(ev);
+          if (ins>0 && len===0) return `+${ins} bp insertion${eff?` (${eff})`:''} • ${pos}`;
+          if (ins===0 && len>0) return `−${len} bp deletion${eff?` (${eff})`:''} • ${pos}`;
+          if (ins>0 && len>0) {
+            if (len===1 && ins===1) {
+              const from = rootSeq ? rootSeq[(ev.start||0)] : null;
+              const to = (ev.replacement||'');
+              return `${from && to ? `${from}→${to}` : 'SNV'} • ${pos}`;
+            }
+            return `substitution (${len}→${ins} bp) • ${pos}`;
+          }
+          return `edit • ${pos}`;
+        }
+        function mechanismFromRule(rule){
+          if (!rule) return null;
+          if (rule.includes('clean_cut')) return 'CRISPR cleavage';
+          if (rule.includes('indel')) return 'NHEJ';
+          if (rule.includes('prime')) return 'Prime Editing';
+          if (rule.includes('flap')) return 'Flap resolution';
+          if (rule.includes('no_edit')) return 'No Change';
+          return null;
+        }
+        function humanEdgeLabel(rule){
+          if (!rule) return '';
+          if (rule.includes('clean_cut')) return '🔪 Cas9 cleavage';
+          if (rule.includes('indel')) return '✂️ Repair via NHEJ';
+          if (rule.includes('prime.rtt_clean')) return '🧬 Prime RT extension';
+          if (rule.includes('flap')) return '🔧 Flap resolution';
+          if (rule.includes('no_edit')) return 'No incorporation';
+          return rule;
+        }
+        function displayLines(stage, ev, meta, ruleName){
+          const desired = meta && meta.desired;
+          if (stage === 'root') return ['Root Population', 'Wild‑Type Genome'];
+          const mech = mechanismFromRule(ruleName) || (stage === 'error' ? 'NHEJ' : stage === 'prime_rtt' ? 'Prime Editing' : stage === 'no_edit' ? 'No Change' : stage === 'cut' ? 'CRISPR cleavage' : null);
+          if (stage === 'cut') return ['Double‑Strand Break', `Cas9 cut • ${changeSummary(ev).replace(/.*@ /,'')}`];
+          if (stage === 'repaired') return [desired===false ? 'NHEJ‑Indel Outcome' : '✨ HDR Result', `${mech || 'Repair'} • ${changeSummary(ev).replace('@ ', '• ')}`];
+          if (stage === 'error') return ['✂️ NHEJ Outcome', `${mech || 'NHEJ'} • ${changeSummary(ev).replace('@ ', '• ')}`];
+          if (stage === 'no_edit') return ['Wild‑Type Allele', 'No sequence change'];
+          if (stage && String(stage).startsWith('flap')) return ['Flap Resolution', `${mech || 'Flap'} • ${changeSummary(ev).replace('@ ', '• ')}`];
+          if (stage === 'prime_rtt') return ['🧬 Prime Edit', `${mech || 'Prime Editing'} • ${changeSummary(ev).replace('@ ', '• ')}`];
+          return [String(stage||'State'), `${mech ? mech + ' • ' : ''}${changeSummary(ev)}`];
+        }
+        const nodeEntries = Object.entries(frame.new_nodes || {});
+        const edgeEntries = frame.new_edges || [];
+        nodeEntries.forEach(([id, node]) => {
+          if (cy.$id(id).length) return;
+          const stage = (node.metadata && node.metadata.stage) || "node";
+          const lines = displayLines(stage, null, node.metadata||{});
+          const label = `${lines[0]}\n${lines[1]||''}`;
+          const prob = Math.exp(node.log_prob || 0);
+          const sequences = node.sequences || {};
+          const chroms = Object.keys(sequences);
+          if (frame.step === 0 && stage === 'root' && chroms.length) {
+            rootChrom = chroms[0];
+            rootSeq = sequences[rootChrom];
+          }
+          cy.add({ group: "nodes", data: { id, label, stage, log_prob: node.log_prob, prob, phenotype: node.metadata?.phenotype || '', sequences, desired: typeof node.metadata?.desired === 'boolean' ? node.metadata.desired : undefined } });
+        });
+        edgeEntries.forEach((edge, idx) => {
+          const edgeId = `${edge.source}->${edge.target}:${edge.rule}:${frame.step}:${idx}`;
+          const tgt = cy.$id(edge.target);
+          const weight = tgt.length ? (tgt.data('prob') || 0) : 0;
+          function effectTag(ev){
+            if (!ev) return null;
+            const len = Math.max(0, (ev.end||0) - (ev.start||0));
+            const ins = (ev.replacement||'').length;
+            const delta = ins - len;
+            if (delta !== 0) return Math.abs(delta) % 3 === 0 ? 'inframe' : 'frameshift';
+            if (len>0 && ins>0 && len===1 && ins===1) return 'snv';
+            return null;
+          }
+          cy.add({
+            group: "edges",
+            data: {
+              id: edgeId,
+              source: edge.source,
+              target: edge.target,
+              rule: edge.rule,
+              rule_human: humanEdgeLabel(edge.rule),
+              weight,
+              event: edge.event || null,
+              effect_tag: effectTag(edge.event),
+            },
+          });
+          if (tgt && tgt.length && edge.event) {
+            tgt.data('event', edge.event);
+            // update label with event info
+            const tStage = tgt.data('stage');
+            const tData = tgt.data();
+            const lines = displayLines(tStage, edge.event, tData||{}, edge.rule);
+            tgt.data('label', `${lines[0]}\n${lines[1]||''}`);
+          }
+        });
+        cy.layout({ name: "breadthfirst", directed: true, spacingFactor: 1.05, padding: 20 }).run();
+        const nodeCount = cy.nodes().length;
+        const edgeCount = cy.edges().length;
+        metricsBox.innerHTML = `Nodes: ${nodeCount}<br/>Edges: ${edgeCount}<br/>Last frame: ${frame.step}`;
+        applyOutcomeFilters();
+      }
+
+      function buildSpec() {
+        const genomePath = document.getElementById("genome-path").value.trim();
+        const region = document.getElementById("genome-region").value.trim();
+        const mode = modeSelect.value;
+        const spec = {
+          mode,
+          genome: { fasta: genomePath, region: region || null },
+          simulation: { min_prob: 1e-4, seed: 0 },
+        };
+        if (mode === "prime") {
+          spec.simulation.max_depth = Number(document.getElementById("prime-depth").value) || 3;
+          spec.editor = {
+            name: "PE2-like",
+            cas: { name: "SpCas9-H840A", pam_pattern: "NGG", cut_offset: 3, max_mismatches: 3 },
+          };
+          spec.peg = {
+            spacer: document.getElementById("peg-spacer").value.trim(),
+            pbs: document.getElementById("peg-pbs").value.trim(),
+            rtt: document.getElementById("peg-rtt").value.trim(),
+            name: "PEG_DEMO",
+          };
+        } else {
+          spec.simulation.max_depth = Number(document.getElementById("crispr-depth").value) || 2;
+          spec.simulation.max_sites = Number(document.getElementById("max-sites").value) || 20;
+          spec.cas = {
+            name: "SpCas9",
+            pam_pattern: document.getElementById("pam-pattern").value.trim() || "NGG",
+            cut_offset: 3,
+            max_mismatches: 3,
+          };
+          spec.guide = {
+            sequence: document.getElementById("guide-seq").value.trim(),
+            name: "CRISPR_GUIDE",
+          };
+        }
+        // coding configuration (optional)
+        const cdsStart = Number(document.getElementById('cds-start').value || 0);
+        const cdsEnd = Number(document.getElementById('cds-end').value || 0);
+        const cdsStrand = document.getElementById('cds-strand').value || '+';
+        const exonsText = document.getElementById('cds-exons').value || '';
+        if (cdsStart > 0 && cdsEnd > 0) {
+          spec.coding = {
+            cds_start: cdsStart,
+            cds_end: cdsEnd,
+            strand: cdsStrand,
+            exons: exonsText,
+          };
+        }
+        return spec;
+      }
+
+      function onFrame(frameJson) {
+        try {
+          const frame = JSON.parse(frameJson);
+          renderFrame(frame);
+          statusText.textContent = `Streaming frame ${frame.step} (mechanism: ${
+            frame.meta?.mechanism || "unknown"
+          })`;
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      function onFinished() {
+        statusText.textContent = "Finished.";
+        document.getElementById("run-btn").disabled = false;
+        appendLog("Simulation finished.");
+      }
+
+      function onError(message) {
+        statusText.textContent = "Error";
+        document.getElementById("run-btn").disabled = false;
+        appendLog(`Error: ${message}`);
+      }
+
+      document.getElementById("run-btn").addEventListener("click", () => {
+        if (!bridge) {
+          appendLog("WebChannel bridge not ready yet.");
+          return;
+        }
+        cy.elements().remove();
+        metricsBox.innerHTML = "Nodes: 0<br/>Edges: 0<br/>Last frame: –";
+        statusText.textContent = "Running…";
+        document.getElementById("run-btn").disabled = true;
+        const spec = buildSpec();
+        appendLog(`Launching ${spec.mode.toUpperCase()} simulation…`);
+        bridge.runSimulation(JSON.stringify(spec));
+      });
+
+      document.getElementById("reset-btn").addEventListener("click", () => {
+        cy.elements().remove();
+        metricsBox.innerHTML = "Nodes: 0<br/>Edges: 0<br/>Last frame: –";
+        statusText.textContent = "Idle";
+        appendLog("Graph cleared.");
+      });
+
+      // Path highlight interactions
+      function applyOutcomeFilters() {
+        const showIntended = document.getElementById('filter-intended')?.checked ?? true;
+        const showError = document.getElementById('filter-error')?.checked ?? true;
+        const showNoEdit = document.getElementById('filter-noedit')?.checked ?? true;
+        const showOther = document.getElementById('filter-other')?.checked ?? true;
+        const showOnTarget = document.getElementById('filter-ontarget')?.checked ?? true;
+        const showOffTarget = document.getElementById('filter-offtarget')?.checked ?? true;
+        const showDesired = document.getElementById('filter-desired')?.checked ?? true;
+        const showUndesired = document.getElementById('filter-undesired')?.checked ?? true;
+        const onlyDesired = document.getElementById('filter-only-desired')?.checked ?? false;
+        const onlyTerminal = document.getElementById('filter-only-terminal')?.checked ?? false;
+        const keepStage = (s) => {
+          if (s === 'repaired') return showIntended;
+          if (s === 'error') return showError;
+          if (s === 'no_edit') return showNoEdit;
+          return showOther; // root, cut, prime_rtt, flap_*
+        };
+        if (!cy) return;
+        cy.nodes().forEach((n) => {
+          const st = n.data('stage');
+          const desiredFlag = n.data('desired');
+          const desiredOk = onlyDesired
+            ? desiredFlag === true
+            : (desiredFlag === true && showDesired) || (desiredFlag === false && showUndesired) || (typeof desiredFlag === 'undefined' && ((st === 'repaired' && showDesired) || (st === 'error' && showUndesired) || (st !== 'repaired' && st !== 'error' && (showDesired || showUndesired))));
+          const ot = n.data('on_target');
+          const onTargetOk = (ot === true && showOnTarget) || (ot === false && showOffTarget) || (typeof ot === 'undefined' && (showOnTarget || showOffTarget));
+          const isTerminal = n.outgoers('edge').length === 0;
+          const keep = (onlyDesired ? true : keepStage(st)) && desiredOk && onTargetOk && (!onlyTerminal || isTerminal);
+          if (keep) n.removeClass('hidden'); else n.addClass('hidden');
+        });
+        cy.edges().forEach((e) => {
+          const keep = !e.source().hasClass('hidden') && !e.target().hasClass('hidden');
+          if (keep) e.removeClass('hidden'); else e.addClass('hidden');
+        });
+      }
+      const tip = document.getElementById('qt-tip');
+      function renderTip(ele){
+        const d = ele.data();
+        const prob = d.prob || Math.exp(d.log_prob||0);
+        const meta = d.raw_meta || {};
+        const event = d.event || null;
+        const header = (d.label||'').split('\n')[0];
+        tip.innerHTML = `<div style="font-weight:600">${header}</div><div style="opacity:.8">p=${prob.toFixed(4)}</div>`;
+        if (event) {
+          const ev = document.createElement('div'); ev.style.marginTop='6px'; ev.textContent = `event: ${JSON.stringify(event)}`; tip.appendChild(ev);
+        }
+        const idDiv = document.createElement('div'); idDiv.style.marginTop='6px'; idDiv.textContent = `id: ${d.id}`; tip.appendChild(idDiv);
+        const pre = document.createElement('pre'); pre.style.margin='6px 0 0'; pre.style.whiteSpace='pre-wrap'; pre.textContent = JSON.stringify(meta,null,2); tip.appendChild(pre);
+      }
+      function moveTip(x,y){ const pad=12; tip.style.left = (x+pad)+'px'; tip.style.top = (y+pad)+'px'; }
+      if (cy) {
+        cy.on('tap', 'node', (evt) => {
+          const sel = evt.target;
+          const sub = sel.predecessors().add(sel);
+          cy.elements().addClass('faded');
+          sub.removeClass('faded');
+          const prob = sel.data('prob') || Math.exp(sel.data('log_prob') || 0);
+          const stage = sel.data('stage') || '?';
+          const time = sel.data('time');
+          const detBox = document.getElementById('details');
+          detBox.innerHTML = `
+            Stage: ${stage}<br/>
+            Time step: ${time ?? '–'}<br/>
+            Probability: ${prob.toFixed(4)}<br/>
+            Desired: ${sel.data('desired') === true ? 'yes' : sel.data('desired') === false ? 'no' : '—'}
+          `;
+          const ev2 = sel.data('event');
+          const eff = effectLabel(ev2);
+          if (eff) detBox.innerHTML += `<br/>Effect: ${eff}`;
+          const pi = sel.data('protein_impact');
+          if (pi) detBox.innerHTML += `<br/>Protein impact: ${pi}`;
+          // effect
+          // sequence strip
+          const sequences = sel.data('sequences') || {};
+          const seq = rootChrom ? sequences[rootChrom] : null;
+          const ev = sel.data('event');
+          const box = document.getElementById('seqbox');
+          if (rootSeq && seq && ev && ev.start !== undefined && ev.end !== undefined) {
+            const s = Math.max(0, ev.start - 15);
+            const e = Math.min(rootSeq.length, (ev.end || ev.start) + 15);
+            const refWin = rootSeq.slice(s, e);
+            const altWin = seq.slice(s, e);
+            const a = refWin.split('');
+            const b = altWin.split('');
+            const outA = [], outB = [];
+            const n = Math.max(a.length, b.length);
+            for (let i=0;i<n;i++) {
+              const ca = a[i] || '';
+              const cb = b[i] || '';
+              if (ca !== cb) { outA.push('['+ca+']'); outB.push('['+cb+']'); }
+              else { outA.push(ca); outB.push(cb); }
+            }
+            box.textContent = `ref ${rootChrom}:${s+1}-${e}\n` + outA.join('') + "\nalt\n" + outB.join('');
+          } else {
+            box.textContent = '';
+          }
+        });
+        cy.on('tap', (evt) => {
+          if (evt.target === cy) cy.elements().removeClass('faded');
+        });
+        cy.on('mouseover','node',(evt)=>{ renderTip(evt.target); tip.style.display='block'; const e=evt.originalEvent||{}; moveTip(e.clientX||0, e.clientY||0); });
+        cy.on('mouseout','node',()=>{ tip.style.display='none'; });
+        cy.on('mousemove','node',(evt)=>{ const e=evt.originalEvent||{}; moveTip(e.clientX||0, e.clientY||0); });
+      }
+      ['filter-intended','filter-error','filter-noedit','filter-other','filter-desired','filter-undesired','filter-only-desired','filter-only-terminal','filter-ontarget','filter-offtarget'].forEach((id)=>{
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', applyOutcomeFilters);
+      });
+
+      // Transcript JSON loader + selector
+      const txFile = document.getElementById('qt-transcript-file');
+      const txSelect = document.getElementById('qt-transcript-select');
+      let txList = [];
+      function normalizeTranscripts(obj){
+        const list = [];
+        if (!obj) return list;
+        const arr = Array.isArray(obj.transcripts) ? obj.transcripts : (Array.isArray(obj) ? obj : []);
+        for (const t of arr){
+          const name = t.name || t.id || `tx_${list.length+1}`;
+          const strand = (t.strand || '+').toString();
+          const cds_start = Number(t.cds_start || t.cdsStart || 0);
+          const cds_end = Number(t.cds_end || t.cdsEnd || 0);
+          const exons = (t.exons || []).map((e)=>({ start1: Number(e[0] ?? e.start ?? e.start1), end1: Number(e[1] ?? e.end ?? e.end1) })).filter((e)=> !Number.isNaN(e.start1) && !Number.isNaN(e.end1));
+          if (cds_start > 0 && cds_end > 0 && exons.length){
+            list.push({ id: t.id || name, name, strand, cds_start, cds_end, exons });
+          }
+        }
+        return list;
+      }
+      function populateTxSelect(list){
+        if (!txSelect) return;
+        txSelect.innerHTML = '';
+        const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='(choose transcript)'; txSelect.appendChild(opt0);
+        list.forEach((t, idx)=>{ const opt=document.createElement('option'); opt.value=String(idx); opt.textContent=t.name; txSelect.appendChild(opt); });
+        txSelect.disabled = list.length === 0;
+      }
+      function applyTxToFields(t){
+        if (!t) return;
+        document.getElementById('cds-start').value = String(t.cds_start);
+        document.getElementById('cds-end').value = String(t.cds_end);
+        document.getElementById('cds-strand').value = t.strand === '-' ? '-' : '+';
+        document.getElementById('cds-exons').value = t.exons.map((e)=>`${e.start1}-${e.end1}`).join(',');
+      }
+      if (txFile){
+        txFile.addEventListener('change', (ev)=>{
+          const f = ev.target.files && ev.target.files[0];
+          if (!f) return;
+          const rd = new FileReader();
+          rd.onload = ()=>{
+            try{
+              const obj = JSON.parse(String(rd.result || '{}'));
+              txList = normalizeTranscripts(obj);
+              populateTxSelect(txList);
+            }catch(e){
+              appendLog('Failed to parse transcript JSON: ' + (e.message || e));
+            }
+          };
+          rd.readAsText(f);
+        });
+      }
+      if (txSelect){
+        txSelect.addEventListener('change', ()=>{
+          const idx = Number(txSelect.value);
+          if (!Number.isNaN(idx) && txList[idx]) applyTxToFields(txList[idx]);
+        });
+      }
+      const txExport = document.getElementById('qt-transcript-export');
+      if (txExport){
+        txExport.addEventListener('click', ()=>{
+          const cdsStart = Number(document.getElementById('cds-start').value || 0);
+          const cdsEnd = Number(document.getElementById('cds-end').value || 0);
+          const strand = document.getElementById('cds-strand').value || '+';
+          const exonsText = document.getElementById('cds-exons').value || '';
+          if (!(cdsStart>0 && cdsEnd>0)) { appendLog('Fill CDS start/end to export.'); return; }
+          const exons = (exonsText||'').split(/[\,\s]+/).filter(Boolean).map((t)=> t.split('-').map((x)=>Number(x))).filter((p)=> p.length===2 && !Number.isNaN(p[0]) && !Number.isNaN(p[1]));
+          const tx = { transcripts: [{ id:'TX1', name:'TX1', strand, cds_start: cdsStart, cds_end: cdsEnd, exons }] };
+          const blob = new Blob([JSON.stringify(tx,null,2)], { type:'application/json' });
+          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='transcript.json'; a.click(); URL.revokeObjectURL(a.href);
+        });
+      }
+
+      updateModeVisibility();
+      connectBridge();
+    </script>
+  </body>
+</html>

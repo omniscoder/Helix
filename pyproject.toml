@@ -29,6 +29,7 @@ viz = [
 ]
 protein = ["biopython>=1.84"]
 schema = ["pydantic>=2.5"]
+gui = ["PySide6>=6.6"]
 dev = [
     "pytest",
     "pytest-cov",
@@ -42,6 +43,7 @@ dev = [
     "biopython>=1.84",
     "pydantic>=2.5",
     "psutil>=5.9",
+    "PySide6>=6.6",
 ]
 
 [project.urls]
@@ -62,6 +64,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "helix.schema" = ["*.json"]
 "helix.datasets" = ["**/*"]
+"helix.gui.resources" = ["**/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
