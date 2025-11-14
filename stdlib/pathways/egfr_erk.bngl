@@ -1,0 +1,17 @@
+# EGFR-ERK placeholder BNGL
+begin parameters
+  kon 1.0
+  koff 0.1
+  kcat 0.5
+end parameters
+
+begin seed species
+  EGFR() 100
+  GRB2() 100
+end seed species
+
+begin observables
+  Molecules EgfrActive EGFR()
+end observables
+
+# This is a stub file so tests and loaders can point at realistic paths.

@@ -30,6 +30,10 @@ viz = [
 protein = ["biopython>=1.84"]
 schema = ["pydantic>=2.5"]
 gui = ["PySide6>=6.6"]
+realtime = [
+    "glfw>=2.6.4",
+    "moderngl>=5.8",
+]
 dev = [
     "pytest",
     "pytest-cov",
@@ -44,6 +48,8 @@ dev = [
     "pydantic>=2.5",
     "psutil>=5.9",
     "PySide6>=6.6",
+    "glfw>=2.6.4",
+    "moderngl>=5.8",
 ]
 
 [project.urls]

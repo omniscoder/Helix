@@ -1,0 +1,32 @@
+---
+model: EGFR_GRB2
+description: "EGFR→ERK cascade with GRB2 adaptor (WT vs KO)."
+variants:
+  wt:
+    sbml: models/egfr_grb2/egfr_erk_base.sbml
+    amici_module: build.amici.egfr_erk_base.egfr_erk_base
+    params: models/egfr_grb2/params_fitted_wt.yaml
+  hig:
+    sbml: models/egfr_grb2/egfr_erk_base.sbml
+    amici_module: build.amici.egfr_erk_base.egfr_erk_base
+    params: models/egfr_grb2/params_fitted_hig.yaml
+  ko:
+    sbml: models/egfr_grb2/egfr_erk_grb2_ko.sbml
+    amici_module: build.amici.egfr_erk_grb2_ko.egfr_erk_grb2_ko
+    params: models/egfr_grb2/params_fitted_ko.yaml
+sim:
+  duration: 120.0
+  sync_dt: 1.0
+  seed: 1234
+  sbml_output: pERK
+  rd:
+    D: 50.0
+    decay: 0.01
+    mesh: [1000.0, 1000.0, 10.0]
+    baseline: 0.3
+    stripe_value: 1.0
+  abm:
+    size: [100, 100]
+    behavior: stdlib/behaviors/epithelial.yaml
+data:
+  synthetic: models/egfr_grb2/data_synthetic.csv

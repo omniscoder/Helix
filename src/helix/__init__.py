@@ -2,7 +2,7 @@
 
 from importlib import metadata
 
-from . import bioinformatics, codon, cyclospectrum, triage, string, seed, motif, crispr, prime, pcr
+from . import bioinformatics, codon, cyclospectrum, triage, string, seed, motif, crispr, prime, pcr, core, nodes, live, dsl
 from .api import dna_summary, triage_report, fold_rna, spectrum_leaderboard, protein_summary
 from .crispr.model import (
     CasSystem,
@@ -31,6 +31,10 @@ __all__ = [
     "motif",
     "crispr",
     "pcr",
+    "core",
+    "nodes",
+    "live",
+    "dsl",
     "CasSystemType",
     "PAMRule",
     "CasSystem",

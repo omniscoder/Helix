@@ -1,0 +1,13 @@
+time_min,condition,pERK
+0,wt,0.01
+5,wt,0.25
+10,wt,0.45
+20,wt,0.65
+40,wt,0.58
+80,wt,0.32
+0,grb2_ko,0.01
+5,grb2_ko,0.08
+10,grb2_ko,0.12
+20,grb2_ko,0.18
+40,grb2_ko,0.15
+80,grb2_ko,0.09

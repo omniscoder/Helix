@@ -9,10 +9,13 @@ import math
 import random
 import re
 import sys
+import queue
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
 from types import SimpleNamespace
 
@@ -62,6 +65,12 @@ from .experiment.spec import (
     PrimeExperimentSpec,
     load_experiment_spec,
 )
+from .dsl import load_hgx, build_graph_from_hgx
+from .core.scheduler import Island, LiveScheduler
+from .live import StateReducer, EventBus, HotSwapManager
+from .live.metadata import describe_graph_nodes
+from .live.realtime import RealtimeHook, RealtimeServer
+from .slices import resolve_slice, SLICE_REGISTRY
 
 _CRISPR_EXPERIMENT_TEMPLATE = """\
 kind: helix.crispr.experiment.v1
@@ -600,11 +609,359 @@ def _write_provenance(
     prov_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
 
 
+def _sanitize_run_name(name: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", name.strip().lower())
+    cleaned = cleaned.strip("-")
+    return cleaned or "livegraph"
+
+
+def _prepare_live_bundle_dir(bundle: Optional[Path], model_name: str) -> Path:
+    if bundle:
+        target = Path(bundle)
+    else:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        target = Path("live_runs") / f"{_sanitize_run_name(model_name)}-{stamp}"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _compose_run_id(model_name: str, variant: Optional[str], seed: Optional[int]) -> str:
+    variant_token = (variant or "default").replace(" ", "_").lower()
+    seed_token = f"seed{seed}" if seed is not None else "seed0"
+    return f"{_sanitize_run_name(model_name)}_{variant_token}_{seed_token}"
+
+
+def _maybe_create_realtime_queue(enabled: bool, endpoint: Optional[str] = None) -> Optional[RealtimeHook]:
+    if not enabled:
+        return None
+    q: queue.Queue = queue.Queue(maxsize=512)
+    server: Optional[RealtimeServer] = None
+    try:
+        server = RealtimeServer(endpoint or "tcp://127.0.0.1:8765")
+        print(f"[realtime] serving feed on {server.label}")
+    except Exception as exc:  # pragma: no cover - transport failures
+        print(f"[realtime] failed to start server: {exc}", file=sys.stderr)
+        server = None
+
+    def _consumer():
+        while True:
+            payload = q.get()
+            if payload is None:
+                break
+            runtime = payload.get("runtime") or {}
+            slice_name = runtime.get("slice") or runtime.get("model") or "-"
+            variant = runtime.get("variant") or "-"
+            t = payload.get("time")
+            try:
+                t_display = f"{float(t):.2f}"
+            except (TypeError, ValueError):
+                t_display = "?"
+            delta = payload.get("delta") or {}
+            added = len(delta.get("added", {}))
+            updated = len(delta.get("updated", {}))
+            removed = len(delta.get("removed", {}))
+            print(f"[realtime:{slice_name}/{variant}] t={t_display} +{added} ~{updated} -{removed}")
+            if server:
+                server.broadcast(dict(payload))
+
+    threading.Thread(target=_consumer, daemon=True).start()
+    return RealtimeHook(queue=q, server=server)
+
+
+def _make_realtime_command_handler(scheduler: LiveScheduler, *, default_field_node: str = "egf_field"):
+    graph = scheduler.graph
+
+    def _handler(command: Dict[str, Any]) -> None:
+        if command.get("kind") == "live_control":
+            _dispatch_control_doc(command)
+            return
+        action = command.get("command")
+        if action == "pause":
+            scheduler.pause()
+        elif action == "resume":
+            scheduler.resume()
+        elif action == "toggle":
+            scheduler.toggle_pause()
+        elif action == "set_input":
+            node = command.get("node", default_field_node)
+            values = command.get("values") or {}
+            if node and isinstance(values, Mapping):
+                scheduler.update_external(str(node), {k: float(v) for k, v in values.items() if isinstance(v, (int, float))})
+        elif action == "switch_variant":
+            variant = command.get("variant")
+            if isinstance(variant, str):
+                scheduler.apply_hot_swap("variant", {"variant": variant})
+        elif action == "set_egf":
+            value = command.get("value")
+            if isinstance(value, (int, float)):
+                scheduler.update_external(default_field_node, {"control": float(value)})
+
+    def _dispatch_control_doc(control: Mapping[str, Any]) -> None:
+        control_type = control.get("type")
+        if control_type == "pause":
+            scheduler.pause()
+        elif control_type == "resume":
+            scheduler.resume()
+        elif control_type == "toggle":
+            scheduler.toggle_pause()
+        elif control_type == "set_variant":
+            variant = control.get("variant")
+            if isinstance(variant, str):
+                scheduler.apply_hot_swap("variant", {"variant": variant})
+        elif control_type == "set_param":
+            target = control.get("target")
+            param = control.get("param")
+            value = control.get("value")
+            if isinstance(target, str) and isinstance(param, str) and isinstance(value, (int, float)):
+                try:
+                    node = graph.node(target)
+                except KeyError:
+                    return
+                params = getattr(node, "params", None)
+                if isinstance(params, dict):
+                    params[param] = float(value)
+        elif control_type == "set_field":
+            target_node = control.get("target") or default_field_node
+            value = control.get("value")
+            if isinstance(target_node, str) and isinstance(value, (int, float)):
+                scheduler.update_external(target_node, {"control": float(value)})
+
+    return _handler
+
+
+def _parse_dt_overrides(entries: Optional[Sequence[str]]) -> Dict[str, float]:
+    overrides: Dict[str, float] = {}
+    for raw in entries or []:
+        if "=" not in raw:
+            raise SystemExit(f"Invalid dt override '{raw}'. Expected format node=0.05")
+        name, value = raw.split("=", 1)
+        name = name.strip()
+        if not name:
+            raise SystemExit(f"Invalid dt override '{raw}'. Node name missing.")
+        try:
+            overrides[name] = float(value)
+        except ValueError as exc:
+            raise SystemExit(f"Invalid dt override '{raw}'. Expected a numeric dt.") from exc
+    return overrides
+
+
+def _parse_node_inputs(entries: Optional[Sequence[str]]) -> Dict[str, Dict[str, float]]:
+    inputs: Dict[str, Dict[str, float]] = {}
+    for raw in entries or []:
+        if "=" not in raw or "." not in raw.split("=", 1)[0]:
+            raise SystemExit(f"Invalid input '{raw}'. Expected node.port=value")
+        key, value = raw.split("=", 1)
+        node, port = key.split(".", 1)
+        node = node.strip()
+        port = port.strip()
+        if not node or not port:
+            raise SystemExit(f"Invalid input '{raw}'. Node or port missing.")
+        try:
+            numeric = float(value)
+        except ValueError as exc:
+            raise SystemExit(f"Invalid input '{raw}'. Expected numeric value.") from exc
+        inputs.setdefault(node, {})[port] = numeric
+    return inputs
+
+
+class _TimeSeriesSignal:
+    def __init__(self, points: Sequence[Mapping[str, Any]]):
+        if not points:
+            raise SystemExit("Time-series inputs must contain at least one point.")
+        normalized = []
+        for idx, point in enumerate(points):
+            if "t" not in point or "value" not in point:
+                raise SystemExit(f"Time-series point #{idx} missing 't' or 'value'.")
+            try:
+                t_val = float(point["t"])
+                v_val = float(point["value"])
+            except (TypeError, ValueError) as exc:
+                raise SystemExit(f"Invalid time-series point #{idx}: expected numeric t/value.") from exc
+            normalized.append((t_val, v_val))
+        normalized.sort(key=lambda item: item[0])
+        self.points = normalized
+
+    def __call__(self, t: float) -> float:
+        value = self.points[0][1]
+        for time_point, candidate in self.points:
+            if t < time_point:
+                break
+            value = candidate
+        return value
+
+
+def _load_input_series(path: Optional[Path]) -> Dict[str, Dict[str, Callable[[float], float]]]:
+    if not path:
+        return {}
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    signals: Dict[str, Dict[str, Callable[[float], float]]] = {}
+    for key, value in raw.items():
+        if "." not in key:
+            raise SystemExit(f"Invalid input key '{key}' (expected node.port).")
+        node, port = key.split(".", 1)
+        node = node.strip()
+        port = port.strip()
+        if not node or not port:
+            raise SystemExit(f"Invalid input key '{key}' (missing node or port).")
+        if isinstance(value, (int, float)):
+            fn = (lambda constant: (lambda _t: float(constant)))(value)
+        elif isinstance(value, list):
+            fn = _TimeSeriesSignal(value)
+        else:
+            raise SystemExit(
+                f"Unsupported input spec for '{key}'. Use a number or a list of {{'t','value'}} points."
+            )
+        signals.setdefault(node, {})[port] = fn
+    return signals
+
+
+def _build_input_provider(
+    constants: Mapping[str, Mapping[str, float]],
+    series: Mapping[str, Mapping[str, Callable[[float], float]]],
+) -> Callable[[str, float], Mapping[str, float]]:
+    registry: Dict[str, Dict[str, Callable[[float], float]]] = {}
+
+    def register(node: str, port: str, fn: Callable[[float], float]) -> None:
+        registry.setdefault(node, {})[port] = fn
+
+    # file-provided series first
+    for node, ports in series.items():
+        for port, fn in ports.items():
+            register(node, port, fn)
+
+    # CLI constants override file-defined entries
+    for node, ports in constants.items():
+        for port, value in ports.items():
+            register(node, port, lambda _t, v=value: v)
+
+    def provider(node_name: str, t: float) -> Mapping[str, float]:
+        node_ports = registry.get(node_name, {})
+        return {port: fn(t) for port, fn in node_ports.items()}
+
+    return provider
+
+
+def _dump_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _read_json_optional(path: Path) -> Any:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_live_bundle(
+    bundle_dir: Path,
+    *,
+    hgx_path: Path,
+    model_name: str,
+    scheduler: LiveScheduler,
+    reducer: StateReducer,
+    events: Sequence[Any],
+    meta: Mapping[str, Any],
+) -> None:
+    model_contents = hgx_path.read_text(encoding="utf-8")
+    (bundle_dir / "model.hgx").write_text(model_contents, encoding="utf-8")
+    _dump_json(bundle_dir / "snapshots.json", scheduler.snapshots)
+    _dump_json(bundle_dir / "deltas.json", reducer.history)
+    _dump_json(bundle_dir / "events.json", list(events))
+    enriched_meta = dict(meta)
+    enriched_meta.update(
+        {
+            "model": model_name,
+            "snapshots": len(scheduler.snapshots),
+            "helix_version": HELIX_VERSION,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "command": _current_command_str(),
+        }
+    )
+    _dump_json(bundle_dir / "meta.json", enriched_meta)
+
+
+def _finalize_live_run(
+    args: argparse.Namespace,
+    *,
+    scheduler: LiveScheduler,
+    spec_path: Path,
+    model_name: str,
+    duration: float,
+    sync_dt: float,
+    dt_overrides: Mapping[str, float],
+    const_inputs: Mapping[str, Mapping[str, float]],
+    input_series_file: Optional[str],
+    hz: float,
+    reducer: Optional[StateReducer],
+    event_bus,
+    realtime_hook: Optional[RealtimeHook] = None,
+    meta_extra: Optional[Mapping[str, Any]] = None,
+) -> None:
+    wall_start = perf_counter()
+    scheduler.run_until(duration, wall_budget_ms=args.wall_ms)
+    wall_time_sec = perf_counter() - wall_start
+    islands_meta: List[Dict[str, Any]] = []
+    for island in getattr(scheduler, "islands", []):
+        nodes = [getattr(node, "name", None) for node in getattr(island, "nodes", []) if getattr(node, "name", None)]
+        islands_meta.append({"name": getattr(island, "name", "island"), "nodes": nodes, "dt": getattr(island, "dt", None)})
+
+    bundle_dir = _prepare_live_bundle_dir(args.bundle, model_name)
+    meta: Dict[str, Any] = {
+        "kind": "helix.live.run.v1",
+        "seed": args.seed,
+        "duration": duration,
+        "sync_dt": sync_dt,
+        "default_dt": args.default_dt,
+        "dt_overrides": dt_overrides,
+        "input_constants": const_inputs,
+        "input_series_file": input_series_file,
+        "hz": hz,
+        "wall_budget_ms": args.wall_ms,
+        "wall_time_sec": wall_time_sec,
+        "islands": islands_meta,
+        "model": model_name,
+        "spec_path": str(spec_path),
+        "run_id": scheduler.runtime_meta.get("run_id"),
+    }
+    if meta_extra:
+        meta.update(meta_extra)
+    reducer_obj = reducer or StateReducer(hz=hz)
+    events = event_bus.drain() if event_bus else []
+    _write_live_bundle(
+        bundle_dir,
+        hgx_path=spec_path,
+        model_name=model_name,
+        scheduler=scheduler,
+        reducer=reducer_obj,
+        events=events,
+        meta=meta,
+    )
+    print(f"Live run bundle written to {bundle_dir}")
+    print(
+        f"  snapshots={len(scheduler.snapshots)} islands={len(getattr(scheduler, 'islands', []))} "
+        f"dt=[{', '.join(f'{isl.name}:{isl.dt}' for isl in getattr(scheduler, 'islands', []))}]"
+    )
+    if realtime_hook:
+        realtime_hook.queue.put(None)
+        if realtime_hook.server:
+            realtime_hook.server.close()
+
+
 def _ensure_viz_available(feature: str = "visualization") -> None:
     if not VIZ_AVAILABLE:
         raise SystemExit(
             f"{feature} requires the 'viz' extra. Install with `pip install \"veri-helix[viz]\"`."
         )
+
+
+def _ensure_realtime_available() -> None:
+    try:
+        import glfw  # type: ignore  # noqa: F401
+        import moderngl  # type: ignore  # noqa: F401
+    except ImportError as exc:  # pragma: no cover - optional deps
+        raise SystemExit(
+            "Realtime visualization requires the 'realtime' extra (glfw + moderngl). "
+            "Install with `pip install \"veri-helix[realtime]\"`."
+        ) from exc
 
 
 CAS_PRESET_CONFIGS: Dict[str, Dict[str, Any]] = {
@@ -3103,6 +3460,323 @@ def command_demo_viz(args: argparse.Namespace) -> None:
     print(f"Demo visualizations written to {output_dir}")
 
 
+def command_live_run(args: argparse.Namespace) -> None:
+    random.seed(args.seed)
+    slice_path = None
+    if getattr(args, "slice", None):
+        try:
+            slice_path = resolve_slice(args.slice)
+        except KeyError as exc:
+            raise SystemExit(str(exc)) from exc
+    target = args.config or slice_path or args.hgx or args.target
+    if target is None:
+        raise SystemExit("Provide a .hgx model (--hgx) or an orchestrator config path.")
+    target_path = Path(target)
+    suffix = target_path.suffix.lower()
+    if suffix in {".yaml", ".yml"}:
+        _run_config_live(args, target_path)
+        return
+    _run_hgx_live(args, target_path)
+
+
+def _run_hgx_live(args: argparse.Namespace, hgx_path: Path) -> None:
+    model = load_hgx(hgx_path)
+    graph = build_graph_from_hgx(model)
+    dt_overrides = _parse_dt_overrides(args.dt_override)
+    const_inputs = _parse_node_inputs(args.input)
+    series_inputs = _load_input_series(args.inputs_json)
+    components = graph.strongly_connected_components()
+    if not components:
+        components = [(node.name,) for node in graph.iter_nodes()]
+    islands: List[Island] = []
+    for idx, comp in enumerate(components):
+        nodes = [graph.node(name) for name in comp]
+        node_dts = [dt_overrides.get(name, args.default_dt) for name in comp]
+        dt = min(node_dts) if node_dts else args.default_dt
+        island = Island(name=f"island_{idx}", nodes=nodes, dt=dt)
+        islands.append(island)
+
+    realtime_hook = _maybe_create_realtime_queue(getattr(args, "realtime", False), getattr(args, "realtime_endpoint", None))
+    realtime_queue = realtime_hook.queue if realtime_hook else None
+    node_meta = describe_graph_nodes(graph)
+    reducer = StateReducer(hz=args.hz, realtime_queue=realtime_queue, node_meta=node_meta)
+    event_bus = EventBus()
+    hot_swap_manager = HotSwapManager()
+    external_inputs = _build_input_provider(const_inputs, series_inputs)
+    scheduler = LiveScheduler(
+        graph=graph,
+        islands=islands,
+        sync_dt=args.sync_dt,
+        state_reducer=reducer,
+        external_inputs=external_inputs,
+        event_bus=event_bus,
+        hot_swap_manager=hot_swap_manager,
+    )
+    run_id = _compose_run_id(model.name or "model", getattr(args, "variant", None), args.seed)
+    scheduler.runtime_meta = {
+        "model": model.name,
+        "slice": getattr(args, "slice", None),
+        "variant": args.variant,
+        "run_id": run_id,
+        "variants": [args.variant] if args.variant else [],
+    }
+    if realtime_hook and realtime_hook.server:
+        realtime_hook.server.set_command_handler(_make_realtime_command_handler(scheduler))
+    duration = args.duration if args.duration is not None else 1.0
+    hz = getattr(reducer, "hz", args.hz)
+    input_series_file = str(args.inputs_json) if args.inputs_json else None
+    _finalize_live_run(
+        args,
+        scheduler=scheduler,
+        spec_path=hgx_path,
+        model_name=model.name,
+        duration=duration,
+        sync_dt=args.sync_dt,
+        dt_overrides=dt_overrides,
+        const_inputs=const_inputs,
+        input_series_file=input_series_file,
+        hz=hz,
+        reducer=reducer,
+        event_bus=event_bus,
+        realtime_hook=realtime_hook,
+        meta_extra={"target_type": "hgx"},
+    )
+
+
+def _run_config_live(args: argparse.Namespace, config_path: Path) -> None:
+    try:
+        from helixtasks.egfr_grb2_orchestrator import build_from_config
+    except ImportError as exc:  # pragma: no cover - optional repo scripts
+        raise SystemExit(
+            "EGFR/GRB2 orchestrator is unavailable. Ensure `helixtasks` is importable."
+        ) from exc
+
+    variant = args.variant or "wt"
+    graph, scheduler, cfg = build_from_config(config_path, variant)
+    sim_cfg = cfg.get("sim", {})
+    duration = args.duration if args.duration is not None else float(sim_cfg.get("duration", 60.0))
+    sync_dt = float(sim_cfg.get("sync_dt", args.sync_dt))
+    realtime_hook = _maybe_create_realtime_queue(getattr(args, "realtime", False), getattr(args, "realtime_endpoint", None))
+    realtime_queue = realtime_hook.queue if realtime_hook else None
+    node_meta = describe_graph_nodes(graph)
+    reducer = StateReducer(hz=args.hz, realtime_queue=realtime_queue, node_meta=node_meta)
+    scheduler.state_reducer = reducer
+    hz = getattr(reducer, "hz", args.hz)
+    model_base = cfg.get("name", config_path.stem)
+    model_name = f"{model_base}-{variant}"
+    run_id = _compose_run_id(model_name, variant, args.seed)
+    meta_extra = {
+        "target_type": "config",
+        "config_path": str(config_path),
+        "variant": variant,
+        "model_label": cfg.get("name"),
+        "description": cfg.get("description"),
+        "slice": getattr(args, "slice", None),
+        "run_id": run_id,
+        "variants": sorted(cfg.get("variants", {}).keys()),
+    }
+    scheduler.runtime_meta = dict(meta_extra)
+    if realtime_hook and realtime_hook.server:
+        realtime_hook.server.set_command_handler(_make_realtime_command_handler(scheduler))
+    _finalize_live_run(
+        args,
+        scheduler=scheduler,
+        spec_path=config_path,
+        model_name=model_name,
+        duration=duration,
+        sync_dt=sync_dt,
+        dt_overrides={},
+        const_inputs={},
+        input_series_file=None,
+        hz=hz,
+        reducer=reducer,
+        event_bus=None,
+        realtime_hook=realtime_hook,
+        meta_extra=meta_extra,
+    )
+
+
+def _format_kv_pairs(values: Mapping[str, float], limit: int) -> str:
+    items = list(values.items())[:limit]
+    return ", ".join(f"{k}={v:.4g}" for k, v in items)
+
+
+def command_live_inspect(args: argparse.Namespace) -> None:
+    bundle = Path(args.bundle)
+    meta = _read_json(bundle / "meta.json")
+    snapshots = _read_json_optional(bundle / "snapshots.json") or []
+    deltas = _read_json_optional(bundle / "deltas.json") or []
+    events = _read_json_optional(bundle / "events.json") or []
+
+    model = meta.get("model", "<unknown>")
+    duration = meta.get("duration")
+    sync_dt = meta.get("sync_dt")
+    seed = meta.get("seed")
+    islands = meta.get("islands", [])
+
+    model_path = bundle / "model.hgx"
+    model_hash = _file_sha256(model_path) if model_path.exists() else None
+    graph = None
+    graph_nodes = {}
+    node_kind_map: Dict[str, str] = {}
+    node_edges = 0
+    model_name = meta.get("model_label") or model
+    if model_path.exists() and meta.get("target_type") != "config":
+        try:
+            hgx_model = load_hgx(model_path)
+            model_name = hgx_model.name or model
+            graph = build_graph_from_hgx(hgx_model)
+            graph_nodes = graph.nodes
+            node_kind_map = {name: node.kind for name, node in graph.nodes.items()}
+            node_edges = len(graph.edges)
+        except Exception:
+            graph = None
+
+    island_lookup: Dict[str, str] = {}
+    for island in islands:
+        for node_name in island.get("nodes", []):
+            island_lookup[node_name] = island.get("name")
+
+    class _MetricAggregator:
+        def __init__(self) -> None:
+            self.count = 0
+            self.mean = 0.0
+            self.m2 = 0.0
+            self.min = None
+            self.max = None
+
+        def update(self, value: float) -> None:
+            if self.count == 0:
+                self.mean = float(value)
+                self.min = float(value)
+                self.max = float(value)
+                self.count = 1
+                self.m2 = 0.0
+                return
+            self.count += 1
+            delta = value - self.mean
+            self.mean += delta / self.count
+            delta2 = value - self.mean
+            self.m2 += delta * delta2
+            self.min = min(self.min, value) if self.min is not None else float(value)
+            self.max = max(self.max, value) if self.max is not None else float(value)
+
+        def as_dict(self) -> Dict[str, float]:
+            var = self.m2 / (self.count - 1) if self.count > 1 else 0.0
+            std = var ** 0.5
+            return {
+                "count": self.count,
+                "min": float(self.min) if self.min is not None else None,
+                "max": float(self.max) if self.max is not None else None,
+                "mean": float(self.mean),
+                "var": float(var),
+                "std": float(std),
+            }
+
+    collect_metrics = not args.no_metrics
+    node_metric_map: Dict[str, Dict[str, _MetricAggregator]] = {}
+    if collect_metrics:
+        for snapshot in snapshots:
+            for node_name, ports in snapshot.items():
+                for port_name, value in ports.items():
+                    if not isinstance(value, (int, float)):
+                        continue
+                    node_metric_map.setdefault(node_name, {}).setdefault(port_name, _MetricAggregator()).update(
+                        float(value)
+                    )
+
+    metric_filters = set(args.metric or [])
+    node_summaries: Dict[str, Any] = {}
+    node_iterable = node_kind_map.keys() if node_kind_map else node_metric_map.keys()
+    for node_name in node_iterable:
+        metrics = node_metric_map.get(node_name, {})
+        filtered_metrics = {}
+        if collect_metrics:
+            if metric_filters:
+                for port, agg in metrics.items():
+                    if port in metric_filters:
+                        filtered_metrics[port] = agg.as_dict()
+            else:
+                filtered_metrics = {port: agg.as_dict() for port, agg in metrics.items()}
+        node_entry: Dict[str, Any] = {
+            "kind": node_kind_map.get(node_name),
+            "island": island_lookup.get(node_name),
+            "metrics": filtered_metrics if collect_metrics else {},
+        }
+        node_summaries[node_name] = node_entry
+
+    summary = {
+        "schema_version": 1,
+        "bundle": str(bundle),
+        "model": {
+            "name": model_name,
+            "path": str(model_path) if model_path.exists() else None,
+            "hash": model_hash,
+            "nodes": len(graph_nodes) if graph_nodes else len(node_summaries),
+            "edges": node_edges,
+        },
+        "runtime": {
+            "duration": duration,
+            "sync_dt": sync_dt,
+            "seed": seed,
+            "islands": len(islands),
+            "snapshots": len(snapshots),
+            "events": len(events),
+            "wall_time_sec": meta.get("wall_time_sec"),
+        },
+        "nodes": node_summaries,
+    }
+
+    if args.json:
+        _dump_json(args.json, summary)
+        return
+
+    print(f"Bundle: {summary['bundle']}")
+    print(
+        f"  Model: {summary['model']['name']}  Duration: {summary['runtime']['duration']}  "
+        f"sync_dt: {summary['runtime']['sync_dt']}  snapshots: {summary['runtime']['snapshots']}"
+    )
+    wall = summary["runtime"].get("wall_time_sec")
+    wall_str = f"  Wall: {wall:.3f}s" if isinstance(wall, (int, float)) else ""
+    print(
+        f"  Seed: {summary['runtime']['seed']}  Islands: {summary['runtime']['islands']}  "
+        f"Events: {summary['runtime']['events']}{wall_str}"
+    )
+    if islands:
+        for island in islands[: args.max_islands]:
+            nodes = ", ".join(island.get("nodes", [])[: args.max_nodes])
+            if len(island.get("nodes", [])) > args.max_nodes:
+                nodes += ", …"
+            print(f"    - {island['name']} dt={island.get('dt')} nodes: {nodes}")
+    if snapshots:
+        first = snapshots[0]
+        last = snapshots[-1]
+        print("  Snapshot[0]:")
+        for node, values in list(first.items())[: args.head]:
+            print(f"    {node}: {_format_kv_pairs(values, args.metrics)}")
+        if len(first) > args.head:
+            print("    …")
+        print("  Snapshot[-1]:")
+        for node, values in list(last.items())[: args.head]:
+            print(f"    {node}: {_format_kv_pairs(values, args.metrics)}")
+        if len(last) > args.head:
+            print("    …")
+    if deltas:
+        added = sum(len(delta.get("added", {})) for delta in deltas)
+        removed = sum(len(delta.get("removed", {})) for delta in deltas)
+        updated = sum(len(delta.get("updated", {})) for delta in deltas)
+        print(f"  Deltas: added={added} updated={updated} removed={removed} (across {len(deltas)} samples)")
+
+
+def command_live_viz(args: argparse.Namespace) -> None:
+    _ensure_realtime_available()
+    bundle = Path(args.bundle) if args.bundle else None
+    endpoint = args.endpoint if not bundle else None
+    from .live.viz.app import LiveVizApp  # noqa: WPS433
+
+    app = LiveVizApp(endpoint=endpoint, bundle=bundle, target_hz=args.hz)
+    app.run()
+
 def build_parser() -> argparse.ArgumentParser:
     description = (
         "Helix unified CLI for computational bioinformatics workflows.\n\n"
@@ -3151,6 +3825,102 @@ def build_parser() -> argparse.ArgumentParser:
     rna_ensemble.add_argument("--entropy-plot", type=Path, help="Optional entropy plot path (requires matplotlib).")
     rna_ensemble.add_argument("--save-viz-spec", type=Path, help="Optional viz-spec JSON for dot-plot.")
     rna_ensemble.set_defaults(func=command_rna_ensemble)
+
+    live = subparsers.add_parser("live", help="Run LiveGraph HGX models.")
+    live_sub = live.add_subparsers(dest="live_command", required=True)
+    live_run = live_sub.add_parser("run", help="Execute a model using the LiveScheduler.")
+    live_run.add_argument(
+        "target",
+        nargs="?",
+        type=Path,
+        help="Path to a .hgx LiveGraph model or an orchestrator config YAML.",
+    )
+    live_run.add_argument("--hgx", type=Path, help="Path to the .hgx model (legacy flag).")
+    live_run.add_argument("--config", type=Path, help="Path to an orchestrator config YAML.")
+    live_run.add_argument(
+        "--slice",
+        type=str,
+        help=f"Named slice declared in the registry (available: {', '.join(sorted(SLICE_REGISTRY))}).",
+    )
+    live_run.add_argument("--variant", type=str, help="Variant name defined by the orchestrator config.")
+    live_run.add_argument("--duration", type=float, default=None, help="Simulation time horizon in minutes.")
+    live_run.add_argument("--sync-dt", type=float, default=0.25, help="Synchronization cadence Δt (default: 0.25).")
+    live_run.add_argument("--default-dt", type=float, default=0.1, help="Default island Δt (default: 0.1).")
+    live_run.add_argument(
+        "--dt",
+        dest="dt_override",
+        action="append",
+        default=[],
+        help="Override per-node dt (format: node=0.05). Repeat for multiple nodes.",
+    )
+    live_run.add_argument(
+        "--input",
+        action="append",
+        default=[],
+        help="Inject constant signals (format: node.port=value). Repeat as needed.",
+    )
+    live_run.add_argument(
+        "--inputs-json",
+        type=Path,
+        help="Path to a JSON file describing constant/time-series inputs.",
+    )
+    live_run.add_argument("--hz", type=float, default=60.0, help="StateReducer target Hz (default: 60).")
+    live_run.add_argument("--wall-ms", type=float, default=5.0, help="Wall-clock pacing budget in ms (default: 5).")
+    live_run.add_argument("--seed", type=int, default=0, help="Deterministic seed (default: 0).")
+    live_run.add_argument(
+        "--bundle",
+        type=Path,
+        help="Directory for the COMBINE-style bundle (default: live_runs/<model>-<timestamp>).",
+    )
+    live_run.add_argument(
+        "--realtime",
+        action="store_true",
+        help="Stream state deltas to a realtime queue for visualization clients.",
+    )
+    live_run.add_argument(
+        "--realtime-endpoint",
+        type=str,
+        help="Endpoint for realtime clients (tcp://host:port or ipc://path). Default: tcp://127.0.0.1:8765.",
+    )
+    live_run.set_defaults(func=command_live_run)
+    live_inspect = live_sub.add_parser("inspect", help="Inspect a LiveGraph bundle.")
+    live_inspect.add_argument("--bundle", type=Path, required=True, help="Bundle directory to inspect.")
+    live_inspect.add_argument("--head", type=int, default=3, help="How many nodes to show per snapshot (default: 3).")
+    live_inspect.add_argument(
+        "--metrics", type=int, default=3, help="How many port values to show per node (default: 3)."
+    )
+    live_inspect.add_argument(
+        "--max-islands", type=int, default=4, help="Maximum number of islands to list (default: 4)."
+    )
+    live_inspect.add_argument(
+        "--max-nodes", type=int, default=5, help="Maximum number of node names to show per island (default: 5)."
+    )
+    live_inspect.add_argument(
+        "--no-metrics",
+        action="store_true",
+        help="Skip aggregating per-node metrics (useful for huge bundles). Metrics will be empty objects.",
+    )
+    live_inspect.add_argument(
+        "--metric",
+        action="append",
+        help="Restrict metrics to these keys (repeatable). Useful for CI filters.",
+    )
+    live_inspect.add_argument("--json", type=Path, help="Optional JSON path for structured summaries.")
+    live_inspect.set_defaults(func=command_live_inspect)
+    live_viz = live_sub.add_parser("viz", help="Launch the realtime renderer.")
+    live_viz.add_argument(
+        "--endpoint",
+        type=str,
+        default="tcp://127.0.0.1:8765",
+        help="Realtime endpoint to attach (default: tcp://127.0.0.1:8765).",
+    )
+    live_viz.add_argument(
+        "--bundle",
+        type=Path,
+        help="Replay an existing bundle instead of attaching to a live endpoint.",
+    )
+    live_viz.add_argument("--hz", type=float, default=60.0, help="Target redraw rate (default: 60 Hz).")
+    live_viz.set_defaults(func=command_live_viz)
 
     crispr = subparsers.add_parser("crispr", help="CRISPR design helpers.")
     crispr_sub = crispr.add_subparsers(dest="crispr_command", required=True)

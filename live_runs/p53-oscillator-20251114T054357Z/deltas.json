@@ -1,0 +1,167 @@
+[
+  {
+    "time": 0.25,
+    "delta": {
+      "added": {
+        "dna_damage": {
+          "rate_multiplier": 1.2
+        },
+        "p53": {
+          "expression": 0.0
+        },
+        "mdm2": {
+          "expression": 0.0
+        },
+        "reporter": {
+          "metric": 0.0
+        }
+      },
+      "removed": {},
+      "updated": {}
+    },
+    "runtime": {
+      "model": "p53 Oscillator",
+      "slice": null,
+      "variant": null,
+      "run_id": "p53-oscillator_default_seed0",
+      "variants": []
+    },
+    "schema": "helix.live.delta.v1",
+    "snapshot": {
+      "dna_damage": {
+        "rate_multiplier": 1.2
+      },
+      "p53": {
+        "expression": 0.0
+      },
+      "mdm2": {
+        "expression": 0.0
+      },
+      "reporter": {
+        "metric": 0.0
+      }
+    },
+    "node_meta": {
+      "dna_damage": {
+        "kind": "protein",
+        "ports": {
+          "energy": {
+            "direction": "in",
+            "unit": "kcal/mol",
+            "positive": true
+          },
+          "rate_multiplier": {
+            "direction": "out",
+            "unit": "arb",
+            "positive": true
+          }
+        }
+      },
+      "p53": {
+        "kind": "grn",
+        "ports": {
+          "activation": {
+            "direction": "in",
+            "unit": "arb",
+            "positive": true
+          },
+          "expression": {
+            "direction": "out",
+            "unit": "arb",
+            "positive": true
+          }
+        }
+      },
+      "mdm2": {
+        "kind": "grn",
+        "ports": {
+          "activation": {
+            "direction": "in",
+            "unit": "arb",
+            "positive": true
+          },
+          "expression": {
+            "direction": "out",
+            "unit": "arb",
+            "positive": true
+          }
+        }
+      },
+      "reporter": {
+        "kind": "observer",
+        "ports": {
+          "signal": {
+            "direction": "in",
+            "unit": "arb",
+            "positive": true
+          },
+          "metric": {
+            "direction": "out",
+            "unit": "arb",
+            "positive": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "time": 0.5,
+    "delta": {
+      "added": {},
+      "removed": {},
+      "updated": {
+        "p53": {
+          "expression": 0.9887869285221615
+        }
+      }
+    },
+    "runtime": {
+      "model": "p53 Oscillator",
+      "slice": null,
+      "variant": null,
+      "run_id": "p53-oscillator_default_seed0",
+      "variants": []
+    },
+    "schema": "helix.live.delta.v1"
+  },
+  {
+    "time": 0.75,
+    "delta": {
+      "added": {},
+      "removed": {},
+      "updated": {
+        "mdm2": {
+          "expression": 0.9675327828541633
+        }
+      }
+    },
+    "runtime": {
+      "model": "p53 Oscillator",
+      "slice": null,
+      "variant": null,
+      "run_id": "p53-oscillator_default_seed0",
+      "variants": []
+    },
+    "schema": "helix.live.delta.v1"
+  },
+  {
+    "time": 1.0,
+    "delta": {
+      "added": {},
+      "removed": {},
+      "updated": {
+        "reporter": {
+          "metric": 0.9675327828541633
+        }
+      }
+    },
+    "runtime": {
+      "model": "p53 Oscillator",
+      "slice": null,
+      "variant": null,
+      "run_id": "p53-oscillator_default_seed0",
+      "variants": []
+    },
+    "schema": "helix.live.delta.v1"
+  }
+]

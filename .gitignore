@@ -4,6 +4,18 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+coverage/
+htmlcov/
+
 # Benchmark artifacts/datasets
 bench-results/
 benchmarks/data/*
@@ -11,6 +23,11 @@ benchmarks/data/*
 benchmarks/out/
 
 src/helix/__pycache__
+
+# Editor/OS files
+.DS_Store
+.idea/
+.vscode/
 
 # MkDocs build output (always rebuilt in CI)
 site/

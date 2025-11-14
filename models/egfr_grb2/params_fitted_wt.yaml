@@ -1,0 +1,6 @@
+---
+basal_activation: 0.05
+dephos_rate: 0.3
+grb2_scale: 1.0
+response_scale: 1.0
+km: 0.5

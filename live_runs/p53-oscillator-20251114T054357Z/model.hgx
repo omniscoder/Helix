@@ -1,0 +1,38 @@
+graph:
+  name: p53 Oscillator
+  nodes:
+    - name: dna_damage
+      type: ProteinNode
+      params:
+        base_multiplier: 1.2
+    - name: p53
+      type: GRNNode
+      params:
+        hill: 2.5
+        threshold: 0.2
+    - name: mdm2
+      type: GRNNode
+      params:
+        hill: 1.8
+        threshold: 0.15
+    - name: reporter
+      type: ObserverNode
+  edges:
+    - source:
+        node: dna_damage
+        port: rate_multiplier
+      target:
+        node: p53
+        port: activation
+    - source:
+        node: p53
+        port: expression
+      target:
+        node: mdm2
+        port: activation
+    - source:
+        node: mdm2
+        port: expression
+      target:
+        node: reporter
+        port: signal

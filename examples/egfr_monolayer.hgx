@@ -1,0 +1,27 @@
+graph:
+  name: EGFR Monolayer
+  nodes:
+    - name: egfr_rules
+      type: RuleNetNode
+      params:
+        decay: 0.3
+        initial: 0.1
+    - name: wound_field
+      type: FieldNode
+      params:
+        diffusion: 0.2
+    - name: wound_observer
+      type: ObserverNode
+  edges:
+    - source:
+        node: egfr_rules
+        port: rate
+      target:
+        node: wound_field
+        port: signal
+    - source:
+        node: wound_field
+        port: tile
+      target:
+        node: wound_observer
+        port: signal

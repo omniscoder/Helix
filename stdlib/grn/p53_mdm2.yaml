@@ -1,0 +1,12 @@
+name: p53_mdm2
+nodes:
+  - gene: TP53
+    decay: 0.1
+  - gene: MDM2
+    decay: 0.2
+edges:
+  - source: TP53
+    target: MDM2
+    type: activation
+metadata:
+  description: Placeholder GRN config for p53-MDM2 oscillations.

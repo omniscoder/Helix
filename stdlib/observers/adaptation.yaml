@@ -1,0 +1,6 @@
+name: adaptation_score
+inputs:
+  - node: observer_adaptation
+    port: metric
+metric: adaptation
+description: Tracks EGFR adaptation overshoot + half time.

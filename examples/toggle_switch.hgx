@@ -1,0 +1,36 @@
+graph:
+  name: Toggle Switch
+  nodes:
+    - name: toggle_a
+      type: GRNNode
+      params:
+        hill: 2.0
+        threshold: 0.3
+    - name: toggle_b
+      type: GRNNode
+      params:
+        hill: 2.0
+        threshold: 0.3
+    - name: gradient
+      type: FieldNode
+      params:
+        diffusion: 0.15
+  edges:
+    - source:
+        node: toggle_a
+        port: expression
+      target:
+        node: toggle_b
+        port: activation
+    - source:
+        node: toggle_b
+        port: expression
+      target:
+        node: toggle_a
+        port: activation
+    - source:
+        node: toggle_a
+        port: expression
+      target:
+        node: gradient
+        port: signal

@@ -1,0 +1,6 @@
+name: wound_closure_t50
+inputs:
+  - node: observer_wound
+    port: metric
+metric: wound_closure
+description: Estimates wound-closure t50 with credible bands.

@@ -1,0 +1,58 @@
+[
+  {
+    "dna_damage": {
+      "rate_multiplier": 1.2
+    },
+    "p53": {
+      "expression": 0.0
+    },
+    "mdm2": {
+      "expression": 0.0
+    },
+    "reporter": {
+      "metric": 0.0
+    }
+  },
+  {
+    "dna_damage": {
+      "rate_multiplier": 1.2
+    },
+    "p53": {
+      "expression": 0.9887869285221615
+    },
+    "mdm2": {
+      "expression": 0.0
+    },
+    "reporter": {
+      "metric": 0.0
+    }
+  },
+  {
+    "dna_damage": {
+      "rate_multiplier": 1.2
+    },
+    "p53": {
+      "expression": 0.9887869285221615
+    },
+    "mdm2": {
+      "expression": 0.9675327828541633
+    },
+    "reporter": {
+      "metric": 0.0
+    }
+  },
+  {
+    "dna_damage": {
+      "rate_multiplier": 1.2
+    },
+    "p53": {
+      "expression": 0.9887869285221615
+    },
+    "mdm2": {
+      "expression": 0.9675327828541633
+    },
+    "reporter": {
+      "metric": 0.9675327828541633
+    }
+  }
+]

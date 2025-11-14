@@ -1,0 +1,10 @@
+version: 1
+kind: helix.livegraph
+description: Minimal schema for LiveGraph HGX bundles.
+fields:
+  - name: name
+    type: string
+  - name: nodes
+    type: list
+  - name: edges
+    type: list

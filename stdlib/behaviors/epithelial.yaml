@@ -1,0 +1,6 @@
+name: epithelial_sheet
+params:
+  adhesion: 0.8
+  polarity: apical
+  proliferation_rate: 0.05
+notes: Placeholder epithelial behavior bundle for delta-sync demos.

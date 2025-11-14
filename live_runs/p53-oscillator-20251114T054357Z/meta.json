@@ -1,0 +1,51 @@
+{
+  "kind": "helix.live.run.v1",
+  "seed": 0,
+  "duration": 1.0,
+  "sync_dt": 0.25,
+  "default_dt": 0.1,
+  "dt_overrides": {},
+  "input_constants": {},
+  "input_series_file": null,
+  "hz": 60.0,
+  "wall_budget_ms": 5.0,
+  "wall_time_sec": 0.021412600006442517,
+  "islands": [
+    {
+      "name": "island_0",
+      "nodes": [
+        "reporter"
+      ],
+      "dt": 0.1
+    },
+    {
+      "name": "island_1",
+      "nodes": [
+        "mdm2"
+      ],
+      "dt": 0.1
+    },
+    {
+      "name": "island_2",
+      "nodes": [
+        "p53"
+      ],
+      "dt": 0.1
+    },
+    {
+      "name": "island_3",
+      "nodes": [
+        "dna_damage"
+      ],
+      "dt": 0.1
+    }
+  ],
+  "model": "p53 Oscillator",
+  "spec_path": "examples/p53_oscillator.hgx",
+  "run_id": "p53-oscillator_default_seed0",
+  "target_type": "hgx",
+  "snapshots": 4,
+  "helix_version": "0.3.0",
+  "timestamp": "2025-11-14T05:43:57.556022+00:00",
+  "command": "helix live run --realtime --hgx examples/p53_oscillator.hgx"
+}

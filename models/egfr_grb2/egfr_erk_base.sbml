@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="egfr_erk_base" name="EGFR_ERK_GRB2_WT">
+    <listOfUnitDefinitions>
+      <unitDefinition id="per_min">
+        <listOfUnits>
+          <unit kind="second" exponent="-1" scale="0" multiplier="60"/>
+        </listOfUnits>
+      </unitDefinition>
+    </listOfUnitDefinitions>
+    <listOfCompartments>
+      <compartment id="cyto" spatialDimensions="3" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="EGF_ext" compartment="cyto" initialConcentration="1.0" boundaryCondition="false"/>
+      <species id="EGFR" compartment="cyto" initialConcentration="1.0"/>
+      <species id="EGFR_active" compartment="cyto" initialConcentration="0.0"/>
+      <species id="GRB2" compartment="cyto" initialConcentration="1.0"/>
+      <species id="Complex" compartment="cyto" initialConcentration="0.0"/>
+      <species id="RAS" compartment="cyto" initialConcentration="0.5"/>
+      <species id="RAF" compartment="cyto" initialConcentration="0.5"/>
+      <species id="MEK" compartment="cyto" initialConcentration="0.5"/>
+      <species id="ERK" compartment="cyto" initialConcentration="0.5"/>
+      <species id="pERK" compartment="cyto" initialConcentration="0.0"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k_act" value="1.0" units="per_min"/>
+      <parameter id="k_deact" value="0.2" units="per_min"/>
+      <parameter id="k_bind_grb2" value="0.8" units="per_min"/>
+      <parameter id="k_release_grb2" value="0.2" units="per_min"/>
+      <parameter id="k_ras" value="0.5" units="per_min"/>
+      <parameter id="k_raf" value="0.4" units="per_min"/>
+      <parameter id="k_mek" value="0.3" units="per_min"/>
+      <parameter id="k_erk" value="0.3" units="per_min"/>
+      <parameter id="k_perk_decay" value="0.15" units="per_min"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="EGF_activation" reversible="false">
+        <listOfReactants>
+          <speciesReference species="EGF_ext"/>
+          <speciesReference species="EGFR"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="EGFR_active"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_act </ci>
+              <ci> EGF_ext </ci>
+              <ci> EGFR </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="EGFR_deactivation" reversible="false">
+        <listOfReactants>
+          <speciesReference species="EGFR_active"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="EGFR"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_deact </ci>
+              <ci> EGFR_active </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="GRB2_binding" reversible="false">
+        <listOfReactants>
+          <speciesReference species="EGFR_active"/>
+          <speciesReference species="GRB2"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Complex"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_bind_grb2 </ci>
+              <ci> EGFR_active </ci>
+              <ci> GRB2 </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="GRB2_release" reversible="false">
+        <listOfReactants>
+          <speciesReference species="Complex"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="EGFR_active"/>
+          <speciesReference species="GRB2"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_release_grb2 </ci>
+              <ci> Complex </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="RAS_activation" reversible="false">
+        <listOfReactants>
+          <speciesReference species="RAS"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="RAF"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_ras </ci>
+              <ci> Complex </ci>
+              <ci> RAS </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="RAF_activation" reversible="false">
+        <listOfReactants>
+          <speciesReference species="RAF"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="MEK"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_raf </ci>
+              <ci> RAF </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="MEK_activation" reversible="false">
+        <listOfReactants>
+          <speciesReference species="MEK"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="ERK"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_mek </ci>
+              <ci> MEK </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="ERK_activation" reversible="false">
+        <listOfReactants>
+          <speciesReference species="ERK"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="pERK"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_erk </ci>
+              <ci> ERK </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="pERK_decay" reversible="false">
+        <listOfReactants>
+          <speciesReference species="pERK"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="ERK"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> k_perk_decay </ci>
+              <ci> pERK </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>
