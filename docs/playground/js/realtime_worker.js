@@ -60,6 +60,19 @@ function reverseComplement(seq) {
 }
 
 function computeFrames(payload) {
+  // If the payload already contains edit DAG frames, treat them as the
+  // canonical source of truth and avoid re-implementing CRISPR logic here.
+  if (payload && Array.isArray(payload.frames)) {
+    return payload.frames
+      .filter((frame) => frame && typeof frame === "object")
+      .map((frame, idx) => {
+        const copy = { ...frame };
+        if (!copy.kind) copy.kind = "helix.edit_dag.frame.v1";
+        if (typeof copy.step !== "number") copy.step = idx;
+        return copy;
+      });
+  }
+
   const genomeInput = payload.genome || "";
   let genome = "";
   if (genomeInput.startsWith(">") || genomeInput.includes("\n")) {
@@ -348,7 +361,13 @@ self.addEventListener("message", (event) => {
   }
   try {
     const frames = computeFrames(payload);
-    frames.forEach((frame) => self.postMessage({ type: "frame", frame }));
+    frames.forEach((frame, idx) => {
+      if (!frame || typeof frame !== "object") return;
+      const kind = frame.kind || "helix.edit_dag.frame.v1";
+      if (kind !== "helix.edit_dag.frame.v1") return;
+      const step = typeof frame.step === "number" ? frame.step : idx;
+      self.postMessage({ type: "frame", frame: { ...frame, kind, step } });
+    });
     self.postMessage({ type: "done", frameCount: frames.length });
   } catch (error) {
     self.postMessage({ type: "error", error: error.message || String(error) });

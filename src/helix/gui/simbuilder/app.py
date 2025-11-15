@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict, dataclass, fields
+import os
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -39,9 +40,10 @@ from PySide6.QtWidgets import (
 
 from helix import bioinformatics
 from helix.crispr import guide as guide_module
-from helix.crispr.model import CasSystem, CasSystemType, DigitalGenome, PAMRule
+from helix.crispr.model import CasSystem, CasSystemType, DigitalGenome, PAMRule, GuideRNA
 from helix.crispr.pam import build_crispr_pam_mask, build_prime_pam_mask
 from helix.crispr.simulate import resolve_crispr_priors, simulate_cut_repair
+from helix.crispr.dag_api import build_crispr_edit_dag
 from helix.gui.modern.qt import HelixModernWidget
 from helix.gui.modern.builders import (
     build_crispr_viz_spec,
@@ -50,6 +52,7 @@ from helix.gui.modern.builders import (
     build_crispr_orbitals_3d_spec,
     build_prime_scaffold_3d_spec,
 )
+from helix.gui.modern.dag_adapters import crispr_dag_to_viz_spec
 from helix.gui.modern.builders_2p5d import build_workflow2p5d_crispr, build_workflow2p5d_prime
 from helix.gui.railbands.widget import RailBandWidget
 from helix.gui.modern.spec import EditVisualizationSpec
@@ -472,13 +475,67 @@ class CrisprTab(QWidget):
         pam_softness = shared.pam_softness
         priors_profile = shared.priors_profile or "default_indel"
         seed_label = "auto" if seed is None else str(seed)
+        raw_dag_flag = (os.environ.get("HELIX_DAG_MODE") or "").strip().lower()
+        use_dag_mode = raw_dag_flag in {"1", "true", "yes", "on"}
+        mode_label = "DAG" if use_dag_mode else "legacy"
         self.logMessage.emit(
-            "Running CRISPR simulation "
+            f"Running CRISPR simulation [{mode_label} mode] "
             f"(draws={draws}, seed={seed_label}, pam={pam_profile}, softness={pam_softness}, priors={priors_profile})…"
         )
 
         # Capture only primitives and immutable data into the closure.
         def task():
+            if use_dag_mode:
+                # DAG-first path: build a CRISPR edit DAG and adapt it to a viz spec.
+                norm_seq = bioinformatics.normalize_sequence(sequence)
+                genome = DigitalGenome(sequences={"chrGui": norm_seq})
+                pam_cfg = guide_module.get_pam(pam_profile) if pam_profile else {"pattern": "NGG"}
+                pattern = pam_cfg.get("pattern") or "NGG"
+                cas = CasSystem(
+                    name=f"GUI-{pam_profile}",
+                    system_type=CasSystemType.CAS9,
+                    pam_rules=[PAMRule(pattern=pattern)],
+                    cut_offset=3,
+                    max_mismatches=3,
+                    weight_mismatch_penalty=1.0,
+                    weight_pam_penalty=2.0,
+                )
+                guide_seq = guide.get("sequence") or norm_seq
+                guide_obj = GuideRNA(
+                    sequence=bioinformatics.normalize_sequence(str(guide_seq)),
+                    pam=pattern,
+                    name=str(guide.get("id") or guide.get("name") or "guide"),
+                    metadata={"strand": str(guide.get("strand", "+"))},
+                )
+                dag = build_crispr_edit_dag(
+                    genome,
+                    cas,
+                    guide_obj,
+                    rng_seed=seed or 0,
+                    max_depth=2,
+                    min_prob=1e-4,
+                    max_sites=50,
+                    use_gpu=False,
+                    frame_consumer=None,
+                )
+                # Reuse CLI payload shape for adapters and downstream tooling.
+                from helix.cli import _edit_dag_to_payload  # local import to avoid cycles
+
+                dag_payload = _edit_dag_to_payload(
+                    dag,
+                    artifact="helix.crispr.edit_dag.v1.1",
+                    metadata={
+                        "source": "gui.crispr_dag_mode",
+                        "guide": guide,
+                        "site_sequence": norm_seq,
+                    },
+                )
+                spec = crispr_dag_to_viz_spec(dag_payload)
+                if spec is None:
+                    raise ValueError("Failed to build CRISPR visualization spec from DAG.")
+                return dag_payload, spec
+
+            # Legacy sim-payload path (default).
             priors = resolve_crispr_priors(priors_profile)
             pam_mask = build_crispr_pam_mask(sequence, guide, pam_profile, pam_softness)
             payload = simulate_cut_repair(
@@ -502,7 +559,6 @@ class CrisprTab(QWidget):
                 raise ValueError("Failed to build CRISPR visualization spec.")
 
             meta = spec.metadata or {}
-            # Always stash a workflow payload so users can toggle modes post-run.
             workflow = build_workflow2p5d_crispr(sequence, guide, payload)
             meta["workflow_view"] = _workflow_to_serializable(workflow)
             spec.metadata = meta
@@ -652,22 +708,29 @@ class RunHistoryPanel(QWidget):
         self._preview_btn = QPushButton("Preview", self)
         self._save_sim_btn = QPushButton("Save .sim…", self)
         self._save_spec_btn = QPushButton("Save Viz Spec…", self)
+        self._save_dag_btn = QPushButton("Save DAG…", self)
+        self._save_dag_btn.setEnabled(False)
         btn_row.addWidget(self._preview_btn)
         btn_row.addWidget(self._save_sim_btn)
         btn_row.addWidget(self._save_spec_btn)
+        btn_row.addWidget(self._save_dag_btn)
         layout.addLayout(btn_row)
 
         self._preview_btn.clicked.connect(self._preview_selected)
         self._save_sim_btn.clicked.connect(self._save_sim)
         self._save_spec_btn.clicked.connect(self._save_spec)
+        self._save_dag_btn.clicked.connect(self._save_dag)
         self._list.itemDoubleClicked.connect(lambda _: self._preview_selected())
+        self._list.currentItemChanged.connect(lambda _current, _previous: self._update_save_buttons())
 
     def add_entry(self, kind: str, spec: EditVisualizationSpec, payload: dict) -> None:
         label = f"[{kind}] {spec.edit_type}"
         item = QListWidgetItem(label)
-        item.setData(Qt.UserRole, {"spec": spec, "payload": payload, "kind": kind})
+        is_dag = isinstance(payload, dict) and isinstance(payload.get("artifact"), str)
+        item.setData(Qt.UserRole, {"spec": spec, "payload": payload, "kind": kind, "is_dag": is_dag})
         self._list.addItem(item)
         self._list.setCurrentItem(item)
+        self._update_save_buttons()
 
     def _current_entry(self) -> Optional[dict]:
         item = self._list.currentItem()
@@ -682,6 +745,11 @@ class RunHistoryPanel(QWidget):
             return
         spec: EditVisualizationSpec = entry["spec"]
         self.previewRequested.emit(spec)
+
+    def _update_save_buttons(self) -> None:
+        entry = self._current_entry()
+        is_dag = bool(entry and entry.get("is_dag"))
+        self._save_dag_btn.setEnabled(is_dag)
 
     def _save_sim(self) -> None:
         entry = self._current_entry()
@@ -706,6 +774,25 @@ class RunHistoryPanel(QWidget):
             return
         Path(path_str).write_text(json.dumps(spec.to_payload(), indent=2) + "\n", encoding="utf-8")
         self.logMessage.emit(f"Saved viz spec to {path_str}.")
+
+    def _save_dag(self) -> None:
+        entry = self._current_entry()
+        if not entry:
+            self.logMessage.emit("Select a run before saving an edit DAG payload.")
+            return
+        payload = entry["payload"]
+        if not isinstance(payload, dict) or "artifact" not in payload:
+            self.logMessage.emit("Selected run does not contain an edit DAG payload.")
+            return
+        path_str, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Edit DAG",
+            filter="Edit DAG (*.edit_dag.json);;JSON (*.json)",
+        )
+        if not path_str:
+            return
+        Path(path_str).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        self.logMessage.emit(f"Saved edit DAG payload to {path_str}.")
 
 
 class PrimeTab(QWidget):

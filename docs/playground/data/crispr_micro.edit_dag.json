@@ -1,0 +1,4354 @@
+{
+  "artifact": "helix.crispr.edit_dag.v1.1",
+  "version": "1.1",
+  "schema_version": "1.1",
+  "meta": {
+    "source": "playground_fixture",
+    "schema_version": "1.1",
+    "rule_version": "1.0",
+    "created_at": "2025-11-15T22:00:49.866125+00:00"
+  },
+  "nodes": {
+    "n_9705ccaae45a0b9b": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 0,
+        "stage": "root"
+      },
+      "parent_ids": [],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_af2063cf02f911b3": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 5,
+        "site_end": 25,
+        "cut_position": 8,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 8,
+          "end": 8,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 5,
+            "site_end": 25,
+            "cut_position": 8,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_37dc54cc64407897": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 31,
+        "site_end": 51,
+        "cut_position": 34,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 34,
+          "end": 34,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 31,
+            "site_end": 51,
+            "cut_position": 34,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_29810fec8dbe42a6": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 88,
+        "site_end": 108,
+        "cut_position": 91,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 91,
+          "end": 91,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 88,
+            "site_end": 108,
+            "cut_position": 91,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_dc5ddba7157b769d": {
+      "log_prob": -0.10536051565782628,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 8,
+        "site_end": 28,
+        "cut_position": 11,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 11,
+          "end": 11,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 8,
+            "site_end": 28,
+            "cut_position": 11,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_0d43d46f2b1ebd8b": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 37,
+        "site_end": 57,
+        "cut_position": 40,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 40,
+          "end": 40,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 37,
+            "site_end": 57,
+            "cut_position": 40,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_9babff65a5ae5c12": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 63,
+        "site_end": 83,
+        "cut_position": 66,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 66,
+          "end": 66,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 63,
+            "site_end": 83,
+            "cut_position": 66,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_f4f3ea4857093199": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 93,
+        "site_end": 113,
+        "cut_position": 96,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 96,
+          "end": 96,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 93,
+            "site_end": 113,
+            "cut_position": 96,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_906922eaf9bdccd2": {
+      "log_prob": -0.10536051565782628,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 60,
+        "site_end": 80,
+        "cut_position": 63,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 63,
+          "end": 63,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 60,
+            "site_end": 80,
+            "cut_position": 63,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_475ce74ec1cc3e58": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 84,
+        "site_end": 104,
+        "cut_position": 87,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 87,
+          "end": 87,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 84,
+            "site_end": 104,
+            "cut_position": 87,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_accfa420b5f815a9": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 9,
+        "site_end": 29,
+        "cut_position": 12,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 12,
+          "end": 12,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 9,
+            "site_end": 29,
+            "cut_position": 12,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_add55f6df30d69b0": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 4,
+        "site_end": 24,
+        "cut_position": 7,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 7,
+          "end": 7,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 4,
+            "site_end": 24,
+            "cut_position": 7,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_2b770d53fadd6286": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 33,
+        "site_end": 53,
+        "cut_position": 36,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 36,
+          "end": 36,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 33,
+            "site_end": 53,
+            "cut_position": 36,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_e931f9385af24eed": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 41,
+        "site_end": 61,
+        "cut_position": 44,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 44,
+          "end": 44,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 41,
+            "site_end": 61,
+            "cut_position": 44,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_7e0b7706124b3bcb": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 1,
+        "site_end": 21,
+        "cut_position": 4,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 4,
+          "end": 4,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 1,
+            "site_end": 21,
+            "cut_position": 4,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_50dd07db5d8c5b8e": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 27,
+        "site_end": 47,
+        "cut_position": 30,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 30,
+          "end": 30,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 27,
+            "site_end": 47,
+            "cut_position": 30,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_79d82b0dd3b869f6": {
+      "log_prob": -0.3930425881096072,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 56,
+        "site_end": 76,
+        "cut_position": 59,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 59,
+          "end": 59,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 56,
+            "site_end": 76,
+            "cut_position": 59,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_dcb0344ba0cbe82a": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 64,
+        "site_end": 84,
+        "cut_position": 67,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 67,
+          "end": 67,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 64,
+            "site_end": 84,
+            "cut_position": 67,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_690d994d6b213e6b": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 35,
+        "site_end": 55,
+        "cut_position": 38,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 38,
+          "end": 38,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro1",
+            "site_start": 35,
+            "site_end": 55,
+            "cut_position": 38,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_2ea267e3b154bf81": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 59,
+        "site_end": 79,
+        "cut_position": 62,
+        "strand": 1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 62,
+          "end": 62,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 59,
+            "site_end": 79,
+            "cut_position": 62,
+            "strand": 1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_6fbcedda5fc66bab": {
+      "log_prob": -0.3930425881096072,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 89,
+        "site_end": 109,
+        "cut_position": 92,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 92,
+          "end": 92,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 89,
+            "site_end": 109,
+            "cut_position": 92,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_7af2ca608ab3361f": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 67,
+        "site_end": 87,
+        "cut_position": 70,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 70,
+          "end": 70,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 67,
+            "site_end": 87,
+            "cut_position": 70,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_e110fc4e77cf972f": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 1,
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 12,
+        "site_end": 32,
+        "cut_position": 15,
+        "strand": -1
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 15,
+          "end": 15,
+          "replacement": "",
+          "metadata": {
+            "label": "clean_cut",
+            "mechanism": "crispr",
+            "site_chrom": "chrMicro2",
+            "site_start": 12,
+            "site_end": 32,
+            "cut_position": 15,
+            "strand": -1,
+            "stage": "cut"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_310c461a6891dd1c": {
+      "log_prob": 2.6542804426494726,
+      "metadata": {
+        "time_step": 1,
+        "stage": "no_edit"
+      },
+      "parent_ids": [
+        "n_9705ccaae45a0b9b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "__none__",
+          "start": 0,
+          "end": 0,
+          "replacement": "",
+          "metadata": {
+            "label": "no_edit",
+            "mechanism": "crispr",
+            "stage": "no_edit"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_6c315b018c966a5f": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 5,
+        "site_end": 25,
+        "cut_position": 8,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_af2063cf02f911b3"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "a357b75f197eb30e471a61d1ab054d66ace7d43a227264b16f51921d15e208d6",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 5,
+          "end": 11,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAACATGCAGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_7d5f7c8208fd051a": {
+      "log_prob": -0.5,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 5,
+        "site_end": 25,
+        "cut_position": 8,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_af2063cf02f911b3"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "fbd49dabf501c154db2e29d5521ada55b70ad7c6e65dbae17ab2086a65c7f4b1",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 8,
+          "end": 9,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_27156ef033d780c2": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 31,
+        "site_end": 51,
+        "cut_position": 34,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_37dc54cc64407897"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "54a7dcd0cd2c52b4448155db7568758664941abcbe1e9ae1f6ac10afccae6b61",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 31,
+          "end": 37,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTCATGCAGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_3afda7968d506a43": {
+      "log_prob": -0.5,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 31,
+        "site_end": 51,
+        "cut_position": 34,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_37dc54cc64407897"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "c2700e1f8f9e0bf00025a8b4771e78b6bf113a8f1507e039efaf16810242f71a",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 34,
+          "end": 35,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_cdd9730de7e9f376": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 88,
+        "site_end": 108,
+        "cut_position": 91,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_29810fec8dbe42a6"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "4793cd2fa2ac6f29f02b22bf8e33f83dd7fe99ac24776b9df1483dd11b3aa7fc",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 88,
+          "end": 94,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATCATGCAGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_ff3e78da2dbaf7c6": {
+      "log_prob": -0.5,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 88,
+        "site_end": 108,
+        "cut_position": 91,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_29810fec8dbe42a6"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "fc30ad681cfc3d963810d9a6627b8998a4939be2bebc3e3b987c05f9e82845c6",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 91,
+          "end": 92,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_1190b42a976105e8": {
+      "log_prob": -0.10536051565782628,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 8,
+        "site_end": 28,
+        "cut_position": 11,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_dc5ddba7157b769d"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "84751ba52aee0676a3f609b026f68dd4402d7ec0fb6f7e8680fb7d658161e0d8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 8,
+          "end": 14,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTCATGCAGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_28bd3883e3cc45b2": {
+      "log_prob": -0.6053605156578263,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 8,
+        "site_end": 28,
+        "cut_position": 11,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_dc5ddba7157b769d"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "c332948b84279d2969e82501b599ed1ae0be62be507f946494112a2db95bcb84"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 11,
+          "end": 12,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_95612977f1a3b7fd": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 37,
+        "site_end": 57,
+        "cut_position": 40,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_0d43d46f2b1ebd8b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "83c99111b6c60dc4f152aa3dd10bf65f0308376f80c36bac9d862937e944f089"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 37,
+          "end": 43,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCCATGCAGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_1ddef49c3fd15de1": {
+      "log_prob": -0.5,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 37,
+        "site_end": 57,
+        "cut_position": 40,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_0d43d46f2b1ebd8b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "898653ee2ca7fcc0cf1fb2ec0707a0c6a93ce1d1729fbb519065b67a2dd4cc55"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 40,
+          "end": 41,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_7159631df41f15c3": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 63,
+        "site_end": 83,
+        "cut_position": 66,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_9babff65a5ae5c12"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "45a6597972bec210112d8bf574e60dac20ae309b20705fb8f3574bd8d8bf1433"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 63,
+          "end": 69,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTCATGCAGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_b5fec12d49b1ae30": {
+      "log_prob": -0.5,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 63,
+        "site_end": 83,
+        "cut_position": 66,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_9babff65a5ae5c12"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "fb9de6cb507244fe37b7f6964cf4fa7c110bcef2640cf2923d6ecf8166c36d2b"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 66,
+          "end": 67,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_f782e915bd35ad1a": {
+      "log_prob": 0.0,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 93,
+        "site_end": 113,
+        "cut_position": 96,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_f4f3ea4857093199"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "9024948733933489760754aecceae27ee5280f5f1a8f24f38053b201ae66c20d"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 93,
+          "end": 99,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGCATGCAGTACGTACGTACGTTGG"
+      }
+    },
+    "n_71fb5d41bad133e7": {
+      "log_prob": -0.5,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 93,
+        "site_end": 113,
+        "cut_position": 96,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_f4f3ea4857093199"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "7455161f95804da87c506752506e4f9341f0a44935ba2c4f654d028fbf8a688e"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 96,
+          "end": 97,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_90e06350a6df0c85": {
+      "log_prob": -0.10536051565782628,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 60,
+        "site_end": 80,
+        "cut_position": 63,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_906922eaf9bdccd2"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "2960d217bda8551333faa36a2276627d1827571bb1c189b90850475841aa3c4f",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 60,
+          "end": 66,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTCATGCAGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_27f6667cef2fdaac": {
+      "log_prob": -0.6053605156578263,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 60,
+        "site_end": 80,
+        "cut_position": 63,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_906922eaf9bdccd2"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "058572305006b5e6aa02940a130e515ba4310d5043ba084715acff8df84e6478",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 63,
+          "end": 64,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_66f3ad17c47c236f": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 84,
+        "site_end": 104,
+        "cut_position": 87,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_475ce74ec1cc3e58"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "84727f9afca5dfa38ca4b6b8ff14eea50ebd8a66f767b69fc4287323b56e1b9c",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 84,
+          "end": 90,
+          "replacement": "CATATA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATCATATAGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_f4f380c76ec9e874": {
+      "log_prob": -0.7231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 84,
+        "site_end": 104,
+        "cut_position": 87,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_475ce74ec1cc3e58"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "54314f35afed1ea422a5176a525732f7b97d02a3eb5d98ec67ece79ee9a8c617",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 87,
+          "end": 88,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATAACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_3154add0d7890a1d": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 9,
+        "site_end": 29,
+        "cut_position": 12,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_accfa420b5f815a9"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "e1510cc4b31822cbbfd34bf18527ef551887152286a16c2ae9b91cf2525cea03",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 9,
+          "end": 15,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTCATGCAGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_da096e2a2cb54eee": {
+      "log_prob": -0.7231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 9,
+        "site_end": 29,
+        "cut_position": 12,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_accfa420b5f815a9"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "88cff943eeb267a43c1172495c026699ac630c73f9b1ee585e02385048974f27",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 12,
+          "end": 13,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_d43a3835dd17a202": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 4,
+        "site_end": 24,
+        "cut_position": 7,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_add55f6df30d69b0"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "ba6252b75bfe0fabc0d8e6772c452948206c635fdfbdd3a11593f30e53d39f1b"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 4,
+          "end": 10,
+          "replacement": "CATTCC",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCATTCCGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_566e37ade32da7b2": {
+      "log_prob": -0.7231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 4,
+        "site_end": 24,
+        "cut_position": 7,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_add55f6df30d69b0"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "351bcec9edb61f2eacbcfb2f423abe05a20535f92f176ef531cfbe9d4e0324ff"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 7,
+          "end": 8,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_6cd93cdae531bb9d": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 33,
+        "site_end": 53,
+        "cut_position": 36,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_2b770d53fadd6286"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "43ccd8e0e0d90caf2457c0f2c263169c3f0e92849ce3a1e863f5aa3ca5406608"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 33,
+          "end": 39,
+          "replacement": "CACCCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAACACCCAGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_0f28694de29eaafd": {
+      "log_prob": -0.7231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 33,
+        "site_end": 53,
+        "cut_position": 36,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_2b770d53fadd6286"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "d894cb6bc2920212780eebd380e5d1d3490a6dc1bdd20f648052df507126da2a"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 36,
+          "end": 37,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_3aae44ef3c0bea9f": {
+      "log_prob": -0.2231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 41,
+        "site_end": 61,
+        "cut_position": 44,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_e931f9385af24eed"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "0611b341cf59b2da4b53bed747a4975d0cee1727a9a340b8a7d7f4d397ca3cd3"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 41,
+          "end": 47,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTCATGCAGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_e093b92fd8aea240": {
+      "log_prob": -0.7231435513142097,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 41,
+        "site_end": 61,
+        "cut_position": 44,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_e931f9385af24eed"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "fcf6dbe8d9717cd41913658f1684ced6a704c5020e4aeebb04f6021ef85068ca"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 44,
+          "end": 45,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_b9195ca1d4465853": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 1,
+        "site_end": 21,
+        "cut_position": 4,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_7e0b7706124b3bcb"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "b6fec2eaaff0527beb1f9ec6331e89cf84472913329dcb9439e2381df3836765",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 1,
+          "end": 7,
+          "replacement": "CAAATA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TCAAATAGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_180b2569762e6317": {
+      "log_prob": -0.7876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 1,
+        "site_end": 21,
+        "cut_position": 4,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_7e0b7706124b3bcb"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "8f2559f72802b49230610ce5980cd350c86dd6a017ad16641ab406f3c91d3fd1",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 4,
+          "end": 5,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_021df8eb1b395499": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 27,
+        "site_end": 47,
+        "cut_position": 30,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_50dd07db5d8c5b8e"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "4e9656ac9e3f7ec83d82de39c328f7bb8947bcc2712e438401ef5650f1e3c1d8",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 27,
+          "end": 33,
+          "replacement": "CATTTG",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGCATTTGGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_1844a74a7d5caef3": {
+      "log_prob": -0.7876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 27,
+        "site_end": 47,
+        "cut_position": 30,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_50dd07db5d8c5b8e"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "7849ba815e1b26a1f5fec73ec4eac6cbffa21235d6e42ed818da698ab8d15d2d",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 30,
+          "end": 31,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_15f85bf5f0ba5411": {
+      "log_prob": -0.3930425881096072,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 56,
+        "site_end": 76,
+        "cut_position": 59,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_79d82b0dd3b869f6"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "d47cec91df20c386729d1f3fe1eee0dd3a90c0eec3494664867617e6f9b94b36",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 56,
+          "end": 62,
+          "replacement": "CATTTC",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCATTTCGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_cab0119e0153dac9": {
+      "log_prob": -0.8930425881096071,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 56,
+        "site_end": 76,
+        "cut_position": 59,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_79d82b0dd3b869f6"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "a93d2a732199135ba2ad12577fe411ce9694aaa65e6a95e09bbed4f5e26b4aed",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 59,
+          "end": 60,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_2a477e1df1ab540d": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 64,
+        "site_end": 84,
+        "cut_position": 67,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_dcb0344ba0cbe82a"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "2b6ee0d8829ef2bf5a9237351463d26cf611c145e38ca69ebe73b82db6f0bc18",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 64,
+          "end": 70,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTCATGCAGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_d82faac2d438475d": {
+      "log_prob": -0.7876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 64,
+        "site_end": 84,
+        "cut_position": 67,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_dcb0344ba0cbe82a"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "a0826fee8babca70c84e50aea95683885fdc6b9897c30f740f8c53b1b1267219",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 67,
+          "end": 68,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_0bbcec11cf7cd4d7": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 35,
+        "site_end": 55,
+        "cut_position": 38,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_690d994d6b213e6b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "68940cac7925f1d8b51e63dcab2317f573fbfc07dba57fce93f4e8351d4423fa",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 35,
+          "end": 41,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTCATGCAGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_7b87b0a0c8e1b40e": {
+      "log_prob": -0.7876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro1",
+        "site_start": 35,
+        "site_end": 55,
+        "cut_position": 38,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_690d994d6b213e6b"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "be48fc40f3e7c7834b803c34cd49d47670ff04d216ea42a6b5a199c63e3c74a5",
+        "chrMicro2": "b3bafa3b263c1f1626893c2aa294bb429a776720ecca14f76fb3f433d8fc09f8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro1",
+          "start": 38,
+          "end": 39,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_ca057310658846ac": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 59,
+        "site_end": 79,
+        "cut_position": 62,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_2ea267e3b154bf81"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "f0b7e15e05509b201fb2be84505341a108ef26fd9e2b82c5c40f8a611c642366"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 59,
+          "end": 65,
+          "replacement": "CATTTG",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGCATTTGGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_a97b4190364136dd": {
+      "log_prob": -0.7876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 59,
+        "site_end": 79,
+        "cut_position": 62,
+        "strand": 1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_2ea267e3b154bf81"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "0b8430c90fab94071a0ac42a26bf8f48e1cbd8037ee7ad3840e990216215bf18"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 62,
+          "end": 63,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_c6fcc1aee58a90e9": {
+      "log_prob": -0.3930425881096072,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 89,
+        "site_end": 109,
+        "cut_position": 92,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_6fbcedda5fc66bab"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "c1991d4283117fe7e670a1128bb766501bd58d7ac38f6eae4e599073e447fbe3"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 89,
+          "end": 95,
+          "replacement": "CAGGGC",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCAGGGCGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_1b8fbdcb5b621dae": {
+      "log_prob": -0.8930425881096071,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 89,
+        "site_end": 109,
+        "cut_position": 92,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_6fbcedda5fc66bab"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "db159ba6684465bdce6b096fd69c34693e568e9897214f96f6812aa6ed69a7d8"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 92,
+          "end": 93,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_67c570ab72e1fe30": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 67,
+        "site_end": 87,
+        "cut_position": 70,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_7af2ca608ab3361f"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "e08b9d3f8dc31a00cb1ce52e9727b4713f2e0d6a72cc131aaee60efb610ed18f"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 67,
+          "end": 73,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTCATGCAGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_fd0a9023406d469a": {
+      "log_prob": -0.7876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 67,
+        "site_end": 87,
+        "cut_position": 70,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_7af2ca608ab3361f"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "290e4ce41acb0d542579254e4143d87e384a7bb8785de47d57bd60827d082d23"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 70,
+          "end": 71,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGTACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_e1947cee4ae9b79b": {
+      "log_prob": -0.2876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 12,
+        "site_end": 32,
+        "cut_position": 15,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_e110fc4e77cf972f"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "a131799dc7f9ec7c6fa95da2162acbd86cb12b3e4763819e2d391118874de7ff"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 12,
+          "end": 18,
+          "replacement": "CATGCA",
+          "metadata": {
+            "label": "intended_edit",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTCATGCAGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    },
+    "n_d10a0bd2d8b3aec3": {
+      "log_prob": -0.7876820724517809,
+      "metadata": {
+        "time_step": 2,
+        "stage": "repaired",
+        "site_chrom": "chrMicro2",
+        "site_start": 12,
+        "site_end": 32,
+        "cut_position": 15,
+        "strand": -1,
+        "desired": true
+      },
+      "parent_ids": [
+        "n_e110fc4e77cf972f"
+      ],
+      "seq_hashes": {
+        "chrMicro1": "05edbe25e18196d21decec38c20948672f2c26cbc698638e050b9c07fc491aae",
+        "chrMicro2": "4f7c6750e2b8d97d6220ad78316a92069aa601c315329799d2f85521d9fc4ea4"
+      },
+      "diffs": [
+        {
+          "chrom": "chrMicro2",
+          "start": 15,
+          "end": 16,
+          "replacement": "",
+          "metadata": {
+            "label": "indel",
+            "mechanism": "crispr",
+            "stage": "repaired"
+          }
+        }
+      ],
+      "sequences": {
+        "chrMicro1": "TATAAACGTACGTACGTACGTACGTGGGTTTACGTACGTACGTACGTACGTGGGCCCTTTACGTACGTACGTACGTACGTGGATATATACGTACGTACGTACGTACGTTGG",
+        "chrMicro2": "GGGCCCTTACGTACGACGTACGTACGTGGGAAACCCACGTACGTACGTACGTACGTTGGTTTACGTACGTACGTACGTACGTGGGACCCGGGACGTACGTACGTACGTACGTTGG"
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_af2063cf02f911b3",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 8,
+        "end": 8,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 5,
+          "site_end": 25,
+          "cut_position": 8,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 5,
+        "site_end": 25,
+        "cut_position": 8,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_37dc54cc64407897",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 34,
+        "end": 34,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 31,
+          "site_end": 51,
+          "cut_position": 34,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 31,
+        "site_end": 51,
+        "cut_position": 34,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_29810fec8dbe42a6",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 91,
+        "end": 91,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 88,
+          "site_end": 108,
+          "cut_position": 91,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 88,
+        "site_end": 108,
+        "cut_position": 91,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_dc5ddba7157b769d",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 11,
+        "end": 11,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 8,
+          "site_end": 28,
+          "cut_position": 11,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 8,
+        "site_end": 28,
+        "cut_position": 11,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_0d43d46f2b1ebd8b",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 40,
+        "end": 40,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 37,
+          "site_end": 57,
+          "cut_position": 40,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 37,
+        "site_end": 57,
+        "cut_position": 40,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_9babff65a5ae5c12",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 66,
+        "end": 66,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 63,
+          "site_end": 83,
+          "cut_position": 66,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 63,
+        "site_end": 83,
+        "cut_position": 66,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_f4f3ea4857093199",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 96,
+        "end": 96,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 93,
+          "site_end": 113,
+          "cut_position": 96,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 93,
+        "site_end": 113,
+        "cut_position": 96,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_0d43d46f2b1ebd8b",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 40,
+        "end": 40,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 37,
+          "site_end": 57,
+          "cut_position": 40,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 37,
+        "site_end": 57,
+        "cut_position": 40,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_906922eaf9bdccd2",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 63,
+        "end": 63,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 60,
+          "site_end": 80,
+          "cut_position": 63,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 60,
+        "site_end": 80,
+        "cut_position": 63,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_dc5ddba7157b769d",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 11,
+        "end": 11,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 8,
+          "site_end": 28,
+          "cut_position": 11,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 8,
+        "site_end": 28,
+        "cut_position": 11,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_475ce74ec1cc3e58",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 87,
+        "end": 87,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 84,
+          "site_end": 104,
+          "cut_position": 87,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 84,
+        "site_end": 104,
+        "cut_position": 87,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_accfa420b5f815a9",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 12,
+        "end": 12,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 9,
+          "site_end": 29,
+          "cut_position": 12,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 9,
+        "site_end": 29,
+        "cut_position": 12,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_add55f6df30d69b0",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 7,
+        "end": 7,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 4,
+          "site_end": 24,
+          "cut_position": 7,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 4,
+        "site_end": 24,
+        "cut_position": 7,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_2b770d53fadd6286",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 36,
+        "end": 36,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 33,
+          "site_end": 53,
+          "cut_position": 36,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 33,
+        "site_end": 53,
+        "cut_position": 36,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_e931f9385af24eed",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 44,
+        "end": 44,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 41,
+          "site_end": 61,
+          "cut_position": 44,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 41,
+        "site_end": 61,
+        "cut_position": 44,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_7e0b7706124b3bcb",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 4,
+        "end": 4,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 1,
+          "site_end": 21,
+          "cut_position": 4,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 1,
+        "site_end": 21,
+        "cut_position": 4,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_50dd07db5d8c5b8e",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 30,
+        "end": 30,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 27,
+          "site_end": 47,
+          "cut_position": 30,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 27,
+        "site_end": 47,
+        "cut_position": 30,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_79d82b0dd3b869f6",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 59,
+        "end": 59,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 56,
+          "site_end": 76,
+          "cut_position": 59,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 56,
+        "site_end": 76,
+        "cut_position": 59,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_dcb0344ba0cbe82a",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 67,
+        "end": 67,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 64,
+          "site_end": 84,
+          "cut_position": 67,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 64,
+        "site_end": 84,
+        "cut_position": 67,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_690d994d6b213e6b",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 38,
+        "end": 38,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 35,
+          "site_end": 55,
+          "cut_position": 38,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 35,
+        "site_end": 55,
+        "cut_position": 38,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_2ea267e3b154bf81",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 62,
+        "end": 62,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 59,
+          "site_end": 79,
+          "cut_position": 62,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 59,
+        "site_end": 79,
+        "cut_position": 62,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_6fbcedda5fc66bab",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 92,
+        "end": 92,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 89,
+          "site_end": 109,
+          "cut_position": 92,
+          "strand": 1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 89,
+        "site_end": 109,
+        "cut_position": 92,
+        "strand": 1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_7af2ca608ab3361f",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 70,
+        "end": 70,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 67,
+          "site_end": 87,
+          "cut_position": 70,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 67,
+        "site_end": 87,
+        "cut_position": 70,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_e110fc4e77cf972f",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 15,
+        "end": 15,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 12,
+          "site_end": 32,
+          "cut_position": 15,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 12,
+        "site_end": 32,
+        "cut_position": 15,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_79d82b0dd3b869f6",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 59,
+        "end": 59,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro1",
+          "site_start": 56,
+          "site_end": 76,
+          "cut_position": 59,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro1",
+        "site_start": 56,
+        "site_end": 76,
+        "cut_position": 59,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_6fbcedda5fc66bab",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 92,
+        "end": 92,
+        "replacement": "",
+        "metadata": {
+          "label": "clean_cut",
+          "mechanism": "crispr",
+          "site_chrom": "chrMicro2",
+          "site_start": 89,
+          "site_end": 109,
+          "cut_position": 92,
+          "strand": -1,
+          "stage": "cut"
+        }
+      },
+      "metadata": {
+        "stage": "cut",
+        "site_chrom": "chrMicro2",
+        "site_start": 89,
+        "site_end": 109,
+        "cut_position": 92,
+        "strand": -1
+      }
+    },
+    {
+      "source": "n_9705ccaae45a0b9b",
+      "target": "n_310c461a6891dd1c",
+      "rule": "crispr.clean_cut",
+      "event": {
+        "chrom": "__none__",
+        "start": 0,
+        "end": 0,
+        "replacement": "",
+        "metadata": {
+          "label": "no_edit",
+          "mechanism": "crispr",
+          "stage": "no_edit"
+        }
+      },
+      "metadata": {
+        "stage": "no_edit"
+      }
+    },
+    {
+      "source": "n_af2063cf02f911b3",
+      "target": "n_6c315b018c966a5f",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 5,
+        "end": 11,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_af2063cf02f911b3",
+      "target": "n_7d5f7c8208fd051a",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 8,
+        "end": 9,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_37dc54cc64407897",
+      "target": "n_27156ef033d780c2",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 31,
+        "end": 37,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_37dc54cc64407897",
+      "target": "n_3afda7968d506a43",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 34,
+        "end": 35,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_29810fec8dbe42a6",
+      "target": "n_cdd9730de7e9f376",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 88,
+        "end": 94,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_29810fec8dbe42a6",
+      "target": "n_ff3e78da2dbaf7c6",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 91,
+        "end": 92,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_dc5ddba7157b769d",
+      "target": "n_1190b42a976105e8",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 8,
+        "end": 14,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_dc5ddba7157b769d",
+      "target": "n_28bd3883e3cc45b2",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 11,
+        "end": 12,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_0d43d46f2b1ebd8b",
+      "target": "n_95612977f1a3b7fd",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 37,
+        "end": 43,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_0d43d46f2b1ebd8b",
+      "target": "n_1ddef49c3fd15de1",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 40,
+        "end": 41,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_9babff65a5ae5c12",
+      "target": "n_7159631df41f15c3",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 63,
+        "end": 69,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_9babff65a5ae5c12",
+      "target": "n_b5fec12d49b1ae30",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 66,
+        "end": 67,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_f4f3ea4857093199",
+      "target": "n_f782e915bd35ad1a",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 93,
+        "end": 99,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_f4f3ea4857093199",
+      "target": "n_71fb5d41bad133e7",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 96,
+        "end": 97,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_0d43d46f2b1ebd8b",
+      "target": "n_95612977f1a3b7fd",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 37,
+        "end": 43,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_0d43d46f2b1ebd8b",
+      "target": "n_1ddef49c3fd15de1",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 40,
+        "end": 41,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_906922eaf9bdccd2",
+      "target": "n_90e06350a6df0c85",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 60,
+        "end": 66,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_906922eaf9bdccd2",
+      "target": "n_27f6667cef2fdaac",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 63,
+        "end": 64,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_dc5ddba7157b769d",
+      "target": "n_1190b42a976105e8",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 8,
+        "end": 14,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_dc5ddba7157b769d",
+      "target": "n_28bd3883e3cc45b2",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 11,
+        "end": 12,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_475ce74ec1cc3e58",
+      "target": "n_66f3ad17c47c236f",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 84,
+        "end": 90,
+        "replacement": "CATATA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_475ce74ec1cc3e58",
+      "target": "n_f4f380c76ec9e874",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 87,
+        "end": 88,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_accfa420b5f815a9",
+      "target": "n_3154add0d7890a1d",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 9,
+        "end": 15,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_accfa420b5f815a9",
+      "target": "n_da096e2a2cb54eee",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 12,
+        "end": 13,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_add55f6df30d69b0",
+      "target": "n_d43a3835dd17a202",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 4,
+        "end": 10,
+        "replacement": "CATTCC",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_add55f6df30d69b0",
+      "target": "n_566e37ade32da7b2",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 7,
+        "end": 8,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_2b770d53fadd6286",
+      "target": "n_6cd93cdae531bb9d",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 33,
+        "end": 39,
+        "replacement": "CACCCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_2b770d53fadd6286",
+      "target": "n_0f28694de29eaafd",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 36,
+        "end": 37,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_e931f9385af24eed",
+      "target": "n_3aae44ef3c0bea9f",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 41,
+        "end": 47,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_e931f9385af24eed",
+      "target": "n_e093b92fd8aea240",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 44,
+        "end": 45,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_7e0b7706124b3bcb",
+      "target": "n_b9195ca1d4465853",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 1,
+        "end": 7,
+        "replacement": "CAAATA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_7e0b7706124b3bcb",
+      "target": "n_180b2569762e6317",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 4,
+        "end": 5,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_50dd07db5d8c5b8e",
+      "target": "n_021df8eb1b395499",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 27,
+        "end": 33,
+        "replacement": "CATTTG",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_50dd07db5d8c5b8e",
+      "target": "n_1844a74a7d5caef3",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 30,
+        "end": 31,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_79d82b0dd3b869f6",
+      "target": "n_15f85bf5f0ba5411",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 56,
+        "end": 62,
+        "replacement": "CATTTC",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_79d82b0dd3b869f6",
+      "target": "n_cab0119e0153dac9",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 59,
+        "end": 60,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_dcb0344ba0cbe82a",
+      "target": "n_2a477e1df1ab540d",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 64,
+        "end": 70,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_dcb0344ba0cbe82a",
+      "target": "n_d82faac2d438475d",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 67,
+        "end": 68,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_690d994d6b213e6b",
+      "target": "n_0bbcec11cf7cd4d7",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 35,
+        "end": 41,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_690d994d6b213e6b",
+      "target": "n_7b87b0a0c8e1b40e",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 38,
+        "end": 39,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_2ea267e3b154bf81",
+      "target": "n_ca057310658846ac",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 59,
+        "end": 65,
+        "replacement": "CATTTG",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_2ea267e3b154bf81",
+      "target": "n_a97b4190364136dd",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 62,
+        "end": 63,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_6fbcedda5fc66bab",
+      "target": "n_c6fcc1aee58a90e9",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 89,
+        "end": 95,
+        "replacement": "CAGGGC",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_6fbcedda5fc66bab",
+      "target": "n_1b8fbdcb5b621dae",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 92,
+        "end": 93,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_7af2ca608ab3361f",
+      "target": "n_67c570ab72e1fe30",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 67,
+        "end": 73,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_7af2ca608ab3361f",
+      "target": "n_fd0a9023406d469a",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 70,
+        "end": 71,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_e110fc4e77cf972f",
+      "target": "n_e1947cee4ae9b79b",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 12,
+        "end": 18,
+        "replacement": "CATGCA",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_e110fc4e77cf972f",
+      "target": "n_d10a0bd2d8b3aec3",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 15,
+        "end": 16,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_79d82b0dd3b869f6",
+      "target": "n_15f85bf5f0ba5411",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 56,
+        "end": 62,
+        "replacement": "CATTTC",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_79d82b0dd3b869f6",
+      "target": "n_cab0119e0153dac9",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro1",
+        "start": 59,
+        "end": 60,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_6fbcedda5fc66bab",
+      "target": "n_c6fcc1aee58a90e9",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 89,
+        "end": 95,
+        "replacement": "CAGGGC",
+        "metadata": {
+          "label": "intended_edit",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    },
+    {
+      "source": "n_6fbcedda5fc66bab",
+      "target": "n_1b8fbdcb5b621dae",
+      "rule": "crispr.indel_branch",
+      "event": {
+        "chrom": "chrMicro2",
+        "start": 92,
+        "end": 93,
+        "replacement": "",
+        "metadata": {
+          "label": "indel",
+          "mechanism": "crispr",
+          "stage": "repaired"
+        }
+      },
+      "metadata": {
+        "stage": "repaired"
+      }
+    }
+  ],
+  "root_id": "n_9705ccaae45a0b9b"
+}

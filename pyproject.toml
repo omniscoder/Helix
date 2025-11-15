@@ -17,8 +17,14 @@ classifiers = [
   "Intended Audience :: Science/Research",
 ]
 dependencies = [
+    "biopython>=1.86",
+    "moderngl>=5.12.0",
     "numpy>=1.24",
+    "pandas>=2.3.3",
+    "pyqt6>=6.10.0",
+    "pysam>=0.23.3",
     "pyyaml>=6.0",
+    "scipy>=1.15.3",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +69,7 @@ helix = "helix.cli:main"
 [tool.setuptools]
 package-dir = {"" = "src"}
 include-package-data = true
+py-modules = ["helix_api", "helix_workflows"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
