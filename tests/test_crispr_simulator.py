@@ -12,6 +12,7 @@ from helix.crispr.model import (
 from helix.crispr.simulator import find_candidate_sites, rank_off_targets, simulate_cuts
 from helix.prime.model import PegRNA, PrimeEditor
 from helix.prime.simulator import locate_prime_target_site, simulate_prime_edit
+from helix.crispr.pam import build_prime_pam_mask
 from helix.crispr.dag_api import build_crispr_edit_dag
 from helix.prime.dag_api import build_prime_edit_dag
 
@@ -121,21 +122,14 @@ def test_seed_weight_penalizes_pam_proximal_mismatch():
 def test_prime_locate_and_simulate_outcomes():
     genome, guide_seq = _demo_genome()
     peg = PegRNA(spacer=guide_seq[:15], pbs="GAAAC", rtt="TTTTAA")
-    editor = PrimeEditor(
-        name="pe-demo",
-        cas=_demo_cas(),
-        nick_to_edit_offset=1,
-        efficiency_scale=0.8,
-        indel_bias=0.2,
-    )
     site = locate_prime_target_site(genome, peg)
     assert site is not None
-    outcomes = simulate_prime_edit(genome, editor, peg, max_outcomes=5)
-    assert outcomes
-    assert len(outcomes) >= 3
-    assert all(outcome.logit_score >= 0 for outcome in outcomes)
-    stages = {outcome.stage for outcome in outcomes}
-    assert {"flap", "reanneal", "error", "root"} & stages
+    site_seq = genome.sequences[site.chrom]
+    pam_mask = build_prime_pam_mask(site_seq, peg, "SpCas9_NGG", 1.0)
+    payload = simulate_prime_edit(site_seq, peg, draws=200, seed=123, pam_mask=pam_mask, emit_sequence=True)
+    assert payload["schema"]["kind"] == "prime.edit_sim"
+    assert payload["outcomes"]
+    assert payload["draws"] == 200
 
 
 def test_cli_crispr_genome_sim(tmp_path: Path):
@@ -197,6 +191,7 @@ def test_cli_prime_simulate(tmp_path: Path):
     )
 
     out_path = tmp_path / "prime.json"
+    viz_spec = tmp_path / "prime_spec.json"
     run_cli(
         "prime",
         "simulate",
@@ -206,14 +201,19 @@ def test_cli_prime_simulate(tmp_path: Path):
         str(peg_config),
         "--editor-config",
         str(editor_config),
-        "--max-outcomes",
-        "2",
+        "--draws",
+        "200",
         "--json",
         str(out_path),
+        "--viz-spec",
+        str(viz_spec),
     )
     payload = json.loads(out_path.read_text())
     assert payload["schema"]["kind"] == "prime.edit_sim"
     assert payload["outcomes"]
+    assert payload["draws"] == 200
+    spec_payload = json.loads(viz_spec.read_text())
+    assert spec_payload["edit_events"]
 
 
 def test_cli_crispr_dag(tmp_path: Path):

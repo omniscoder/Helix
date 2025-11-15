@@ -10,6 +10,7 @@ from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 from .bridge import SimulationBridge
+from .theme import apply_helix_theme
 
 
 def run_gui() -> None:
@@ -19,6 +20,7 @@ def run_gui() -> None:
     if app is None:
         app = QApplication(sys.argv)
         owns_app = True
+    apply_helix_theme(app)
 
     window = QMainWindow()
     window.setWindowTitle("Helix – Genome Editing Digital Twin")

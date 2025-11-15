@@ -1,0 +1,55 @@
+schema_version: 1
+model: LiveDemo
+description: "Synthetic RD field + simple agents; good for renderer and delta-pipeline testing."
+
+units:
+  time: s
+  length: um
+  conc: a.u.
+
+nodes:
+  egf_field:
+    kind: Field
+    impl: demo
+    params:
+      nx: 128
+      ny: 128
+      diffusion: 50.0
+      decay: 0.01
+      init: gradient_diag
+
+  cells:
+    kind: ABM
+    impl: demo
+    params:
+      n_agents: 400
+      domain: [0.0, 1000.0, 0.0, 1000.0]
+      behavior: random_walk
+      sample_field: egf_field
+
+  observer:
+    kind: Observer
+    params:
+      metrics:
+        - egf_mean
+        - egf_max
+        - cell_count
+
+edges:
+  - from: egf_field
+    to: cells
+    via: sample
+  - from: cells
+    to: egf_field
+    via: secrete_consume
+  - from: egf_field
+    to: observer
+    via: tile_stats
+  - from: cells
+    to: observer
+    via: counts
+
+scheduler:
+  sync_dt: 0.5
+  islands:
+    - [egf_field, cells, observer]

@@ -18,6 +18,7 @@ class LiveFrame:
     runtime: Dict[str, Any]
     node_meta: Dict[str, Dict[str, Any]]
     schema: str
+    payload: Dict[str, Any]
 
 
 class _SnapshotState:
@@ -33,12 +34,14 @@ class _SnapshotState:
         else:
             self.snapshot = _apply_delta(self.snapshot, payload.get("delta") or {})
         runtime = payload.get("runtime") or {}
+        schema = payload.get("schema") or payload.get("kind") or ""
         return LiveFrame(
             time=payload.get("time"),
             snapshot=self.snapshot,
             runtime=dict(runtime),
             node_meta=self.node_meta,
-            schema=payload.get("schema", ""),
+            schema=schema,
+            payload=dict(payload),
         )
 
 
@@ -98,20 +101,22 @@ class BundleFeed(BaseFeed):
         self._state = _SnapshotState()
         self._next_idx = 0
         self._next_deadline = time.time()
+        self._paused = False
+        self._step_pending = False
 
     def poll(self) -> Optional[LiveFrame]:
         if not self._frames:
             return None
-        now = time.time()
-        if now < self._next_deadline:
+        if self._paused and not self._step_pending:
             return None
-        self._next_deadline = now + self._interval
+        now = time.time()
+        if not self._paused and now < self._next_deadline:
+            return None
         payload = self._frames[self._next_idx]
-        self._next_idx += 1
-        if self._loop and self._next_idx >= len(self._frames):
-            self._next_idx = 0
-        elif self._next_idx >= len(self._frames):
-            self._next_idx = len(self._frames) - 1
+        self._advance_index()
+        if self._paused and self._step_pending:
+            self._step_pending = False
+        self._next_deadline = now + self._interval
         return self._state.apply(payload)
 
     def send_command(self, command: Mapping[str, Any]) -> None:
@@ -120,3 +125,31 @@ class BundleFeed(BaseFeed):
 
     def close(self) -> None:
         return None
+
+    def pause(self) -> None:
+        self._paused = True
+
+    def resume(self) -> None:
+        self._paused = False
+        self._next_deadline = time.time()
+
+    def toggle(self) -> None:
+        if self._paused:
+            self.resume()
+        else:
+            self.pause()
+
+    def step_once(self) -> None:
+        self._paused = True
+        self._step_pending = True
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
+    def _advance_index(self) -> None:
+        self._next_idx += 1
+        if self._loop and self._next_idx >= len(self._frames):
+            self._next_idx = 0
+        elif self._next_idx >= len(self._frames):
+            self._next_idx = len(self._frames) - 1

@@ -1,8 +1,10 @@
-"""PAM definitions and simple validators."""
+"""PAM definitions, validators, and helpers."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, Mapping, Sequence
+from typing import Dict, Iterable, List, Mapping, Sequence
+
+from helix import bioinformatics
 
 _IUPAC: Mapping[str, Sequence[str]] = {
     "A": ("A",),
@@ -112,3 +114,77 @@ def reverse_complement_pattern(pattern: str) -> str:
     for char in reversed(pattern.upper()):
         letters.append(_IUPAC_COMPLEMENT.get(char, "N"))
     return "".join(letters)
+
+
+PAM_MOTIFS: Dict[str, str] = {
+    "SpCas9_NGG": "NGG",
+    "SpG_NGN": "NGN",
+    "SpRY_NNN": "NNN",
+    "SaCas9_NNGRRT": "NNGRRT",
+    "Cas12a_TTTN": "TTTN",
+}
+
+
+def _match_motif(seq: str, motif: str) -> bool:
+    """Return True when `seq` satisfies the provided motif (supports N wildcards)."""
+
+    seq = seq.upper()
+    motif = motif.upper()
+    if len(seq) != len(motif):
+        return False
+    for base, symbol in zip(seq, motif):
+        if symbol == "N":
+            continue
+        if base != symbol:
+            return False
+    return True
+
+
+def build_crispr_pam_mask(
+    site_seq: str,
+    guide: Mapping[str, object] | None,
+    pam_profile: str,
+    pam_softness: float,
+) -> List[float]:
+    """
+    Construct a position-wise PAM weight mask.
+
+    Positions that match the PAM motif receive weight 1.0.
+    Non-matching positions receive `pam_softness` (clamped to [0, 1]).
+    """
+
+    normalized = bioinformatics.normalize_sequence(site_seq)
+    length = len(normalized)
+    if length == 0:
+        return []
+
+    key = (pam_profile or "SpCas9_NGG").strip() or "SpCas9_NGG"
+    motif = PAM_MOTIFS.get(key) or PAM_MOTIFS.get(key.replace("-", "_"))
+    if motif is None:
+        raise ValueError(f"Unknown PAM profile: {pam_profile}")
+
+    softness = max(0.0, min(1.0, float(pam_softness)))
+    mask = [softness] * length
+    motif = motif.upper()
+    motif_len = len(motif)
+    upper_seq = normalized.upper()
+
+    for idx in range(length - motif_len + 1):
+        window = upper_seq[idx : idx + motif_len]
+        if _match_motif(window, motif):
+            for offset in range(motif_len):
+                mask[idx + offset] = 1.0
+
+    _ = guide
+    return mask
+
+
+def build_prime_pam_mask(
+    site_seq: str,
+    peg: Mapping[str, object] | None,
+    pam_profile: str,
+    pam_softness: float,
+) -> List[float]:
+    """Alias of build_crispr_pam_mask for semantic clarity."""
+
+    return build_crispr_pam_mask(site_seq, peg, pam_profile, pam_softness)

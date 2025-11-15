@@ -31,3 +31,7 @@ src/helix/__pycache__
 
 # MkDocs build output (always rebuilt in CI)
 site/
+
+# VeriBiota artifacts
+veribiota/generated/
+veribiota/work/

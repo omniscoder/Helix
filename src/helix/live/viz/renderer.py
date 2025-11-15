@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+import base64
 import moderngl
 import numpy as np
 
@@ -29,11 +30,13 @@ class HeatmapRenderer:
             fragment_shader="""
                 #version 330
                 uniform sampler2D data_tex;
+                uniform float u_min;
+                uniform float u_max;
                 in vec2 v_uv;
                 out vec4 fragColor;
 
                 vec3 colormap(float value) {
-                    float t = clamp(value, 0.0, 1.0);
+                    float t = clamp((value - u_min) / (u_max - u_min), 0.0, 1.0);
                     return vec3(
                         smoothstep(0.0, 1.0, t),
                         smoothstep(0.2, 1.0, t),
@@ -74,23 +77,64 @@ class HeatmapRenderer:
             dtype="f4",
         )
         self.vao = ctx.simple_vertex_array(self.program, ctx.buffer(vertices.tobytes()), "in_pos", "in_uv")
-        self.texture = ctx.texture((1, 1), 1, data=np.zeros((1, 1), dtype="f4").tobytes())
-        self.texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.texture: Optional[moderngl.Texture] = None
+        self.size = (0, 0)
+        self.value_range = (0.0, 1.0)
 
     def update(self, shape: Sequence[int], data: Sequence[float]) -> None:
         width = max(1, int(shape[0]))
         height = max(1, int(shape[1]))
-        array = np.array(data, dtype="f4")
+        array = np.array(data, dtype="float32")
         if array.size != width * height:
             array = np.resize(array, width * height)
         array = array.reshape((height, width))
-        self.texture = self.ctx.texture((width, height), 1, data=array.tobytes())
-        self.texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self._ensure_texture(width, height)
+        self.texture.write(array.tobytes())
+
+    def update_from_tiles(self, spec: Mapping[str, Any]) -> None:
+        nx = int(spec.get("nx") or self.size[0] or 1)
+        ny = int(spec.get("ny") or self.size[1] or 1)
+        self._ensure_texture(nx, ny)
+        for tile in spec.get("tiles") or []:
+            data_b64 = tile.get("data")
+            if not data_b64:
+                continue
+            raw = base64.b64decode(data_b64)
+            tile_nx = int(tile.get("nx") or nx)
+            tile_ny = int(tile.get("ny") or ny)
+            arr = np.frombuffer(raw, dtype="<f4")
+            if arr.size != tile_nx * tile_ny:
+                arr = np.resize(arr, tile_nx * tile_ny)
+            arr = arr.reshape((tile_ny, tile_nx))
+            x0 = int(tile.get("x0", 0))
+            y0 = int(tile.get("y0", 0))
+            self.texture.write(arr.tobytes(), viewport=(x0, y0, tile_nx, tile_ny))
+        min_val = float(spec.get("min", self.value_range[0]))
+        max_val = float(spec.get("max", self.value_range[1]))
+        if max_val <= min_val:
+            max_val = min_val + 1e-6
+        self.value_range = (min_val, max_val)
 
     def render(self) -> None:
+        if not self.texture:
+            return
         self.texture.use(location=0)
         self.program["data_tex"] = 0
+        self.program["u_min"].value = self.value_range[0]
+        self.program["u_max"].value = self.value_range[1]
         self.vao.render()
+
+    def _ensure_texture(self, width: int, height: int) -> None:
+        if self.texture and self.size == (width, height):
+            return
+        self.texture = self.ctx.texture(
+            (width, height),
+            1,
+            data=np.zeros((height, width), dtype="float32").tobytes(),
+            dtype="f4",
+        )
+        self.texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.size = (width, height)
 
 
 class AgentRenderer:
@@ -123,14 +167,17 @@ class AgentRenderer:
                 }
             """,
         )
-        self.buffer = ctx.buffer(reserve=0)
-        self.vao = ctx.vertex_array(
+        self.buffer = ctx.buffer(reserve=4)
+        self._build_vao()
+        self.agent_count = 0
+
+    def _build_vao(self) -> None:
+        self.vao = self.ctx.vertex_array(
             self.program,
             [
                 (self.buffer, "2f 3f", "in_pos", "in_color"),
             ],
         )
-        self.agent_count = 0
 
     def update(self, positions: Sequence[Sequence[float]], colors: Sequence[float]) -> None:
         if not positions:
@@ -145,9 +192,12 @@ class AgentRenderer:
         clip[:, 1] = 1.0 - positions_arr[:, 1] * 2.0
         colors_arr = _colormap(perk_arr)
         packed = np.hstack([clip, colors_arr]).astype("f4")
-        data = packed.tobytes()
-        self.buffer.orphan(len(data))
-        self.buffer.write(data)
+        required = packed.nbytes
+        if required > self.buffer.size:
+            self.buffer.release()
+            self.buffer = self.ctx.buffer(reserve=required)
+            self._build_vao()
+        self.buffer.write(packed.tobytes())
         self.agent_count = positions_arr.shape[0]
 
     def render(self) -> None:
@@ -179,8 +229,16 @@ class SceneRenderer:
         self._agent_node: Optional[str] = None
         self._perk_node: Optional[str] = None
         self._cell_node: Optional[str] = None
+        self._live_agents: Dict[int, Dict[str, float]] = {}
+        self._field_size = (1.0, 1.0)
 
     def apply_frame(self, frame: LiveFrame) -> None:
+        if frame.payload.get("kind") == "live_delta":
+            self._apply_live_delta(frame.payload)
+            return
+        self._apply_snapshot_frame(frame)
+
+    def _apply_snapshot_frame(self, frame: LiveFrame) -> None:
         snapshot = frame.snapshot
         if frame.node_meta and not self._field_node:
             self._detect_nodes(frame.node_meta)
@@ -206,6 +264,71 @@ class SceneRenderer:
             cells = snapshot.get(self._cell_node, {}).get("agents")
             if isinstance(cells, (int, float)):
                 self.metrics["cell_count"] = float(cells)
+        if frame.time is not None:
+            self.metrics["time"] = float(frame.time)
+
+    def _apply_live_delta(self, payload: Mapping[str, Any]) -> None:
+        metrics = payload.get("metrics") or {}
+        for key, value in metrics.items():
+            if isinstance(value, (int, float)):
+                self.metrics[key] = float(value)
+        if "t" in payload:
+            self.metrics["time"] = float(payload["t"])
+        fields = payload.get("fields") or {}
+        field_spec = None
+        for field_entry in fields.values():
+            field_spec = field_entry
+            break
+        if field_spec:
+            nx = int(field_spec.get("nx") or self._field_size[0] or 1)
+            ny = int(field_spec.get("ny") or self._field_size[1] or 1)
+            self._field_size = (float(nx), float(ny))
+            self.field.update_from_tiles(field_spec)
+        agents_spec = payload.get("agents")
+        if agents_spec:
+            self._update_live_agents(agents_spec, self._field_size)
+        elif not field_spec:
+            self.agents.update([], [])
+
+    def _update_live_agents(self, spec: Mapping[str, Any], bounds: Tuple[float, float]) -> None:
+        width = max(bounds[0], 1.0)
+        height = max(bounds[1], 1.0)
+        if spec.get("full"):
+            self._live_agents.clear()
+        for entry in spec.get("add", []):
+            if "id" not in entry:
+                continue
+            agent_id = int(entry["id"])
+            self._live_agents[agent_id] = {
+                "x": float(entry.get("x", 0.0)),
+                "y": float(entry.get("y", 0.0)),
+                "perk": float(entry.get("perk", 0.0)),
+            }
+        for entry in spec.get("update", []):
+            agent_id = entry.get("id")
+            if agent_id is None:
+                continue
+            agent = self._live_agents.setdefault(int(agent_id), {})
+            if "x" in entry:
+                agent["x"] = float(entry["x"])
+            if "y" in entry:
+                agent["y"] = float(entry["y"])
+            if "perk" in entry:
+                agent["perk"] = float(entry["perk"])
+        for removed in spec.get("remove", []):
+            self._live_agents.pop(int(removed), None)
+
+        if not self._live_agents:
+            self.agents.update([], [])
+            return
+        positions = []
+        perks = []
+        for agent in self._live_agents.values():
+            norm_x = float(agent.get("x", 0.0)) / width
+            norm_y = float(agent.get("y", 0.0)) / height
+            positions.append([norm_x, norm_y])
+            perks.append(float(agent.get("perk", 0.0)))
+        self.agents.update(positions, perks)
 
     def draw(self) -> None:
         self.field.render()

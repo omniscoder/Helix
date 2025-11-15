@@ -1,63 +1,168 @@
-# Helix
+# Helix: Computational Biology Playground + Digital Editor
 [![PyPI](https://img.shields.io/pypi/v/veri-helix.svg)](https://pypi.org/project/veri-helix/)
 [![Reproducible Viz (spec v1.0)](https://img.shields.io/badge/reproducible%20viz-spec%201.0-6f42c1)](docs/schema.md)
 [![Benchmarks](https://img.shields.io/badge/bench-passing-success)](https://omniscoder.github.io/Helix/benchmarks/)
+[![Verified by VeriBiota](https://img.shields.io/badge/verified%20by-VeriBiota-10b981?logo=lean&logoColor=white)](docs/veribiota.md)
+[![VeriBiota CI](https://github.com/omniscoder/Helix/actions/workflows/veribiota.yml/badge.svg)](https://github.com/omniscoder/Helix/actions/workflows/veribiota.yml)
 
-Helix is a hobbyist-first playground for **computational** bioinformatics and simulations. Think of it as a backpack full of lightweight tools, algorithms, and in-silico experiments you can remix on evenings, in classrooms, or during notebook sessions. We embrace rough edges and fast iteration so that ideas can leap from a notebook sketch to a reproducible **software** prototype quickly.
+Helix is a hobbyist-friendly, simulation-only toolkit for computational genomics, CRISPR/Prime editing, PCR amplicon modeling, RNA folding, string algorithms, and reproducible visualizations. It’s the “notebook laboratory” that complements our production platform OGN: when a prototype proves itself here, it can graduate into OGN’s GPU-accelerated pipelines.
 
-Helix complements our production platform OGN rather than competing with it. When a computational prototype proves its value, you can polish and port it into OGN. Until then, Helix is the sandbox where curiosity rules. All outputs are simulations or static analyses; no wet-lab instructions or experimental guidance are provided.
+Helix aims to make digital biology fun: tiny datasets, clean Python APIs, batteries-included CLI commands, and a full provenance system so every plot, JSON, and DAG can be reproduced down to the SHA-256.
 
-👉 Docs: https://omniscoder.github.io/Helix/
+👉 Docs & Playground: https://omniscoder.github.io/Helix/
 
-## Why Helix Exists
-- Lower the barrier to tinkering: ship batteries-included examples and tiny datasets.
-- Showcase approachable implementations of classic algorithms so learners can peek under the hood.
-- Encourage sharing and remixing of exploratory workflows without the ceremony of production deployments.
-- Offer a bridge to OGN by keeping APIs compatible and providing off-ramps when users need industrial-scale tooling.
+## Verified by VeriBiota™
+
+Helix’s CRISPR, Prime, and PCR DAGs carry the **Verified by VeriBiota** badge when every generated artifact satisfies:
+
+- **Structural correctness:** unique root, acyclic topology, monotonic depth, and rule-consistent transitions.
+- **Semantic correctness:** every edit event matches the formal CRISPR/Prime/PCR rewrite semantics tracked in Lean.
+- **Probability sanity:** outgoing probabilities and terminal probabilities sum to ≈1 with no negative or undefined weights.
+- **Reproducibility:** deterministic replays under recorded seeds, provenance-aligned frame streams, and matching sequence hashes.
+
+The contract is documented in [docs/veribiota.md](docs/veribiota.md) and enforced by the `helix veribiota lean-check`, `preflight`, and `export-dags` commands + the `veribiota.yml` GitHub Action badge above. If you see the badge, the math has run.
+
+## What Helix Is
+
+- Think of Helix as:
+- A computational wet lab you can run in a notebook.
+- A CRISPR/Prime/PCR digital twin simulator using deterministic rules and DAGs.
+- A teaching toolkit for genomics algorithms and bioinformatics basics.
+- A bridge into OGN, sharing concepts and API style while staying lightweight and experimental.
+
+Everything Helix emits is a **software artifact**: JSON, PNG, YAML, GraphML, viz-specs, or CLI summaries. No wet-lab instructions. No reagent guidance.
 
 ## Highlights
-- **DNA and motif experiments** (`helix.bioinformatics`): quick-and-dirty k-mer counting, SNP-tolerant motif clustering, GC skew plots, FASTA cleaning, and a CLI for summarizing GC/cluster hotspots.
-- **Translation and mass lookups** (`helix.codon`, `helix.amino_acids`): resilient codon translation, bidirectional ORF scanning, frameshift heuristics, and peptide mass utilities.
-- **Peptide spectrum sandbox** (`helix.cyclospectrum`): linear + cyclic theoretical spectra, scoring helpers, and a leaderboard CLI for reconstructing peptides.
-- **RNA folding + ensembles** (`helix.rna`): Zuker-style MFE plus McCaskill partition/MEA/centroid helpers with dot-plots and entropy tracks.
-- **CRISPR/prime scaffolding** (`helix.crispr`, `helix.prime`): PAM registry, guide discovery CLI + schema payloads, and stubs for scoring/simulation/viz.
-- **PCR amplification DAGs** (`helix.pcr`): primer pair + PCR config models, DAG construction helpers, and interactive viz outputs that slot into the edit-dag tooling pipeline.
-- **Protein helpers** (`helix.protein`): sequence-first summaries (weight, charge, hydropathy windows) with FASTA loading, visualization, and a friendly CLI wrapper.
-- **Workflows + API** (`helix.cli`, `helix.workflows`, `helix.api`): YAML-driven automation, visualization hooks, and a pure-Python API for notebooks/scripts (full helper reference lives in [`docs/reference/api.md`](docs/reference/api.md)).
-- **Seeding + seed-and-extend** (`helix.seed`): deterministic minimizers/syncmers and banded seed-extend helpers for toy mappers and density visualizations.
-- **String/search helpers** (`helix.string`): FM-index construction, exact pattern search, and Myers bit-vector edit-distance for CLI/API explorations.
-- **Graphs & DBG tooling** (`helix.graphs`): build/clean De Bruijn graphs, serialize to JSON/GraphML, and prep for colored/pseudoalignment experiments.
-- **Motif discovery** (`helix.motif`): EM-based PWM inference (baseline MEME) with CLI/API symmetry and optional PWM plots.
-- **Neural net doodles** (`ann.py`): minimal NumPy-only network for experimenting with small bio datasets.
-- **Schema + provenance tooling** (`helix.schema`, `helix viz --schema`, `helix schema diff/manifest`, `helix workflows --with-schema`): every JSON artifact and PNG knows its schema kind, spec version, and SHA-256 for audit-ready reproducibility.
+### **Genome and Sequence Tools**
+- DNA summaries, k-mer counting, GC skew, motif clustering
+- FM-index search + approximate search via Myers bit-vector
+- Minimizers, syncmers, and seed-extend demos
+- ORF detection, frameshift heuristics, translation, protein metrics
 
-## Safety & Scope
-- Helix operates entirely in silico: it ingests digital sequences or public reference datasets and emits JSON summaries, plots, or other software artifacts.
-- The project never controls lab equipment, prescribes wet-lab steps, or suggests reagent handling; those activities belong in downstream, compliance-reviewed systems.
-- Contributions, docs, and examples must stay simulation-only—if an idea drifts toward physical protocols, move it to OGN (or another governed surface) after review.
-- Provenance metadata is provided so researchers can audit computational pipelines and reproducible simulations, not to guide lab execution.
+### RNA Folding
+- Zuker-style MFE
+- McCaskill partition function
+- Ensembles, dot-plots, entropy tracks, centroids structures
+
+### CRISPR Simulation Stack
+- Guide discovery with PAM registries
+- Off-target scanning (exact + mismatch-tolerant)
+- Probabilistic CRISPR cut/repair simulation
+- Edit DAGs (helix.crispr.edit_dag.v1.1) with node-level genome snapshots
+- Multi-guide, region-specific, FASTA-native support
+- Real-time JSONL frames for animation + Playground sync
+- Protein-impact annotation via transcript models
+
+### Prime Editing Simulator
+- pegRNA + Prime Editor definitions
+- RTT/RTT-branching logic
+- Outcome probabilities
+- Full Prime Edit DAGs with per-node genome materialization
+- Multi-peg batch workflows for large design sets
+- PCR Amplicon DAGs
+
+### PCR Amplicon DAGs
+- Primer binding + per-cycle branching
+- Amplicon growth simulation
+- Visualization + JSON artifact export
+
+### Graphs & Sketching
+- Build/clean/color De Bruijin graphs
+- MinHash/HLL Sketching for fast genome distance
+
+### Reproducible Visualization
+- Viz-spec system (structured spec, SHA-verified)
+- Every PNG ships a provenance sidebar + sibling .viz.json
+- CLI + notebook-friendly
+
+### Workflows
+- YAML-driven experiments: CRISPR, Prime, PCR
+- Generates DAGs, PNGs, reports, provenance manifests
+- Reproducible from a single .helix.yml
+
+### GUI
+- Optional PySide6 desktop shell
+- Cytoscape/D3 visualization of live edit DAG streams
+- Offline-capable; accepts CLI artifacts and real-time frames
+
+## Quick Start
+### Crispr Edit DAG
+```
+helix crispr dag \
+  --genome genome.fna \
+  --guide-sequence GGGGTTTAGAGCTATGCT \
+  --json crispr_dag.json
+```
+
+### Prime Editing Simulator
+```
+helix prime dag \
+  --genome genome.fna \
+  --peg-config peg.json \
+  --editor-config pe3.json \
+  --json prime_dag.json
+```
+
+### PCR Amplicon DAG
+```
+helix pcr dag \
+  --genome plasmid.fna \
+  --primer-config primers.json \
+  --pcr-config pcr_settings.json \
+  --out pcr_dag.json
+```
+### RNA Folding
+```
+helix rna mfe --fasta hairpin.fna --dotbracket mfe.dbn
+helix rna ensemble --fasta hairpin.fna --gamma 1.0 --dotplot plot.png
+```
+
+### Sequence Tools
+```
+helix dna --input seq.fna --window 400 --k 5 --plot-skew
+helix seed index seq.fna --method minimizer --k 15 --plot seeds.png
+helix string search seqs.fna --pattern GATTACA --k 1
+```
+
+## Reproducible Viz (Spec 1.x)
+Every plot:
+- stamps a provenance footer (Helix version, SHA-256, viz kind)
+- emits a .viz.json viz-spec
+- stores full command replay in <image>.provenance.json
+Use:
+```
+helix viz --schema
+helix schema manifest
+helix schema diff old.json new.json
+```
+
+## Workflows
+Turn a single YAML file into a full simulation:
+```
+helix experiment new --type crispr --out demo.helix.yml
+helix experiment run --config demo.helix.yml --out dag.json
+helix experiment viz --config demo.helix.yml --out dag.png
+```
+Everything—FASTA, guides, Cas config, seed, viz parameters—is captured and reproducible.
 
 ## Repo Layout
 ```
-.
-├── pyproject.toml              # packaging metadata + extras
-├── src/
-│   └── helix/
-│       ├── __init__.py         # user-facing namespace
-│       ├── amino_acids.py
-│       ├── bioinformatics.py
-│       ├── codon.py
-│       ├── cyclospectrum.py
-│       ├── datasets/           # bundled FASTA/FAA toy data
-│       ├── cli.py              # console entry point (`helix …`)
-│       ├── api.py              # notebook-friendly helpers
-│       ├── workflows.py        # YAML runner
-│       ├── nussinov_algorithm.py
-│       ├── protein.py
-│       └── triage.py
-├── examples/                   # runnable scripts + demos
-├── tests/                      # pytest suites
-└── README.md
+src/helix/
+    crispr/         # CRISPR models, guides, simulators, edit DAGs
+    prime/          # Prime editing engine + DAGs
+    pcr/            # PCR amplicon simulator
+    rna/            # MFE + ensemble folding
+    bioinformatics/ # DNA utilities, k-mers, motif clustering
+    seed/           # minimizers/syncmers + mapping demo
+    string/         # FM-index + Myers ED
+    graphs/         # DBG tooling
+    viz/            # spec-driven visualization system
+    workflows/      # YAML runner
+    gui/            # optional PySide6 desktop app
+benchmarks/
+docs/
+examples/
+tests/
 ```
 
 ## Getting Started
@@ -270,6 +375,51 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   ```
   Streams `helix.edit_dag.frame.v1` JSON lines so you can animate CRISPR edits as they unfold. See [Edit DAG Frames](docs/edit_dag_frames.md) for schema details, or try it live in the [Realtime Playground](docs/playground/realtime.html).
 
+- **CRISPR DAG micro-verification**
+  ```bash
+  python benchmarks/verify_crispr_micro.py
+  pytest tests/test_crispr_dag_micro.py
+  ```
+  A synthetic `tests/data/crispr_micro.fna` genome (two short chromosomes packed with overlapping NGG PAMs) powers a brute-force verifier that rebuilds the entire probability tree outside of the CRISPR physics engine. The `benchmarks/verify_crispr_micro.py` script emits a pass/fail summary, while `tests/test_crispr_dag_micro.py` runs the same cross-check during CI so we know every DAG leaf and probability mass matches the reference enumeration.
+- **Lean/VeriBiota bridge**
+  ```bash
+  helix crispr dag --genome genome.fna --guide-sequence ACGT... --json out/eg.edit_dag.json
+  helix veribiota export \
+    --input out/eg.edit_dag.json \
+    --out out/eg.lean \
+    --dag-name exampleDag \
+    --module-name VeriBiota.Bridge
+  ```
+  Converts any Helix `helix.*edit_dag.v1.*` artifact into a Lean module that defines `exampleDag : EditDAG`, emits the node/edge lists, and inserts a ready-to-run `#eval VeriBiota.check exampleDag` plus a theorem stub (disable with `--skip-theorem` / `--skip-eval`).
+
+  To consolidate several JSON artifacts into one Lean namespace (faster CI, shared proofs):
+  ```bash
+  helix veribiota export-dags \
+    --inputs out/dag1.json out/dag2.json \
+    --module-name Helix.CrisprExamples \
+    --list-name exampleDags \
+    --out veribiota/generated/Helix/CrisprExamples.lean
+  ```
+  The generated module defines `def dag1 : EditDAG`, `dag2`, bundles them into `def exampleDags : List EditDAG`, and inserts an aggregate theorem stub (`∀ dag ∈ exampleDags, VeriBiota.check dag`) you can turn into a real proof.
+
+- **Lean pipeline glue**
+  ```bash
+  helix veribiota lean-check --input out/dag1.json --out out/dag1.lean-check.json
+  helix veribiota preflight --checks out/*.lean-check.json
+  helix veribiota export-dags --inputs out/dag*.json --out veribiota/generated/Helix/CrisprExamples.lean
+  ```
+  Each DAG JSON gets a companion `.lean-check.json` (hashes, probabilities, metadata). `preflight` validates those summaries (and, optionally, re-hashes the source DAGs) so CI fails fast before Lean boots. Once preflight passes, `export-dags` emits a single Lean module for all DAGs, letting VeriBiota prove shared invariants (`well_formed`, probability sums, hash consistency) in one place.
+
+  When integrating with the external [VeriBiota/VeriBiota](https://github.com/VeriBiota/VeriBiota) repo, point Helix directly at that checkout and let it populate the generated namespace:
+  ```bash
+  helix veribiota export-suite \
+    --inputs out/dag*.json \
+    --veribiota-root ../VeriBiota \
+    --module-path Biosim/VeriBiota/Helix/CrisprMicro.lean \
+    --module-name Biosim.VeriBiota.Helix.CrisprMicro
+  ```
+  This writes the Lean file straight into `Biosim/VeriBiota/Helix/CrisprMicro.lean`, ready for VeriBiota’s Lake build + proof pipeline.
+
 - **Frames → dataset**
   ```bash
   helix edit-dag generate-dataset --n 0 --frames-input run.frames.jsonl --out dataset.jsonl
@@ -429,19 +579,12 @@ Browse ready-to-run snippets in `examples/README.md`, and share your results in 
 - **Prototype-to-production bridge**: helper scripts should make it easy to migrate successful ideas into OGN when the time comes.
 
 ## Roadmap
-1. Bundle a CLI command/notebook for combining GC skew, ORFs, and motif clusters into shareable reports.
-2. Implement scoring for cyclo-spectrum experiments and publish a walkthrough notebook.
-3. Finish the Nussinov traceback to output secondary structure strings and diagrams.
-4. Add small CLIs (argparse or Typer) for swapping inputs without editing source files.
-5. Draft an `examples/` gallery featuring community notebooks and weekend projects.
-
-## Relationship to OGN
-Helix is intentionally lightweight. We do not guarantee production stability, large-scale data orchestration, or SLA-backed support, and we never interface with lab automation hardware. When your prototype needs robustness, data governance, or integration with those systems:
-1. Package the core logic (functions, notebooks, scripts).
-2. Identify equivalent building blocks in OGN or write adapters that call into it.
-3. Open an OGN ticket or PR referencing the Helix prototype so we can collaborate on the migration.
-
-This separation keeps Helix nimble while letting OGN remain the home for hardened workflows.
+- Real-time 2.5D simulation panels (CRISPR + Prime + PCR)
+- Unified DAG viewer with edit-diff timelines
+- Notebook-to-OGN adapters for migrating prototypes
+- More ensemble RNA metrics + stochastic simulators
+- Expanded motif discovery solvers + GPU-ready variants
+- Community-driven examples gallery
 
 ## Contributing
 We welcome ideas, experiments, and docs improvements. To keep things playful:

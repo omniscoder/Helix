@@ -97,6 +97,40 @@ To plot a matrix emitted by `helix sketch compare --json dist.json`, pass that f
 - Producers such as `helix seed map`, `helix sketch compare`, and `helix motif find` now stamp `spec_version` into their JSON outputs so downstream users can validate artifacts.
 - Whenever you write a PNG via `--save`, Helix drops a sibling `<image>.provenance.json` that captures `{schema_kind, spec_version, input_sha256, viz_spec_sha256, image_sha256, helix_version, command}`, giving every figure a cryptographic audit trail.
 
+## ModernGL CRISPR/Prime Viewer (`helix viz modern`)
+
+The PyQt + ModernGL viewer renders CRISPR / prime-editing beats using the same JSON that powers Unity/Three.js exports. Install the extras first:
+
+```bash
+pip install "veri-helix[gui,realtime]"
+```
+
+Each visualization spec bundles sequence context, PAM/guide metadata, and edit events:
+
+```json
+{
+  "sequence": "AAACGTTAGGCTTACGACCTGA...",
+  "pam_index": 24,
+  "guide_range": [16, 36],
+  "edit_type": "prime",
+  "metadata": {"label": "Prime edit – RT length 13"},
+  "edit_events": [
+    {"t": 0.2, "type": "recognition", "index": 20},
+    {"t": 0.45, "type": "nick_primary", "index": 24},
+    {"t": 0.8, "type": "rt_synthesis", "start": 25, "length": 13},
+    {"t": 1.5, "type": "repair_complete", "index": 28}
+  ]
+}
+```
+
+- Launch the viewer with one or more specs: `helix viz modern --spec examples/prime_viz_spec.json`.
+- Omit `--spec` to load the built-in demo cycle; repeat `--spec` to stack multiple edits in the selector.
+- Bake Unity/Three.js-friendly camera + event tracks with `helix viz modern-export --spec examples/prime_viz_spec.json --output-dir exports/`.
+- Produce specs directly from the CLI with `helix crispr simulate ... --viz-spec cut_cycle.viz.json` or `helix prime simulate ... --viz-spec peg_cycle.viz.json`.
+- Prefer a point-and-click workflow? Run `helix viz sim-builder` to launch the PyQt “Sim Builder,” paste or load sequences, auto-discover guides, tweak priors, and preview/export the ModernGL loop without typing CLI flags.
+
+Exports contain camera orbit keyframes, phase markers, and every edit event, making it easy to ingest the “truth” timeline inside Unity Timeline, Three.js, or Houdini.
+
 ## Demo Gallery
 
 Run `helix demo viz --output docs/assets/viz` to recreate the screenshots below (each PNG is paired with a `.viz.json` containing the schema metadata):

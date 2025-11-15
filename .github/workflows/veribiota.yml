@@ -1,0 +1,68 @@
+name: VeriBiota
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  veribiota-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Helix
+        uses: actions/checkout@v4
+
+      - name: Checkout VeriBiota
+        uses: actions/checkout@v4
+        with:
+          repository: VeriBiota/VeriBiota
+          ref: main
+          path: veribiota_repo
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Helix (editable)
+        run: |
+          python -m pip install --upgrade pip
+          pip install '.[dev]'
+
+      - name: Generate DAGs + lean-check metadata
+        run: |
+          mkdir -p veribiota_work
+          helix crispr dag \
+            --genome tests/data/crispr_micro.fna \
+            --guide-sequence ACGTACGTACGTACGTACGT \
+            --max-depth 2 \
+            --json veribiota_work/crispr_micro.dag.json
+          helix veribiota lean-check \
+            --input veribiota_work/crispr_micro.dag.json \
+            --out veribiota_work/crispr_micro.lean-check.json
+          helix veribiota preflight \
+            --checks veribiota_work/crispr_micro.lean-check.json \
+            --payloads veribiota_work/crispr_micro.dag.json
+
+      - name: Export Lean suites into VeriBiota
+        run: |
+          helix veribiota export-suite \
+            --inputs veribiota_work/crispr_micro.dag.json \
+            --veribiota-root veribiota_repo \
+            --module-path Biosim/VeriBiota/Helix/CrisprMicro.lean \
+            --module-name Biosim.VeriBiota.Helix.CrisprMicro \
+            --list-name allDags \
+            --theorem-name crispr_all_checked \
+            --skip-theorem
+
+      - name: Install Lean + Lake
+        run: |
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
+          echo "$HOME/.elan/bin" >> $GITHUB_PATH
+
+      - name: Run VeriBiota proofs
+        working-directory: veribiota_repo
+        run: |
+          lake build
+          lake exe veribiota-check Biosim/VeriBiota/Helix/CrisprMicro.lean

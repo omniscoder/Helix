@@ -43,6 +43,7 @@ class LiveVizApp:
         self._last_frame = time.time()
         self._paused = False
         self._space_prev = False
+        self._bundle_playing = not self.channel.is_bundle or self.channel.bundle_playing()
 
     def run(self) -> None:
         self._init_window()
@@ -83,6 +84,8 @@ class LiveVizApp:
             self._update_metric_history()
         if self.ctx and self.renderer and self.hud:
             width, height = glfw.get_framebuffer_size(self.window)
+            if self.channel.is_bundle:
+                self._bundle_playing = self.channel.bundle_playing()
             metrics = dict(self.renderer.metrics)
             self.hud.build_controls(
                 width=width,
@@ -94,6 +97,8 @@ class LiveVizApp:
                 variant_options=self.channel.variant_options,
                 paused=self._paused,
                 interactive=self.channel.interactive,
+                bundle_mode=self.channel.is_bundle,
+                bundle_playing=self._bundle_playing,
             )
             self._handle_input(width, height)
             self.ctx.viewport = (0, 0, width, height)
@@ -113,6 +118,7 @@ class LiveVizApp:
             float(cursor_y),
             left_down,
             interactive=self.channel.interactive,
+            bundle_mode=self.channel.is_bundle,
         )
         for event in events:
             self._dispatch_hud_event(event)
@@ -128,6 +134,17 @@ class LiveVizApp:
 
     def _dispatch_hud_event(self, event: HudEvent) -> None:
         if not self.channel.interactive:
+            if self.channel.is_bundle:
+                if event.id == "bundle_toggle" and event.kind == "click":
+                    if self._bundle_playing:
+                        self.channel.pause_bundle()
+                        self._bundle_playing = False
+                    else:
+                        self.channel.resume_bundle()
+                        self._bundle_playing = True
+                elif event.id == "bundle_step" and event.kind == "click":
+                    self.channel.step_bundle()
+                    self._bundle_playing = False
             return
         if event.id == "pause" and event.kind == "click":
             self._toggle_pause()

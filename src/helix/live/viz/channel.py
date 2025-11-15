@@ -12,15 +12,18 @@ class VizChannel:
     """Thin wrapper that normalizes realtime frames/control traffic."""
 
     def __init__(self, *, endpoint: Optional[str], bundle: Optional[Path]):
+        self.is_bundle = bundle is not None
         if bundle:
-            self._feed = BundleFeed(Path(bundle))
+            feed = BundleFeed(Path(bundle))
             self.endpoint = None
             self.interactive = False
         else:
             normalized = endpoint or "tcp://127.0.0.1:8765"
-            self._feed = RealtimeFeed(normalized)
+            feed = RealtimeFeed(normalized)
             self.endpoint = normalized
             self.interactive = True
+        self._feed = feed
+        self._bundle_feed = feed if isinstance(feed, BundleFeed) else None
         self.slice: str = "-"
         self.variant: str = "-"
         self.run_id: Optional[str] = None
@@ -49,3 +52,20 @@ class VizChannel:
 
     def close(self) -> None:
         self._feed.close()
+
+    def bundle_playing(self) -> bool:
+        if not self._bundle_feed:
+            return False
+        return not self._bundle_feed.paused
+
+    def pause_bundle(self) -> None:
+        if self._bundle_feed:
+            self._bundle_feed.pause()
+
+    def resume_bundle(self) -> None:
+        if self._bundle_feed:
+            self._bundle_feed.resume()
+
+    def step_bundle(self) -> None:
+        if self._bundle_feed:
+            self._bundle_feed.step_once()

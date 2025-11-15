@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import hashlib
 import json
@@ -11,13 +12,17 @@ import re
 import sys
 import queue
 import threading
+import time
+import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, TextIO
 from types import SimpleNamespace
+
+import numpy as np
 
 from . import bioinformatics, cyclospectrum, triage
 from .crispr import guide as crispr_guide
@@ -50,7 +55,9 @@ from .graphs import (
 from .sketch import compute_minhash, mash_distance, compute_hll, union_hll
 from .motif import discover_motifs
 from .prime.model import PegRNA, PrimeEditOutcome, PrimeEditor
-from .prime.simulator import simulate_prime_edit
+from .prime.simulator import locate_prime_target_site, simulate_prime_edit
+from .prime.priors import resolve_prime_priors
+from .crispr.pam import build_prime_pam_mask
 from .genome.digital import DigitalGenome as CoreDigitalGenome
 from .crispr.dag_api import build_crispr_edit_dag
 from .prime.dag_api import build_prime_edit_dag
@@ -70,7 +77,21 @@ from .core.scheduler import Island, LiveScheduler
 from .live import StateReducer, EventBus, HotSwapManager
 from .live.metadata import describe_graph_nodes
 from .live.realtime import RealtimeHook, RealtimeServer
+from .live.cli_utils import (
+    compose_run_id,
+    current_command_str,
+    dump_json,
+    finalize_live_run,
+    maybe_create_realtime_queue,
+    prepare_live_bundle_dir,
+    print_plan_summary,
+    sanitize_run_name,
+)
+from .live.livelab import LiveSession, LiveDevShell
 from .slices import resolve_slice, SLICE_REGISTRY
+
+if TYPE_CHECKING:
+    from .gui.modern.spec import EditVisualizationSpec
 
 _CRISPR_EXPERIMENT_TEMPLATE = """\
 kind: helix.crispr.experiment.v1
@@ -125,6 +146,8 @@ from .schema import (
     manifest,
     validate_viz_payload,
 )
+from .veribiota import dag_payload_to_lean, dag_payloads_to_lean, module_name_from_path
+from .veribiota.checks import build_lean_check, validate_lean_check, LeanCheckError
 from . import __version__ as HELIX_VERSION
 
 try:  # optional viz imports (matplotlib)
@@ -571,11 +594,6 @@ def _file_sha256(path: Path) -> str:
 def _sequence_sha256(sequence: str) -> str:
     return hashlib.sha256(sequence.encode("utf-8")).hexdigest()
 
-
-def _current_command_str() -> str:
-    return "helix " + " ".join(sys.argv[1:])
-
-
 def _write_provenance(
     image_path: Optional[Path],
     *,
@@ -607,65 +625,6 @@ def _write_provenance(
     }
     prov_path = img_path.with_name(img_path.stem + ".provenance.json")
     prov_path.write_text(json.dumps(provenance, indent=2) + "\n", encoding="utf-8")
-
-
-def _sanitize_run_name(name: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", name.strip().lower())
-    cleaned = cleaned.strip("-")
-    return cleaned or "livegraph"
-
-
-def _prepare_live_bundle_dir(bundle: Optional[Path], model_name: str) -> Path:
-    if bundle:
-        target = Path(bundle)
-    else:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        target = Path("live_runs") / f"{_sanitize_run_name(model_name)}-{stamp}"
-    target.mkdir(parents=True, exist_ok=True)
-    return target
-
-
-def _compose_run_id(model_name: str, variant: Optional[str], seed: Optional[int]) -> str:
-    variant_token = (variant or "default").replace(" ", "_").lower()
-    seed_token = f"seed{seed}" if seed is not None else "seed0"
-    return f"{_sanitize_run_name(model_name)}_{variant_token}_{seed_token}"
-
-
-def _maybe_create_realtime_queue(enabled: bool, endpoint: Optional[str] = None) -> Optional[RealtimeHook]:
-    if not enabled:
-        return None
-    q: queue.Queue = queue.Queue(maxsize=512)
-    server: Optional[RealtimeServer] = None
-    try:
-        server = RealtimeServer(endpoint or "tcp://127.0.0.1:8765")
-        print(f"[realtime] serving feed on {server.label}")
-    except Exception as exc:  # pragma: no cover - transport failures
-        print(f"[realtime] failed to start server: {exc}", file=sys.stderr)
-        server = None
-
-    def _consumer():
-        while True:
-            payload = q.get()
-            if payload is None:
-                break
-            runtime = payload.get("runtime") or {}
-            slice_name = runtime.get("slice") or runtime.get("model") or "-"
-            variant = runtime.get("variant") or "-"
-            t = payload.get("time")
-            try:
-                t_display = f"{float(t):.2f}"
-            except (TypeError, ValueError):
-                t_display = "?"
-            delta = payload.get("delta") or {}
-            added = len(delta.get("added", {}))
-            updated = len(delta.get("updated", {}))
-            removed = len(delta.get("removed", {}))
-            print(f"[realtime:{slice_name}/{variant}] t={t_display} +{added} ~{updated} -{removed}")
-            if server:
-                server.broadcast(dict(payload))
-
-    threading.Thread(target=_consumer, daemon=True).start()
-    return RealtimeHook(queue=q, server=server)
 
 
 def _make_realtime_command_handler(scheduler: LiveScheduler, *, default_field_node: str = "egf_field"):
@@ -841,109 +800,10 @@ def _build_input_provider(
     return provider
 
 
-def _dump_json(path: Path, payload: Any) -> None:
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-
-
 def _read_json_optional(path: Path) -> Any:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _write_live_bundle(
-    bundle_dir: Path,
-    *,
-    hgx_path: Path,
-    model_name: str,
-    scheduler: LiveScheduler,
-    reducer: StateReducer,
-    events: Sequence[Any],
-    meta: Mapping[str, Any],
-) -> None:
-    model_contents = hgx_path.read_text(encoding="utf-8")
-    (bundle_dir / "model.hgx").write_text(model_contents, encoding="utf-8")
-    _dump_json(bundle_dir / "snapshots.json", scheduler.snapshots)
-    _dump_json(bundle_dir / "deltas.json", reducer.history)
-    _dump_json(bundle_dir / "events.json", list(events))
-    enriched_meta = dict(meta)
-    enriched_meta.update(
-        {
-            "model": model_name,
-            "snapshots": len(scheduler.snapshots),
-            "helix_version": HELIX_VERSION,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "command": _current_command_str(),
-        }
-    )
-    _dump_json(bundle_dir / "meta.json", enriched_meta)
-
-
-def _finalize_live_run(
-    args: argparse.Namespace,
-    *,
-    scheduler: LiveScheduler,
-    spec_path: Path,
-    model_name: str,
-    duration: float,
-    sync_dt: float,
-    dt_overrides: Mapping[str, float],
-    const_inputs: Mapping[str, Mapping[str, float]],
-    input_series_file: Optional[str],
-    hz: float,
-    reducer: Optional[StateReducer],
-    event_bus,
-    realtime_hook: Optional[RealtimeHook] = None,
-    meta_extra: Optional[Mapping[str, Any]] = None,
-) -> None:
-    wall_start = perf_counter()
-    scheduler.run_until(duration, wall_budget_ms=args.wall_ms)
-    wall_time_sec = perf_counter() - wall_start
-    islands_meta: List[Dict[str, Any]] = []
-    for island in getattr(scheduler, "islands", []):
-        nodes = [getattr(node, "name", None) for node in getattr(island, "nodes", []) if getattr(node, "name", None)]
-        islands_meta.append({"name": getattr(island, "name", "island"), "nodes": nodes, "dt": getattr(island, "dt", None)})
-
-    bundle_dir = _prepare_live_bundle_dir(args.bundle, model_name)
-    meta: Dict[str, Any] = {
-        "kind": "helix.live.run.v1",
-        "seed": args.seed,
-        "duration": duration,
-        "sync_dt": sync_dt,
-        "default_dt": args.default_dt,
-        "dt_overrides": dt_overrides,
-        "input_constants": const_inputs,
-        "input_series_file": input_series_file,
-        "hz": hz,
-        "wall_budget_ms": args.wall_ms,
-        "wall_time_sec": wall_time_sec,
-        "islands": islands_meta,
-        "model": model_name,
-        "spec_path": str(spec_path),
-        "run_id": scheduler.runtime_meta.get("run_id"),
-    }
-    if meta_extra:
-        meta.update(meta_extra)
-    reducer_obj = reducer or StateReducer(hz=hz)
-    events = event_bus.drain() if event_bus else []
-    _write_live_bundle(
-        bundle_dir,
-        hgx_path=spec_path,
-        model_name=model_name,
-        scheduler=scheduler,
-        reducer=reducer_obj,
-        events=events,
-        meta=meta,
-    )
-    print(f"Live run bundle written to {bundle_dir}")
-    print(
-        f"  snapshots={len(scheduler.snapshots)} islands={len(getattr(scheduler, 'islands', []))} "
-        f"dt=[{', '.join(f'{isl.name}:{isl.dt}' for isl in getattr(scheduler, 'islands', []))}]"
-    )
-    if realtime_hook:
-        realtime_hook.queue.put(None)
-        if realtime_hook.server:
-            realtime_hook.server.close()
 
 
 def _ensure_viz_available(feature: str = "visualization") -> None:
@@ -961,6 +821,17 @@ def _ensure_realtime_available() -> None:
         raise SystemExit(
             "Realtime visualization requires the 'realtime' extra (glfw + moderngl). "
             "Install with `pip install \"veri-helix[realtime]\"`."
+        ) from exc
+
+
+def _ensure_modern_gui_available() -> None:
+    try:
+        from PySide6 import QtWidgets  # type: ignore  # noqa: F401
+        import moderngl  # type: ignore  # noqa: F401
+    except ImportError as exc:  # pragma: no cover - optional deps
+        raise SystemExit(
+            "Modern CRISPR viz requires PySide6 + moderngl. Install with "
+            "`pip install \"veri-helix[gui,realtime]\"`."
         ) from exc
 
 
@@ -1269,6 +1140,13 @@ def _write_json_output(payload: Dict[str, Any], output_path: Optional[Path]) -> 
         out_path.write_text(text + "\n", encoding="utf-8")
     else:
         print(text)
+
+
+def _write_viz_spec_output(spec: "EditVisualizationSpec", output_path: Path) -> None:
+    out_path = Path(output_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(spec.to_payload(), indent=2)
+    out_path.write_text(text + "\n", encoding="utf-8")
 
 
 def _build_guide(
@@ -1844,7 +1722,7 @@ def command_rna_ensemble(args: argparse.Namespace) -> None:
             schema_kind="viz_rna_dotplot",
             spec=spec,
             input_sha=extra_meta.get("input_sha256"),
-            command=_current_command_str(),
+            command=current_command_str(),
             viz_spec_path=spec_path,
         )
     if args.arc:
@@ -1997,6 +1875,15 @@ def command_crispr_simulate(args: argparse.Namespace) -> None:
     else:
         print(text)
 
+    if args.viz_spec:
+        from .gui.modern.builders import build_crispr_viz_spec
+
+        spec = build_crispr_viz_spec(raw_sequence, guide, validated)
+        if spec is None:
+            print("Unable to derive a visualization spec from crispr.sim output.", file=sys.stderr)
+        else:
+            _write_viz_spec_output(spec, args.viz_spec)
+
 
 def command_crispr_genome_sim(args: argparse.Namespace) -> None:
     genome = _load_digital_genome(args.genome)
@@ -2021,7 +1908,7 @@ def command_crispr_genome_sim(args: argparse.Namespace) -> None:
         "meta": {
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "command": _current_command_str(),
+            "command": current_command_str(),
         },
         "cas": _serialize_cas_system(cas_system),
         "guide": _serialize_guide(guide),
@@ -2153,33 +2040,56 @@ def command_prime_simulate(args: argparse.Namespace) -> None:
     genome = _load_digital_genome(args.genome)
     peg = _load_peg_from_args(args)
     editor = _load_prime_editor_from_args(args)
-    try:
-        outcomes = simulate_prime_edit(
-            genome,
-            editor,
-            peg,
-            max_outcomes=args.max_outcomes,
-        ) or []
-    except NotImplementedError as exc:
-        raise SystemExit(str(exc))
+    site = locate_prime_target_site(genome, peg)
+    if site is None:
+        raise SystemExit("Unable to locate a target site for the provided pegRNA.")
+    chrom_seq = bioinformatics.normalize_sequence(genome.sequences.get(site.chrom, ""))
+    if not chrom_seq:
+        raise SystemExit(f"Chromosome '{site.chrom}' contained no sequence data.")
+    flank = max(len(peg.pbs or ""), len(peg.rtt or ""), 20)
+    window_start = max(0, site.start - flank)
+    window_end = min(len(chrom_seq), site.end + flank)
+    site_seq = chrom_seq[window_start:window_end]
 
-    payload = {
-        "schema": {"kind": "prime.edit_sim", "spec_version": SPEC_VERSION},
-        "meta": {
+    priors = resolve_prime_priors(args.priors_profile)
+    pam_mask = build_prime_pam_mask(site_seq, peg, args.pam_profile, args.pam_softness)
+    payload = simulate_prime_edit(
+        site_seq=site_seq,
+        peg=peg,
+        priors=priors,
+        draws=args.draws,
+        seed=args.seed,
+        emit_sequence=True,
+        pam_mask=pam_mask,
+    )
+    payload.setdefault("meta", {}).update(
+        {
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "command": _current_command_str(),
-        },
-        "params": {"max_outcomes": args.max_outcomes},
-        "editor": _serialize_prime_editor(editor),
-        "peg": _serialize_peg(peg),
-        "genome": _digital_genome_summary(genome, source=args.genome),
-        "outcomes": [_serialize_prime_outcome(outcome) for outcome in outcomes],
+            "command": current_command_str(),
+        }
+    )
+    payload["params"] = {
+        "draws": args.draws,
+        "seed": args.seed,
+        "priors_profile": args.priors_profile,
+        "pam_profile": args.pam_profile,
+        "pam_softness": args.pam_softness,
     }
+    payload["editor"] = _serialize_prime_editor(editor)
+    payload["peg"] = _serialize_peg(peg)
+    payload["genome"] = _digital_genome_summary(genome, source=args.genome)
     validated = validate_viz_payload("prime.edit_sim", payload)
     _write_json_output(validated, args.json)
-    if not outcomes:
-        print("No prime editing outcomes were produced with the current parameters.")
+
+    if args.viz_spec:
+        from .gui.modern.builders import build_prime_viz_spec
+
+        spec = build_prime_viz_spec(genome, peg, editor, validated)
+        if spec is None:
+            print("Unable to derive a visualization spec from prime.edit_sim output.", file=sys.stderr)
+        else:
+            _write_viz_spec_output(spec, args.viz_spec)
 
 
 def command_prime_dag(args: argparse.Namespace) -> None:
@@ -2915,6 +2825,117 @@ def command_motif_find(args: argparse.Namespace) -> None:
         )
 
 
+def command_veribiota_export(args: argparse.Namespace) -> None:
+    payload = _read_json(args.input)
+    lean_text = dag_payload_to_lean(
+        payload,
+        dag_name=args.dag_name,
+        module_name=args.module_name,
+        import_module=args.lean_import,
+        include_eval=not args.skip_eval,
+        include_theorem=not args.skip_theorem,
+    )
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(lean_text + "\n", encoding="utf-8")
+        print(f"Lean export saved to {args.out}.")
+    else:
+        print(lean_text)
+
+
+def command_veribiota_lean_check(args: argparse.Namespace) -> None:
+    payload = _read_json(args.input)
+    dag_name = args.dag_name or args.input.stem
+    summary = build_lean_check(payload, dag_name)
+    if not args.skip_validate:
+        validate_lean_check(summary, prob_tolerance=args.prob_tol)
+    text = json.dumps(summary, indent=2)
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(text + "\n", encoding="utf-8")
+        print(f"Lean-check summary saved to {args.out}.")
+    else:
+        print(text)
+
+
+def command_veribiota_preflight(args: argparse.Namespace) -> None:
+    checks = args.checks
+    payloads = args.payloads or []
+    if payloads and len(payloads) != len(checks):
+        raise SystemExit("--payloads length must match --checks when provided.")
+    for idx, check_path in enumerate(checks):
+        check = _read_json(check_path)
+        try:
+            validate_lean_check(check, prob_tolerance=args.prob_tol)
+        except LeanCheckError as exc:
+            raise SystemExit(f"{check_path}: {exc}") from exc
+        if payloads:
+            payload = _read_json(payloads[idx])
+            dag_name = check.get("dag_name") or payload.get("dag_name") or check_path.stem
+            reference = build_lean_check(payload, dag_name)
+            for node_id, summary in reference["nodes"].items():
+                expected = summary.get("seq_hashes") or {}
+                actual = (check.get("nodes") or {}).get(node_id, {}).get("seq_hashes") or {}
+                if expected != actual:
+                    raise SystemExit(
+                        f"{check_path}: sequence hashes for node '{node_id}' did not match payload."
+                    )
+    print(f"Validated {len(checks)} lean-check file(s).")
+
+
+def command_veribiota_export_dags(args: argparse.Namespace) -> None:
+    inputs: List[Path] = args.inputs
+    if args.dag_names and len(args.dag_names) != len(inputs):
+        raise SystemExit("--dag-names length must match --inputs.")
+    dag_names = args.dag_names or [path.stem for path in inputs]
+    payloads = [_read_json(path) for path in inputs]
+    lean_text = dag_payloads_to_lean(
+        payloads,
+        dag_names,
+        module_name=args.module_name,
+        import_module=args.lean_import,
+        include_eval=args.eval,
+        include_theorem=not args.skip_theorem,
+        list_name=args.list_name,
+        theorem_name=args.theorem_name,
+    )
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(lean_text + "\n", encoding="utf-8")
+        print(f"Lean export saved to {args.out}.")
+    else:
+        print(lean_text)
+
+
+def command_veribiota_export_suite(args: argparse.Namespace) -> None:
+    inputs: List[Path] = args.inputs
+    if not inputs:
+        raise SystemExit("Provide at least one DAG JSON via --inputs.")
+    if args.dag_names and len(args.dag_names) != len(inputs):
+        raise SystemExit("--dag-names length must match --inputs when provided.")
+    dag_names = args.dag_names or [path.stem for path in inputs]
+    payloads = [_read_json(path) for path in inputs]
+    module_path = Path(args.module_path)
+    if module_path.suffix != ".lean":
+        module_path = module_path.with_suffix(".lean")
+    module_name = args.module_name or module_name_from_path(module_path)
+    lean_text = dag_payloads_to_lean(
+        payloads,
+        dag_names,
+        module_name=module_name,
+        import_module=args.lean_import,
+        include_eval=args.eval,
+        include_theorem=not args.skip_theorem,
+        list_name=args.list_name,
+        theorem_name=args.theorem_name,
+    )
+    root_path = args.veribiota_root
+    target_path = root_path / module_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(lean_text + "\n", encoding="utf-8")
+    print(f"Lean suite exported to {target_path}.")
+
+
 def command_workflows(args: argparse.Namespace) -> None:
     from helix_workflows import run_workflow_config
 
@@ -3065,7 +3086,7 @@ def command_viz_minimizers(args: argparse.Namespace) -> None:
             schema_kind="viz_minimizers",
             spec=spec,
             input_sha=extra_meta.get("input_sha256"),
-            command=_current_command_str(),
+            command=current_command_str(),
             viz_spec_path=spec_path,
         )
 
@@ -3097,7 +3118,7 @@ def command_viz_seed_chain(args: argparse.Namespace) -> None:
             schema_kind="viz_seed_chain",
             spec=spec,
             input_sha=extra_meta.get("input_sha256"),
-            command=_current_command_str(),
+            command=current_command_str(),
             viz_spec_path=spec_path,
         )
 
@@ -3129,7 +3150,7 @@ def command_viz_rna_dotplot(args: argparse.Namespace) -> None:
             schema_kind="viz_rna_dotplot",
             spec=spec,
             input_sha=extra_meta.get("input_sha256"),
-            command=_current_command_str(),
+            command=current_command_str(),
             viz_spec_path=spec_path,
         )
 
@@ -3212,7 +3233,7 @@ def command_viz_alignment_ribbon(args: argparse.Namespace) -> None:
             schema_kind="viz_alignment_ribbon",
             spec=spec,
             input_sha=extra_meta.get("input_sha256"),
-            command=_current_command_str(),
+            command=current_command_str(),
             viz_spec_path=spec_path,
         )
 
@@ -3246,7 +3267,7 @@ def command_viz_distance_heatmap(args: argparse.Namespace) -> None:
             schema_kind="viz_distance_heatmap",
             spec=spec,
             input_sha=extra_meta.get("input_sha256"),
-            command=_current_command_str(),
+            command=current_command_str(),
             viz_spec_path=spec_path,
         )
 
@@ -3281,9 +3302,49 @@ def command_viz_motif_logo(args: argparse.Namespace) -> None:
             schema_kind="viz_motif_logo",
             spec=spec,
             input_sha=extra_meta.get("input_sha256"),
-            command=_current_command_str(),
+            command=current_command_str(),
             viz_spec_path=spec_path,
         )
+
+
+def _load_modern_specs_from_paths(paths: Sequence[Path] | None) -> list[EditVisualizationSpec]:
+    from .gui.modern.spec import load_viz_specs
+
+    specs: list[EditVisualizationSpec] = []
+    if not paths:
+        return specs
+    for path in paths:
+        specs.extend(load_viz_specs(path))
+    return specs
+
+
+def command_viz_modern(args: argparse.Namespace) -> None:
+    _ensure_modern_gui_available()
+    from .gui.modern.qt import run_modern_viz
+
+    specs = _load_modern_specs_from_paths(args.spec)
+    if specs:
+        run_modern_viz(specs)
+    else:
+        run_modern_viz(None)
+
+
+def command_viz_modern_export(args: argparse.Namespace) -> None:
+    from .gui.modern.export import export_unity_bundle
+
+    specs = _load_modern_specs_from_paths(args.spec)
+    if not specs:
+        raise SystemExit("Provide at least one --spec path containing edit events.")
+    output_paths = export_unity_bundle(specs, output_dir=args.output_dir, camera_samples=args.camera_samples)
+    for path in output_paths:
+        print(f"Wrote {path}")
+
+
+def command_viz_sim_builder(args: argparse.Namespace) -> None:
+    _ensure_modern_gui_available()
+    from .gui.simbuilder import run_sim_builder
+
+    run_sim_builder()
 
 
 def command_viz_crispr_track(args: argparse.Namespace) -> None:
@@ -3306,7 +3367,7 @@ def command_viz_crispr_track(args: argparse.Namespace) -> None:
             schema_kind="viz_crispr_track",
             spec=spec,
             input_sha=extra_meta.get("input_sha256"),
-            command=_current_command_str(),
+            command=current_command_str(),
             viz_spec_path=spec_path,
         )
 
@@ -3370,7 +3431,7 @@ def command_demo_viz(args: argparse.Namespace) -> None:
                 schema_kind="viz_minimizers",
                 spec=spec,
                 input_sha=extra_meta.get("input_sha256"),
-                command=_current_command_str(),
+                command=current_command_str(),
                 viz_spec_path=viz_path,
             )
         elif name == "seed-chain":
@@ -3387,7 +3448,7 @@ def command_demo_viz(args: argparse.Namespace) -> None:
                 schema_kind="viz_seed_chain",
                 spec=spec,
                 input_sha=extra_meta.get("input_sha256"),
-                command=_current_command_str(),
+                command=current_command_str(),
                 viz_spec_path=viz_path,
             )
         elif name == "rna-dotplot":
@@ -3402,7 +3463,7 @@ def command_demo_viz(args: argparse.Namespace) -> None:
                 schema_kind="viz_rna_dotplot",
                 spec=spec,
                 input_sha=extra_meta.get("input_sha256"),
-                command=_current_command_str(),
+                command=current_command_str(),
                 viz_spec_path=viz_path,
             )
         elif name == "alignment-ribbon":
@@ -3420,7 +3481,7 @@ def command_demo_viz(args: argparse.Namespace) -> None:
                 schema_kind="viz_alignment_ribbon",
                 spec=spec,
                 input_sha=extra_meta.get("input_sha256"),
-                command=_current_command_str(),
+                command=current_command_str(),
                 viz_spec_path=viz_path,
             )
         elif name == "distance-heatmap":
@@ -3437,7 +3498,7 @@ def command_demo_viz(args: argparse.Namespace) -> None:
                 schema_kind="viz_distance_heatmap",
                 spec=spec,
                 input_sha=extra_meta.get("input_sha256"),
-                command=_current_command_str(),
+                command=current_command_str(),
                 viz_spec_path=viz_path,
             )
         elif name == "motif-logo":
@@ -3454,7 +3515,7 @@ def command_demo_viz(args: argparse.Namespace) -> None:
                 schema_kind="viz_motif_logo",
                 spec=spec,
                 input_sha=extra_meta.get("input_sha256"),
-                command=_current_command_str(),
+                command=current_command_str(),
                 viz_spec_path=viz_path,
             )
     print(f"Demo visualizations written to {output_dir}")
@@ -3496,7 +3557,7 @@ def _run_hgx_live(args: argparse.Namespace, hgx_path: Path) -> None:
         island = Island(name=f"island_{idx}", nodes=nodes, dt=dt)
         islands.append(island)
 
-    realtime_hook = _maybe_create_realtime_queue(getattr(args, "realtime", False), getattr(args, "realtime_endpoint", None))
+    realtime_hook = maybe_create_realtime_queue(getattr(args, "realtime", False), getattr(args, "realtime_endpoint", None))
     realtime_queue = realtime_hook.queue if realtime_hook else None
     node_meta = describe_graph_nodes(graph)
     reducer = StateReducer(hz=args.hz, realtime_queue=realtime_queue, node_meta=node_meta)
@@ -3512,7 +3573,7 @@ def _run_hgx_live(args: argparse.Namespace, hgx_path: Path) -> None:
         event_bus=event_bus,
         hot_swap_manager=hot_swap_manager,
     )
-    run_id = _compose_run_id(model.name or "model", getattr(args, "variant", None), args.seed)
+    run_id = compose_run_id(model.name or "model", getattr(args, "variant", None), args.seed)
     scheduler.runtime_meta = {
         "model": model.name,
         "slice": getattr(args, "slice", None),
@@ -3525,7 +3586,7 @@ def _run_hgx_live(args: argparse.Namespace, hgx_path: Path) -> None:
     duration = args.duration if args.duration is not None else 1.0
     hz = getattr(reducer, "hz", args.hz)
     input_series_file = str(args.inputs_json) if args.inputs_json else None
-    _finalize_live_run(
+    finalize_live_run(
         args,
         scheduler=scheduler,
         spec_path=hgx_path,
@@ -3556,7 +3617,7 @@ def _run_config_live(args: argparse.Namespace, config_path: Path) -> None:
     sim_cfg = cfg.get("sim", {})
     duration = args.duration if args.duration is not None else float(sim_cfg.get("duration", 60.0))
     sync_dt = float(sim_cfg.get("sync_dt", args.sync_dt))
-    realtime_hook = _maybe_create_realtime_queue(getattr(args, "realtime", False), getattr(args, "realtime_endpoint", None))
+    realtime_hook = maybe_create_realtime_queue(getattr(args, "realtime", False), getattr(args, "realtime_endpoint", None))
     realtime_queue = realtime_hook.queue if realtime_hook else None
     node_meta = describe_graph_nodes(graph)
     reducer = StateReducer(hz=args.hz, realtime_queue=realtime_queue, node_meta=node_meta)
@@ -3564,7 +3625,7 @@ def _run_config_live(args: argparse.Namespace, config_path: Path) -> None:
     hz = getattr(reducer, "hz", args.hz)
     model_base = cfg.get("name", config_path.stem)
     model_name = f"{model_base}-{variant}"
-    run_id = _compose_run_id(model_name, variant, args.seed)
+    run_id = compose_run_id(model_name, variant, args.seed)
     meta_extra = {
         "target_type": "config",
         "config_path": str(config_path),
@@ -3578,7 +3639,7 @@ def _run_config_live(args: argparse.Namespace, config_path: Path) -> None:
     scheduler.runtime_meta = dict(meta_extra)
     if realtime_hook and realtime_hook.server:
         realtime_hook.server.set_command_handler(_make_realtime_command_handler(scheduler))
-    _finalize_live_run(
+    finalize_live_run(
         args,
         scheduler=scheduler,
         spec_path=config_path,
@@ -3599,6 +3660,17 @@ def _run_config_live(args: argparse.Namespace, config_path: Path) -> None:
 def _format_kv_pairs(values: Mapping[str, float], limit: int) -> str:
     items = list(values.items())[:limit]
     return ", ".join(f"{k}={v:.4g}" for k, v in items)
+
+
+
+
+def command_live_dev(args: argparse.Namespace) -> None:
+    if args.hgx:
+        session = LiveSession.from_hgx(Path(args.hgx), sync_dt=args.sync_dt, default_dt=args.default_dt)
+    else:
+        session = LiveSession(name=args.name, sync_dt=args.sync_dt, default_dt=args.default_dt)
+    shell = LiveDevShell(session)
+    shell.loop()
 
 
 def command_live_inspect(args: argparse.Namespace) -> None:
@@ -3728,7 +3800,7 @@ def command_live_inspect(args: argparse.Namespace) -> None:
     }
 
     if args.json:
-        _dump_json(args.json, summary)
+        dump_json(args.json, summary)
         return
 
     print(f"Bundle: {summary['bundle']}")
@@ -3776,6 +3848,258 @@ def command_live_viz(args: argparse.Namespace) -> None:
 
     app = LiveVizApp(endpoint=endpoint, bundle=bundle, target_hz=args.hz)
     app.run()
+
+
+def command_live_demo(args: argparse.Namespace) -> None:
+    _ensure_realtime_available()
+    endpoint = args.realtime_endpoint or "tcp://127.0.0.1:8765"
+    hook = maybe_create_realtime_queue(True, endpoint)
+    if not hook:
+        raise SystemExit("Unable to start realtime server.")
+    rig = _RealtimeDemo(hz=args.hz)
+    if hook.server:
+        hook.server.set_command_handler(rig.handle_control)
+    duration = args.duration or 0.0
+    try:
+        rig.run(hook.queue, duration=duration)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        hook.queue.put(None)
+        if hook.server:
+            hook.server.close()
+
+
+class _RealtimeDemo:
+    """Synthetic EGF + agent streamer for testing the realtime viz."""
+
+    def __init__(self, *, field_size: Tuple[int, int] = (128, 128), hz: float = 30.0, agents: int = 200):
+        self.nx, self.ny = field_size
+        self.hz = hz
+        self.dt = 1.0 / max(hz, 1.0)
+        self.t = 0.0
+        self.paused = False
+        self.grb2_scale = 1.0
+        self.variant = "wt"
+        self.variants = ["wt", "ko", "hig"]
+        self.rng = np.random.default_rng(17)
+        self._agents: Dict[int, Dict[str, float]] = {
+            idx: {
+                "id": idx,
+                "x": float(self.rng.uniform(0.0, self.nx)),
+                "y": float(self.rng.uniform(0.0, self.ny)),
+                "perk": float(self.rng.uniform(0.0, 1.0)),
+            }
+            for idx in range(agents)
+        }
+        self._full_sent = False
+
+    def run(self, queue: "queue.Queue", *, duration: float) -> None:
+        deadline = time.time() + duration if duration > 0 else None
+        try:
+            while deadline is None or time.time() < deadline:
+                start = time.time()
+                delta = self._build_delta()
+                queue.put(delta)
+                sleep_for = max(0.0, self.dt - (time.time() - start))
+                time.sleep(sleep_for)
+        except KeyboardInterrupt:
+            raise
+
+    def _build_delta(self) -> Dict[str, Any]:
+        if not self.paused:
+            self._step_agents()
+            self.t += self.dt
+        field = self._make_field(self.t)
+        tile = self._encode_tile(field)
+        agents = self._agents_payload()
+        metrics = {
+            "grb2_scale": self.grb2_scale,
+            "cell_count": len(self._agents),
+            "time": self.t,
+        }
+        return {
+            "schema_version": 1,
+            "kind": "live_delta",
+            "slice": "egfr_demo",
+            "variant": self.variant,
+            "run_id": "egfr_demo",
+            "t": self.t,
+            "dt": 0.0 if self.paused else self.dt,
+            "metrics": metrics,
+            "fields": {
+                "egf": {
+                    "id": 0,
+                    "nx": self.nx,
+                    "ny": self.ny,
+                    "min": float(field.min()),
+                    "max": float(field.max()),
+                    "dtype": "f32",
+                    "tiles": [tile],
+                }
+            },
+            "agents": agents,
+        }
+
+    def _make_field(self, t: float) -> np.ndarray:
+        x = np.linspace(0.0, 1.0, self.nx, dtype="float32")[None, :]
+        y = np.linspace(0.0, 1.0, self.ny, dtype="float32")[:, None]
+        wave = np.sin(0.5 * t)
+        gradient = np.clip(x + y + 0.2 * wave * self.grb2_scale, 0.0, 2.0)
+        gradient /= gradient.max() if gradient.max() else 1.0
+        return gradient.astype("float32")
+
+    def _encode_tile(self, arr: np.ndarray) -> Dict[str, Any]:
+        contiguous = np.ascontiguousarray(arr)
+        return {
+            "x0": 0,
+            "y0": 0,
+            "nx": contiguous.shape[1],
+            "ny": contiguous.shape[0],
+            "encoding": "raw_f32_le",
+            "data": base64.b64encode(contiguous.tobytes()).decode("ascii"),
+        }
+
+    def _agents_payload(self) -> Dict[str, Any]:
+        if not self._agents:
+            return {"full": True, "add": [], "update": [], "remove": []}
+        if not self._full_sent:
+            add = [dict(agent) for agent in self._agents.values()]
+            updates: List[Dict[str, float]] = []
+            self._full_sent = True
+            full = True
+        else:
+            add = []
+            updates = [
+                {"id": agent_id, "x": agent["x"], "y": agent["y"], "perk": agent["perk"]}
+                for agent_id, agent in self._agents.items()
+            ]
+            full = False
+        return {
+            "full": full,
+            "add": add,
+            "update": updates,
+            "remove": [],
+        }
+
+    def _step_agents(self) -> None:
+        for agent in self._agents.values():
+            agent["x"] = float((agent["x"] + self.rng.normal(scale=1.5)) % self.nx)
+            agent["y"] = float((agent["y"] + self.rng.normal(scale=1.5)) % self.ny)
+            agent["perk"] = float(np.clip(agent["perk"] + self.rng.normal(scale=0.04), 0.0, 1.0))
+
+    def handle_control(self, payload: Dict[str, Any]) -> None:
+        if payload.get("kind") == "live_control":
+            control_type = payload.get("type")
+            if control_type == "set_param" and payload.get("param") == "grb2_scale":
+                value = payload.get("value")
+                if isinstance(value, (int, float)):
+                    self.grb2_scale = float(value)
+            elif control_type == "set_variant":
+                variant = payload.get("variant")
+                if isinstance(variant, str) and variant in self.variants:
+                    self.variant = variant
+            elif control_type == "pause":
+                self.paused = True
+            elif control_type == "resume":
+                self.paused = False
+            elif control_type == "toggle":
+                self.paused = not self.paused
+        else:
+            command = payload.get("command")
+            if command == "set_egf":
+                value = payload.get("value")
+                if isinstance(value, (int, float)):
+                    self.grb2_scale = float(value)
+            elif command == "pause":
+                self.paused = True
+            elif command == "resume":
+                self.paused = False
+            elif command == "toggle":
+                self.paused = not self.paused
+
+
+def command_live_plan(args: argparse.Namespace) -> None:
+    slice_path = None
+    if getattr(args, "slice", None):
+        try:
+            slice_path = resolve_slice(args.slice)
+        except KeyError as exc:
+            raise SystemExit(str(exc)) from exc
+    target = args.config or slice_path or args.hgx or args.target
+    if target is None:
+        raise SystemExit("Provide a .hgx model (--hgx) or an orchestrator config path.")
+    path = Path(target)
+    if path.suffix.lower() in {".yaml", ".yml"} and not args.hgx:
+        _plan_config_live(args, path)
+    else:
+        _plan_hgx_live(args, path)
+
+
+def _plan_hgx_live(args: argparse.Namespace, hgx_path: Path) -> None:
+    model = load_hgx(hgx_path)
+    graph = build_graph_from_hgx(model)
+    dt_overrides = _parse_dt_overrides(getattr(args, "dt_override", []))
+    default_dt = args.default_dt
+    sync_dt = args.sync_dt
+    components = graph.strongly_connected_components()
+    if not components:
+        components = [(node.name,) for node in graph.iter_nodes()]
+    islands = []
+    for idx, comp in enumerate(components):
+        comp_dt = min(dt_overrides.get(name, default_dt) for name in comp)
+        islands.append(
+            {
+                "name": f"island_{idx}",
+                "dt": comp_dt,
+                "nodes": list(comp),
+            }
+        )
+    print_plan_summary(
+        title=f"Live plan for {hgx_path}",
+        model_name=model.name or hgx_path.stem,
+        sync_dt=sync_dt,
+        default_dt=default_dt,
+        overrides=dt_overrides,
+        islands=islands,
+        node_count=len(list(graph.iter_nodes())),
+        edge_count=len(graph.edges),
+    )
+
+
+def _plan_config_live(args: argparse.Namespace, config_path: Path) -> None:
+    try:
+        from helixtasks.egfr_grb2_orchestrator import build_from_config
+    except ImportError as exc:  # pragma: no cover - optional repo scripts
+        raise SystemExit(
+            "EGFR/GRB2 orchestrator is unavailable. Ensure `helixtasks` is importable."
+        ) from exc
+    variant = args.variant or "wt"
+    graph, scheduler, cfg = build_from_config(config_path, variant)
+    sim_cfg = cfg.get("sim", {})
+    sync_dt = float(sim_cfg.get("sync_dt", args.sync_dt))
+    default_dt = float(sim_cfg.get("default_dt", args.default_dt))
+    islands = []
+    for idx, island in enumerate(getattr(scheduler, "islands", [])):
+        nodes = [getattr(node, "name", "") for node in getattr(island, "nodes", []) if getattr(node, "name", None)]
+        islands.append(
+            {
+                "name": getattr(island, "name", f"island_{idx}"),
+                "dt": getattr(island, "dt", None),
+                "nodes": nodes,
+            }
+        )
+    print_plan_summary(
+        title=f"Live plan for {config_path}",
+        model_name=cfg.get("name") or config_path.stem,
+        sync_dt=sync_dt,
+        default_dt=default_dt,
+        overrides={},
+        islands=islands,
+        node_count=len(graph.nodes),
+        edge_count=len(graph.edges),
+    )
+
 
 def build_parser() -> argparse.ArgumentParser:
     description = (
@@ -3921,6 +4245,55 @@ def build_parser() -> argparse.ArgumentParser:
     )
     live_viz.add_argument("--hz", type=float, default=60.0, help="Target redraw rate (default: 60 Hz).")
     live_viz.set_defaults(func=command_live_viz)
+    live_demo = live_sub.add_parser("demo", help="Stream a synthetic EGF field + agents for testing the viz stack.")
+    live_demo.add_argument(
+        "--duration",
+        type=float,
+        default=60.0,
+        help="How long to stream (seconds). Use 0 for an endless loop.",
+    )
+    live_demo.add_argument("--hz", type=float, default=30.0, help="Demo frame rate (default: 30 Hz).")
+    live_demo.add_argument(
+        "--realtime-endpoint",
+        type=str,
+        help="Endpoint for the realtime server (default: tcp://127.0.0.1:8765).",
+    )
+    live_demo.set_defaults(func=command_live_demo)
+    live_plan = live_sub.add_parser("plan", help="Inspect the island layout/dt table without running the model.")
+    live_plan.add_argument(
+        "target",
+        nargs="?",
+        type=Path,
+        help="Path to a .hgx LiveGraph model or an orchestrator config YAML.",
+    )
+    live_plan.add_argument("--hgx", type=Path, help="Path to the .hgx model (legacy flag).")
+    live_plan.add_argument("--config", type=Path, help="Path to an orchestrator config YAML.")
+    live_plan.add_argument(
+        "--slice",
+        type=str,
+        help=f"Named slice declared in the registry (available: {', '.join(sorted(SLICE_REGISTRY))}).",
+    )
+    live_plan.add_argument("--variant", type=str, help="Variant name defined by the orchestrator config.")
+    live_plan.add_argument("--sync-dt", type=float, default=0.25, help="Synchronization cadence Δt (default: 0.25).")
+    live_plan.add_argument("--default-dt", type=float, default=0.1, help="Default island Δt (default: 0.1).")
+    live_plan.add_argument(
+        "--dt",
+        dest="dt_override",
+        action="append",
+        default=[],
+        help="Override per-node dt (format: node=0.05). Repeat for multiple nodes.",
+    )
+    live_plan.set_defaults(func=command_live_plan)
+    live_dev = live_sub.add_parser("dev", help="Interactive LiveLab session (REPL).")
+    live_dev.add_argument(
+        "--hgx",
+        type=Path,
+        help="Optional HGX graph to load as the starting point.",
+    )
+    live_dev.add_argument("--name", type=str, default="LiveSession", help="Session name (default: LiveSession).")
+    live_dev.add_argument("--sync-dt", type=float, default=0.25, help="Synchronization Δt (default: 0.25).")
+    live_dev.add_argument("--default-dt", type=float, default=0.1, help="Default island Δt (default: 0.1).")
+    live_dev.set_defaults(func=command_live_dev)
 
     crispr = subparsers.add_parser("crispr", help="CRISPR design helpers.")
     crispr_sub = crispr.add_subparsers(dest="crispr_command", required=True)
@@ -3990,6 +4363,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--emit-sequences",
         action="store_true",
         help="Include raw site/guide sequences in the JSON (masked by default).",
+    )
+    crispr_sim.add_argument(
+        "--viz-spec",
+        type=Path,
+        help="Optional path to write a ModernGL viz spec for helix viz modern.",
     )
     crispr_sim.set_defaults(func=command_crispr_simulate)
 
@@ -4072,8 +4450,36 @@ def build_parser() -> argparse.ArgumentParser:
     prime_sim.add_argument("--mismatch-tolerance", type=int, help="Override mismatch tolerance.")
     prime_sim.add_argument("--flap-balance", type=float, help="Relative weight for left vs right flap resolution (0-1).")
     prime_sim.add_argument("--reanneal-bias", type=float, help="Probability mass for reanneal/no-edit branches.")
-    prime_sim.add_argument("--max-outcomes", type=int, default=16, help="Maximum number of outcomes to emit (default: 16).")
+    prime_sim.add_argument(
+        "--max-outcomes",
+        type=int,
+        default=16,
+        help="Deprecated; retained for compatibility. Use --draws to control sampling size.",
+    )
+    prime_sim.add_argument("--draws", type=int, default=1000, help="Number of Monte Carlo draws (default: 1000).")
+    prime_sim.add_argument("--seed", type=int, help="Optional RNG seed.")
+    prime_sim.add_argument(
+        "--priors-profile",
+        default="default_indel",
+        help="Prime priors profile to use (default: default_indel).",
+    )
+    prime_sim.add_argument(
+        "--pam-profile",
+        default="SpCas9_NGG",
+        help="Named PAM profile or preset used to build the PAM mask (default: SpCas9_NGG).",
+    )
+    prime_sim.add_argument(
+        "--pam-softness",
+        type=float,
+        default=1.0,
+        help="Penalty applied to off-PAM positions (0.0=disallow, 1.0=ignore PAM; default: 1.0).",
+    )
     prime_sim.add_argument("--json", type=Path, help="Optional output JSON path (defaults to stdout).")
+    prime_sim.add_argument(
+        "--viz-spec",
+        type=Path,
+        help="Optional path to write a ModernGL viz spec for helix viz modern.",
+    )
     prime_sim.set_defaults(func=command_prime_simulate)
 
     prime_dag = prime_sub.add_parser("dag", help="Construct a prime editing edit DAG.")
@@ -4431,6 +4837,49 @@ def build_parser() -> argparse.ArgumentParser:
     viz_motif.add_argument("--schema", action="store_true", help="Print schema/sample and exit.")
     viz_motif.set_defaults(func=command_viz_motif_logo)
 
+    viz_modern = viz_subparsers.add_parser(
+        "modern",
+        help="Launch the PyQt + ModernGL CRISPR/prime-editing viewer.",
+    )
+    viz_modern.add_argument(
+        "--spec",
+        type=Path,
+        action="append",
+        help="Path to a visualization spec JSON (repeat for multiple edits).",
+    )
+    viz_modern.set_defaults(func=command_viz_modern)
+
+    viz_modern_export = viz_subparsers.add_parser(
+        "modern-export",
+        help="Export CRISPR/prime edit timelines for Unity/Three.js.",
+    )
+    viz_modern_export.add_argument(
+        "--spec",
+        type=Path,
+        action="append",
+        required=True,
+        help="Visualization spec JSON path(s) or bundles.",
+    )
+    viz_modern_export.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Directory to write timeline JSON files.",
+    )
+    viz_modern_export.add_argument(
+        "--camera-samples",
+        type=int,
+        default=120,
+        help="Number of orbit keyframes to bake into the export (default: 120).",
+    )
+    viz_modern_export.set_defaults(func=command_viz_modern_export)
+
+    viz_sim_builder = viz_subparsers.add_parser(
+        "sim-builder",
+        help="Launch the interactive CRISPR/prime simulation UI.",
+    )
+    viz_sim_builder.set_defaults(func=command_viz_sim_builder)
+
     demo_cmd = subparsers.add_parser("demo", help="Demo helpers for Helix.")
     demo_sub = demo_cmd.add_subparsers(dest="demo_command", required=True)
     demo_viz = demo_sub.add_parser("viz", help="Render sample visualization payloads.")
@@ -4547,6 +4996,132 @@ def build_parser() -> argparse.ArgumentParser:
     motif_find.add_argument("--plot", type=Path, help="Optional PWM plot path (requires matplotlib).")
     motif_find.add_argument("--plot-viz-spec", type=Path, help="Optional viz-spec JSON path for --plot.")
     motif_find.set_defaults(func=command_motif_find)
+
+    veribiota_cmd = subparsers.add_parser("veribiota", help="Lean/VeriBiota export helpers.")
+    veribiota_sub = veribiota_cmd.add_subparsers(dest="veribiota_command", required=True)
+
+    veribiota_export = veribiota_sub.add_parser("export", help="Export an edit DAG payload to a Lean module.")
+    veribiota_export.add_argument("--input", type=Path, required=True, help="Path to a Helix edit DAG JSON.")
+    veribiota_export.add_argument("--out", type=Path, help="Lean output file (defaults to stdout).")
+    veribiota_export.add_argument("--dag-name", default="example_dag", help="Lean identifier for the DAG value.")
+    veribiota_export.add_argument("--module-name", default="VeriBiotaBridge", help="Lean namespace for the output.")
+    veribiota_export.add_argument(
+        "--lean-import",
+        default="VeriBiota",
+        help="Lean module to import for EditDAG definitions (default: VeriBiota).",
+    )
+    veribiota_export.add_argument(
+        "--skip-eval",
+        action="store_true",
+        help="Skip emitting `#eval VeriBiota.check <dag>`.",
+    )
+    veribiota_export.add_argument(
+        "--skip-theorem",
+        action="store_true",
+        help="Skip inserting the placeholder theorem/`admit` block.",
+    )
+    veribiota_export.set_defaults(func=command_veribiota_export)
+
+    veribiota_check = veribiota_sub.add_parser(
+        "lean-check", help="Generate lean-check summaries for downstream Lean validation."
+    )
+    veribiota_check.add_argument("--input", type=Path, required=True, help="Edit DAG JSON input.")
+    veribiota_check.add_argument("--dag-name", help="Override DAG name stored in the check file.")
+    veribiota_check.add_argument("--out", type=Path, help="Lean-check JSON output (defaults to stdout).")
+    veribiota_check.add_argument(
+        "--skip-validate",
+        action="store_true",
+        help="Skip verifying the generated lean-check payload.",
+    )
+    veribiota_check.add_argument(
+        "--prob-tol",
+        type=float,
+        default=5e-3,
+        help="Probability tolerance for validation (default: 5e-3).",
+    )
+    veribiota_check.set_defaults(func=command_veribiota_lean_check)
+
+    veribiota_preflight = veribiota_sub.add_parser(
+        "preflight", help="Validate lean-check JSON files (and optional source payloads)."
+    )
+    veribiota_preflight.add_argument("--checks", type=Path, nargs="+", required=True, help="Lean-check JSON paths.")
+    veribiota_preflight.add_argument(
+        "--payloads",
+        type=Path,
+        nargs="+",
+        help="Optional edit DAG JSONs to cross-check seq hashes (must align with --checks).",
+    )
+    veribiota_preflight.add_argument(
+        "--prob-tol",
+        type=float,
+        default=5e-3,
+        help="Probability tolerance for validation (default: 5e-3).",
+    )
+    veribiota_preflight.set_defaults(func=command_veribiota_preflight)
+
+    veribiota_multi = veribiota_sub.add_parser(
+        "export-dags", help="Export multiple edit DAG payloads into a single Lean module."
+    )
+    veribiota_multi.add_argument("--inputs", type=Path, nargs="+", required=True, help="List of edit DAG JSON files.")
+    veribiota_multi.add_argument("--out", type=Path, help="Lean output file (defaults to stdout).")
+    veribiota_multi.add_argument("--dag-names", nargs="+", help="Optional Lean identifiers (defaults to file stems).")
+    veribiota_multi.add_argument("--module-name", default="VeriBiotaBridge", help="Lean namespace for the output.")
+    veribiota_multi.add_argument(
+        "--lean-import",
+        default="VeriBiota",
+        help="Lean module to import for EditDAG definitions (default: VeriBiota).",
+    )
+    veribiota_multi.add_argument("--list-name", default="exampleDags", help="Lean identifier for the DAG list.")
+    veribiota_multi.add_argument(
+        "--theorem-name",
+        help="Identifier for the aggregate theorem (default: <list_name>_all_checked).",
+    )
+    veribiota_multi.add_argument(
+        "--eval",
+        action="store_true",
+        help="Emit `#eval VeriBiota.check <dag>` for each DAG (disabled by default).",
+    )
+    veribiota_multi.add_argument(
+        "--skip-theorem",
+        action="store_true",
+        help="Skip inserting the aggregate theorem stub.",
+    )
+    veribiota_multi.set_defaults(func=command_veribiota_export_dags)
+
+    veribiota_suite = veribiota_sub.add_parser(
+        "export-suite", help="Export DAG JSONs directly into a VeriBiota checkout."
+    )
+    veribiota_suite.add_argument("--inputs", type=Path, nargs="+", required=True, help="DAG JSON inputs.")
+    veribiota_suite.add_argument("--dag-names", nargs="+", help="Optional Lean identifiers for each DAG.")
+    veribiota_suite.add_argument("--veribiota-root", type=Path, required=True, help="Path to VeriBiota repo root.")
+    veribiota_suite.add_argument(
+        "--module-path",
+        type=Path,
+        required=True,
+        help="Relative path inside VeriBiota repo for the Lean module (e.g., Biosim/VeriBiota/Helix/CrisprMicro.lean).",
+    )
+    veribiota_suite.add_argument("--module-name", help="Override Lean module name (defaults to module path).")
+    veribiota_suite.add_argument(
+        "--lean-import",
+        default="Biosim.VeriBiota.EditDAG",
+        help="Lean module to import for EditDAG definitions (default: Biosim.VeriBiota.EditDAG).",
+    )
+    veribiota_suite.add_argument("--list-name", default="allDags", help="Identifier for the suite's DAG list.")
+    veribiota_suite.add_argument(
+        "--theorem-name",
+        help="Identifier for the aggregate theorem (default: <list_name>_all_checked).",
+    )
+    veribiota_suite.add_argument(
+        "--eval",
+        action="store_true",
+        help="Emit `#eval VeriBiota.check <dag>` for each DAG (disabled by default).",
+    )
+    veribiota_suite.add_argument(
+        "--skip-theorem",
+        action="store_true",
+        help="Skip inserting the aggregate theorem stub.",
+    )
+    veribiota_suite.set_defaults(func=command_veribiota_export_suite)
 
     return parser
 

@@ -153,6 +153,7 @@ def test_cli_crispr_simulate_and_viz(tmp_path: Path):
     sim_json = tmp_path / "sim.json"
     guides_payload = json.loads(guides_json.read_text())
     guide_id = guides_payload["guides"][0]["id"]
+    spec_path = tmp_path / "sim_spec.json"
     run_cli(
         "crispr",
         "simulate",
@@ -168,10 +169,15 @@ def test_cli_crispr_simulate_and_viz(tmp_path: Path):
         "123",
         "--json",
         str(sim_json),
+        "--viz-spec",
+        str(spec_path),
     )
     sim_payload = json.loads(sim_json.read_text())
     assert sim_payload["schema"]["kind"] == "crispr.sim"
     assert sim_payload["outcomes"]
+    spec_payload = json.loads(spec_path.read_text())
+    assert spec_payload["sequence"]
+    assert spec_payload["edit_events"]
 
     output = tmp_path / "track.png"
     run_cli(

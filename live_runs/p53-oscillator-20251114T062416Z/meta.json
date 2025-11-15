@@ -9,7 +9,7 @@
   "input_series_file": null,
   "hz": 60.0,
   "wall_budget_ms": 5.0,
-  "wall_time_sec": 0.021412600006442517,
+  "wall_time_sec": 0.02139744401210919,
   "islands": [
     {
       "name": "island_0",
@@ -46,6 +46,6 @@
   "target_type": "hgx",
   "snapshots": 4,
   "helix_version": "0.3.0",
-  "timestamp": "2025-11-14T05:43:57.556022+00:00",
-  "command": "helix live run --realtime --hgx examples/p53_oscillator.hgx"
+  "timestamp": "2025-11-14T06:24:16.582797+00:00",
+  "command": "helix live run --hgx examples/p53_oscillator.hgx --realtime --realtime-endpoint tcp://127.0.0.1:8765"
 }

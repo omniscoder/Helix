@@ -2,6 +2,21 @@
 
 Helix ships an experimental LiveGraph runtime so you can iterate on multi-rate, SCC-condensed HGX models without leaving the CLI. The `helix live run` command ingests an `.hgx` graph, builds solver islands, executes them with the `LiveScheduler`, and writes a COMBINE-style bundle for reproducibility.
 
+### Quick start
+
+```
+# 1. Run the synthetic demo graph and stream realtime deltas
+helix live run --hgx examples/live_demo.hgx --duration 5 --realtime
+
+# 2. Attach the viewer (while the run above is active)
+helix live viz --endpoint tcp://127.0.0.1:8765
+# or replay a bundle after the run finishes:
+# helix live viz --bundle live_runs/LiveDemo-*
+
+# 3. Inspect the bundle that was written during the run
+helix live inspect live_runs/LiveDemo-* --json live_demo_summary.json
+```
+
 ```bash
 helix live run \
   --hgx examples/p53_oscillator.hgx \
@@ -15,7 +30,7 @@ helix live run \
 
 ## Arguments
 
-- `--hgx`: path to the HGX/YAML LiveGraph definition (required).
+- `--hgx`: path to the HGX/YAML LiveGraph definition (e.g., `examples/live_demo.hgx`; required).
 - `--duration`: simulation time horizon.
 - `--sync-dt`: operator-split sync cadence between islands.
 - `--default-dt`: fallback Δt for any island that does not have an override.
@@ -45,6 +60,15 @@ The JSON format maps `node.port` names to either a constant or a list of `{ "t":
 ```
 
 Use `--input` for quick overrides; JSON is better for replaying experimental stimuli or scripted perturbations. CLI flags win if both specify the same `node.port`.
+
+The repository ships `examples/live_demo_inputs.json` so you can feed the demo graph a tiny step stimulus:
+
+```
+helix live run \
+  --hgx examples/live_demo.hgx \
+  --inputs-json examples/live_demo_inputs.json \
+  --duration 4
+```
 
 ## Inspect bundles
 
@@ -118,6 +142,53 @@ Attach the new GUI with `helix live viz --endpoint tcp://127.0.0.1:8765` (or `--
 - Variant dropdowns dispatch `set_variant` hot swaps (EGFR/GRB2 updates SBML parameters on the fly).
 
 Since the transport is socket-based you can run multiple viz clients (or headless loggers) in parallel. Commands use the same structured schema as the viewer (e.g., `{"kind": "live_control", "type": "pause"}` or `{"kind": "live_control", "type": "set_param", "target": "egfr_rules", "param": "grb2_scale", "value": 1.6}`) so custom dashboards can build on the same channel.
+
+Need a quick feed without running a full model? `helix live demo --hz 30 --duration 120` spins up a synthetic EGF gradient + 200 mock agents that stream over the realtime endpoint, so you can test the renderer/controls end-to-end before wiring in a real slice.
+
+## Plan runs without executing
+
+Use `helix live plan` to dry-run a model/config and inspect the SCC→island breakdown, dt table, and overrides before launching a full simulation. This is perfect for PR reviews or checking `--dt node=...` overrides.
+
+```
+helix live plan --hgx examples/live_demo.hgx --dt cells=0.25
+
+Live plan for examples/live_demo.hgx
+  model: LiveDemo
+  sync_dt: 0.25
+  default_dt: 0.1
+  dt overrides:
+    - cells = 0.25
+  graph: 3 nodes / 4 edges
+  islands:
+    1. island_0 (dt=0.1)
+       nodes: egf_field, cells, observer
+```
+
+## LiveLab (interactive dev shell)
+
+Need to sketch or tweak a graph without editing files? `helix live dev` drops you into an interactive REPL (LiveLab). You can add/delete nodes, connect ports, set per-node dt, run the scheduler, and export an `.hgx`/bundle — all while the sim stays hot.
+
+```
+# start empty
+helix live dev
+
+# start from an existing HGX
+helix live dev --hgx examples/live_demo.hgx
+```
+
+Inside the shell, commands are prefixed with `:` (see `:help`):
+
+```
+:add node egf kind=Field diffusion=50.0 decay=0.01 mesh=[128,128,1.0]
+:add node cells kind=ABM size=[64,64] max_agents=500
+:connect egf.tile cells.field_signal
+:plan
+:run t=5 realtime
+:export hgx builds/my_demo.hgx
+:quit
+```
+
+The LiveLab session uses the same scheduler, delta stream, and export path as the standard CLI, so anything you design interactively can flow straight into `helix live run`/`viz`/`inspect`.
 
 ## Tips
 

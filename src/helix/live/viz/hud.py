@@ -181,17 +181,20 @@ class BitmapFont:
                 }
             """,
         )
-        self._buffer = ctx.buffer(reserve=0)
-        self._vao = ctx.vertex_array(
-            self._program,
-            [(self._buffer, "2f 2f", "in_pos", "in_uv")],
-        )
+        self._buffer = ctx.buffer(reserve=256)
+        self._build_vao()
         self._texture = ctx.texture(self._atlas.shape[::-1], 1, data=self._atlas.tobytes())
         self._texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
         self._screen = (1.0, 1.0)
 
     def set_screen(self, width: float, height: float) -> None:
         self._screen = (max(width, 1.0), max(height, 1.0))
+
+    def _build_vao(self) -> None:
+        self._vao = self.ctx.vertex_array(
+            self._program,
+            [(self._buffer, "2f 2f", "in_pos", "in_uv")],
+        )
 
     def draw_text(self, text: str, x: float, y: float, color: Tuple[float, float, float, float], size: float = 14.0) -> None:
         if not text:
@@ -249,7 +252,7 @@ class BitmapFont:
         if not vertices:
             return
         data = np.array(vertices, dtype="f4")
-        self._buffer.orphan(data.nbytes)
+        self._ensure_capacity(data.nbytes)
         self._buffer.write(data.tobytes())
         self._program["u_screen"].value = self._screen
         self._program["u_color"].value = color
@@ -273,6 +276,13 @@ class BitmapFont:
             u1 = (x_offset + self._glyph_w) / width
             lookup[char] = (u0, 0.0, u1, 1.0)
         return atlas, lookup
+
+    def _ensure_capacity(self, required: int) -> None:
+        if required <= self._buffer.size:
+            return
+        self._buffer.release()
+        self._buffer = self.ctx.buffer(reserve=required)
+        self._build_vao()
 
 
 class HelixHUD:
@@ -312,12 +322,14 @@ class HelixHUD:
                 }
             """,
         )
-        self._buffer = ctx.buffer(reserve=0)
-        self._vao = ctx.simple_vertex_array(self._program, self._buffer, "in_pos")
+        self._buffer = ctx.buffer(reserve=256)
+        self._rebuild_vao()
         self._font = BitmapFont(ctx)
         self._hover: Optional[str] = None
         self._mouse_down_prev = False
         self._screen = (1280.0, 720.0)
+        self._open_dropdown: Optional[str] = None
+        self._dropdown_hover_index: Optional[int] = None
 
     def build_controls(
         self,
@@ -331,6 +343,8 @@ class HelixHUD:
         variant_options: Sequence[str],
         paused: bool,
         interactive: bool,
+        bundle_mode: bool,
+        bundle_playing: bool,
     ) -> None:
         self._screen = (max(width, 1), max(height, 1))
         self._font.set_screen(*self._screen)
@@ -363,7 +377,7 @@ class HelixHUD:
                 dropdown_rect = Rect(panel.x + 16, cursor_y, panel.w - 32, control_height)
                 current_variant = variant or variant_options[0]
                 self._values["variant"] = current_variant
-                dropdown_label = f"VARIANT {current_variant.upper()}"
+                dropdown_label = f"VARIANT {current_variant.upper()} ▾"
                 controls.append(
                     HUDControl(
                         "variant",
@@ -375,6 +389,16 @@ class HelixHUD:
                     )
                 )
                 cursor_y -= control_height + 10
+        elif bundle_mode:
+            play_rect = Rect(panel.x + 16, cursor_y, panel.w - 32, control_height)
+            play_label = "PAUSE" if bundle_playing else "PLAY"
+            controls.append(
+                HUDControl("bundle_toggle", play_rect, "button", play_label, value=bundle_playing)
+            )
+            cursor_y -= control_height + 10
+            step_rect = Rect(panel.x + 16, cursor_y, panel.w - 32, control_height)
+            controls.append(HUDControl("bundle_step", step_rect, "button", "STEP", value=False))
+            cursor_y -= control_height + 10
 
         stats_rect = Rect(panel.x + 16, panel.y + 16, panel.w - 32, control_height + 20)
         perk_val = metrics.get("pERK", 0.0)
@@ -401,13 +425,39 @@ class HelixHUD:
         )
         self.controls = controls
 
-    def handle_mouse(self, mouse_x: float, mouse_y: float, mouse_down: bool, *, interactive: bool) -> List[HudEvent]:
-        if not interactive:
+    def handle_mouse(self, mouse_x: float, mouse_y: float, mouse_down: bool, *, interactive: bool, bundle_mode: bool) -> List[HudEvent]:
+        if not (interactive or bundle_mode):
             self._mouse_down_prev = mouse_down
             self._hover = None
+            self._open_dropdown = None
+            self._dropdown_hover_index = None
             return []
         events: List[HudEvent] = []
         self._hover = None
+
+        if self._open_dropdown is not None:
+            control = next((c for c in self.controls if c.id == self._open_dropdown), None)
+            if control is None or not control.options:
+                self._open_dropdown = None
+                self._dropdown_hover_index = None
+            else:
+                menu_rect, item_height = self._dropdown_menu_rect(control)
+                self._dropdown_hover_index = None
+                if menu_rect.contains(mouse_x, mouse_y):
+                    rel_y = mouse_y - menu_rect.y
+                    idx = int(rel_y // max(item_height, 1e-3))
+                    if 0 <= idx < len(control.options or []):
+                        self._dropdown_hover_index = idx
+                if mouse_down and not self._mouse_down_prev:
+                    if menu_rect.contains(mouse_x, mouse_y) and self._dropdown_hover_index is not None:
+                        selected = control.options[self._dropdown_hover_index]
+                        self._values[control.id] = selected
+                        events.append(HudEvent(control.id, "change", value=selected))
+                    self._open_dropdown = None
+                    self._dropdown_hover_index = None
+            self._mouse_down_prev = mouse_down
+            return events
+
         for control in self.controls:
             if control.kind not in {"button", "slider", "dropdown"}:
                 continue
@@ -417,22 +467,20 @@ class HelixHUD:
             if control.kind == "button":
                 if mouse_down and not self._mouse_down_prev:
                     events.append(HudEvent(control.id, "click"))
-            elif control.kind == "slider" and control.min is not None and control.max is not None:
+            elif control.kind == "slider" and control.min is not None and control.max is not None and interactive:
                 if mouse_down:
                     ratio = _clamp((mouse_x - control.rect.x) / max(control.rect.w, 1e-6), 0.0, 1.0)
                     value = control.min + ratio * (control.max - control.min)
                     self._values[control.id] = value
                     events.append(HudEvent(control.id, "change", value=value))
-            elif control.kind == "dropdown" and control.options:
+            elif control.kind == "dropdown" and control.options and interactive:
                 if mouse_down and not self._mouse_down_prev:
-                    current = str(self._values.get(control.id, control.options[0]))
-                    if current in control.options:
-                        idx = (control.options.index(current) + 1) % len(control.options)
+                    if self._open_dropdown == control.id:
+                        self._open_dropdown = None
+                        self._dropdown_hover_index = None
                     else:
-                        idx = 0
-                    next_value = control.options[idx]
-                    self._values[control.id] = next_value
-                    events.append(HudEvent(control.id, "change", value=next_value))
+                        self._open_dropdown = control.id
+                        self._dropdown_hover_index = None
             break
         self._mouse_down_prev = mouse_down
         return events
@@ -477,6 +525,10 @@ class HelixHUD:
             elif control.kind == "plot":
                 self._draw_rect(control.rect, (0.05, 0.07, 0.1, 0.85))
                 self._draw_plot(control)
+        if self._open_dropdown is not None:
+            control = next((c for c in self.controls if c.id == self._open_dropdown), None)
+            if control is not None and control.options:
+                self._draw_dropdown_menu(control)
 
     def _draw_rect(self, rect: Rect, color: Tuple[float, float, float, float]) -> None:
         x0, y0 = rect.x, rect.y
@@ -498,7 +550,7 @@ class HelixHUD:
             ],
             dtype="f4",
         )
-        self._buffer.orphan(vertices.nbytes)
+        self._ensure_buffer(vertices.nbytes)
         self._buffer.write(vertices.tobytes())
         self._program["u_screen"].value = self._screen
         self._program["u_color"].value = color
@@ -542,9 +594,55 @@ class HelixHUD:
         if len(points) < 2:
             return
         flat = np.array(points, dtype="f4").ravel()
-        self._buffer.orphan(flat.nbytes)
+        self._ensure_buffer(flat.nbytes)
         self._buffer.write(flat.tobytes())
         self._program["u_screen"].value = self._screen
         self._program["u_color"].value = self.SLIDER_FG
         self.ctx.line_width = 2
         self._vao.render(mode=moderngl.LINE_STRIP)
+
+    def _dropdown_menu_rect(self, control: HUDControl) -> tuple[Rect, float]:
+        item_height = control.rect.h * 0.8
+        spacing = 4.0
+        total_height = len(control.options or []) * (item_height + spacing) - spacing
+        x = control.rect.x
+        y = control.rect.y + control.rect.h + 6.0
+        return Rect(x, y, control.rect.w, total_height), item_height
+
+    def _draw_dropdown_menu(self, control: HUDControl) -> None:
+        options = control.options or []
+        if not options:
+            return
+        menu_rect, item_height = self._dropdown_menu_rect(control)
+        self._draw_rect(Rect(0.0, 0.0, self._screen[0], self._screen[1]), (0.0, 0.0, 0.0, 0.25))
+        self._draw_rect(menu_rect, (0.05, 0.07, 0.10, 0.96))
+        current = str(self._values.get(control.id, options[0]))
+        for idx, opt in enumerate(options):
+            y = menu_rect.y + idx * (item_height + 4.0)
+            item_rect = Rect(menu_rect.x + 2.0, y, menu_rect.w - 4.0, item_height)
+            color = self.BUTTON_ACTIVE_COLOR if opt == current else self.BUTTON_COLOR
+            if self._dropdown_hover_index == idx:
+                color = (
+                    min(color[0] + 0.1, 1.0),
+                    min(color[1] + 0.1, 1.0),
+                    min(color[2] + 0.1, 1.0),
+                    color[3],
+                )
+            self._draw_rect(item_rect, color)
+            fake = HUDControl(
+                id=f"{control.id}_opt_{idx}",
+                rect=item_rect,
+                kind="label",
+                label=opt.upper(),
+            )
+            self._draw_label(fake, align_left=True, color=self.TEXT_COLOR, size=14.0)
+
+    def _ensure_buffer(self, required: int) -> None:
+        if required <= self._buffer.size:
+            return
+        self._buffer.release()
+        self._buffer = self.ctx.buffer(reserve=required)
+        self._rebuild_vao()
+
+    def _rebuild_vao(self) -> None:
+        self._vao = self.ctx.simple_vertex_array(self._program, self._buffer, "in_pos")
