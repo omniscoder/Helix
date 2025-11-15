@@ -36,24 +36,32 @@ class CrisprVizContext:
 def _extract_root_and_leaves(dag) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Return (root_node, leaf_nodes) in a simple dict form."""
     root = dag.nodes[dag.root_id]
+
+    def _node_entry(node) -> Dict[str, Any]:
+        return {
+            "id": node.id,
+            "log_prob": float(node.log_prob),
+            "metadata": dict(node.metadata),
+            "sequences": node.genome_view.materialize_all(),
+            "diffs": [
+                {
+                    "chrom": ev.chrom,
+                    "start": ev.start,
+                    "end": ev.end,
+                    "replacement": ev.replacement,
+                    "metadata": dict(getattr(ev, "metadata", {}) or {}),
+                }
+                for ev in getattr(node, "diffs", ()) or ()
+            ],
+        }
+
     leaves: List[Dict[str, Any]] = []
     outgoing = {edge.source for edge in dag.edges}
     for node_id, node in dag.nodes.items():
         if node_id not in outgoing:
-            leaves.append(
-                {
-                    "id": node.id,
-                    "log_prob": float(node.log_prob),
-                    "metadata": dict(node.metadata),
-                    "sequences": node.genome_view.materialize_all(),
-                }
-            )
-    root_entry = {
-        "id": root.id,
-        "log_prob": float(root.log_prob),
-        "metadata": dict(root.metadata),
-        "sequences": root.genome_view.materialize_all(),
-    }
+            leaves.append(_node_entry(node))
+
+    root_entry = _node_entry(root)
     return root_entry, leaves
 
 
@@ -75,7 +83,40 @@ def _build_fake_crispr_sim_payload(root: Mapping[str, Any], leaves: List[Mapping
         label = meta.get("label") or leaf.get("id") or "outcome"
         log_p = float(leaf.get("log_prob", 0.0))
         prob = _prob_from_log_prob(log_p, root_log_p)
-        diff = meta.get("diff") or meta.get("edit") or None
+        diffs = leaf.get("diffs") or []
+        diff_entry = diffs[-1] if diffs else None
+
+        # Map the coarse edit_class into a token understood by the 3D builders.
+        edit_class = meta.get("edit_class")
+        edit_token: Optional[str] = None
+        if isinstance(edit_class, str):
+            if edit_class == "deletion":
+                edit_token = "del"
+            elif edit_class == "insertion":
+                edit_token = "ins"
+            elif edit_class == "substitution":
+                edit_token = "sub"
+            elif edit_class == "no_cut":
+                edit_token = "no_cut"
+            else:
+                edit_token = "other"
+
+        diff: Optional[Dict[str, Any]]
+        if isinstance(diff_entry, Mapping):
+            diff = {
+                "chrom": diff_entry.get("chrom"),
+                "start": diff_entry.get("start"),
+                "end": diff_entry.get("end"),
+                "replacement": diff_entry.get("replacement"),
+                "metadata": dict(diff_entry.get("metadata") or {}),
+            }
+        else:
+            diff = None
+        if edit_token is not None:
+            if diff is None:
+                diff = {"edit": edit_token}
+            else:
+                diff["edit"] = edit_token
 
         outcomes.append(
             {
@@ -159,4 +200,3 @@ def prime_dag_to_viz_spec(_: Mapping[str, Any]) -> Optional[EditVisualizationSpe
     PegRNA/PrimeEditor and site windows to reconstruct a sim-like payload.
     """
     return None
-

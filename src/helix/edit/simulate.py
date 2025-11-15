@@ -40,6 +40,48 @@ class SimulationContext:
     extra: Dict[str, object] = field(default_factory=dict)
 
 
+def _classify_edit_event(event: EditEvent, stage: object) -> str:
+    """
+    Classify an edit event into a coarse edit class.
+
+    The categories mirror those used by the 3D builders and frontends:
+      - deletion
+      - insertion
+      - substitution
+      - no_cut
+      - other
+    """
+
+    length = max(0, int(getattr(event, "end", 0)) - int(getattr(event, "start", 0)))
+    ins_len = len(getattr(event, "replacement", "") or "")
+    if length == 0 and ins_len == 0:
+        return "no_cut"
+    if length > 0 and ins_len == 0:
+        return "deletion"
+    if length == 0 and ins_len > 0:
+        return "insertion"
+    if length > 0 and ins_len > 0:
+        return "substitution"
+    return "other"
+
+
+def _mechanism_from_rule(rule_name: str) -> str | None:
+    """Best-effort mapping from rule name to a human-facing mechanism label."""
+
+    token = str(rule_name or "")
+    if "clean_cut" in token:
+        return "CRISPR cleavage"
+    if "indel" in token:
+        return "NHEJ"
+    if "prime" in token:
+        return "Prime editing"
+    if "flap" in token:
+        return "Flap resolution"
+    if "no_edit" in token:
+        return "No change"
+    return None
+
+
 def iter_edit_dag_frames(
     root_view: DigitalGenomeView,
     ctx: SimulationContext,
@@ -79,6 +121,7 @@ def iter_edit_dag_frames(
                     new_time = parent_time + 1
                     new_stage = metadata.get("stage", parent_stage)
                     # desired/undesired classification (if not provided by rule)
+                    edit_class = _classify_edit_event(event, new_stage)
                     desired_flag = metadata.get("desired")
                     if desired_flag is None:
                         if new_stage == "repaired":
@@ -91,17 +134,27 @@ def iter_edit_dag_frames(
                     ev_hash = hash_event(event.chrom, event.start, event.end, event.replacement, str(new_stage))
                     node_id = hash_node_id(parents, ev_hash, str(new_stage), new_time)
                     seq_hashes = _compute_seq_hashes(new_view)
+                    node_meta: Dict[str, object] = {
+                        **node.metadata,
+                        **metadata,
+                        "time_step": new_time,
+                        "stage": new_stage,
+                    }
+                    if desired_flag is not None:
+                        node_meta["desired"] = desired_flag
+                    if edit_class:
+                        node_meta["edit_class"] = edit_class
+                    edge_meta: Dict[str, object] = dict(metadata)
+                    if edit_class:
+                        edge_meta.setdefault("edit_class", edit_class)
+                    mechanism = _mechanism_from_rule(rule_name)
+                    if mechanism is not None:
+                        edge_meta.setdefault("mechanism", mechanism)
                     new_node = EditNode(
                         id=node_id,
                         genome_view=new_view,
                         log_prob=new_log_prob,
-                        metadata={
-                            **node.metadata,
-                            **metadata,
-                            "time_step": new_time,
-                            "stage": new_stage,
-                            **({"desired": desired_flag} if desired_flag is not None else {}),
-                        },
+                        metadata=node_meta,
                         parents=parents,
                         seq_hashes=seq_hashes,
                         diffs=(event,),
@@ -111,7 +164,7 @@ def iter_edit_dag_frames(
                         target=new_node.id,
                         rule_name=rule_name,
                         event=event,
-                        metadata=metadata,
+                        metadata=edge_meta,
                     )
                     new_nodes[new_node.id] = new_node
                     new_edges.append(new_edge)

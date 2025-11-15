@@ -143,8 +143,11 @@ def _run_workflow() -> None:
     for wf in data.get("workflows", []):
         for step in wf.get("steps", []):
             args = step.get("args", {})
-            if "input" in args and ACTIVE_DNA_FILE_PATH:
-                args["input"] = str(ACTIVE_DNA_FILE_PATH)
+            if ACTIVE_DNA_FILE_PATH:
+                if "input" in args:
+                    args["input"] = str(ACTIVE_DNA_FILE_PATH)
+                if "fasta" in args:
+                    args["fasta"] = str(ACTIVE_DNA_FILE_PATH)
     config_copy.write_text(yaml.safe_dump(data), encoding="utf-8")
     with TemporaryDirectory(prefix="helix_bench_workflow_") as tmp:
         tmpdir = Path(tmp)

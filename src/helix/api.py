@@ -7,7 +7,12 @@ from typing import Dict, List, Sequence
 from . import bioinformatics, cyclospectrum, nussinov_algorithm, triage
 
 try:  # pragma: no cover - optional dependency
-    import protein as protein_module
+    # Prefer an external `protein` package if available, otherwise fall back to
+    # the bundled `helix.protein` module.
+    try:
+        import protein as protein_module  # type: ignore[import]
+    except ImportError:
+        from . import protein as protein_module  # type: ignore[no-redef]
 
     PROTEIN_AVAILABLE = getattr(protein_module, "BIOPYTHON_AVAILABLE", True)
 except ImportError:  # pragma: no cover - handled gracefully

@@ -27,11 +27,26 @@ function initCytoscape() {
         style: {
           "shape": "round-rectangle",
           "background-color": (ele) => {
+            const meta = ele.data("raw_meta") || {};
+            let editClass = ele.data("edit_class") || meta.edit_class;
+            if (!editClass) {
+              const stage = ele.data("stage");
+              const branch = meta.branch;
+              if (stage === "repaired") {
+                if (branch === "intended") editClass = "substitution";
+                else if (branch === "indel") editClass = "deletion";
+              } else if (stage === "no_edit" || stage === "root") {
+                editClass = "no_cut";
+              }
+            }
+            if (editClass === "deletion") return "#f97316"; // orange
+            if (editClass === "insertion") return "#ec4899"; // magenta
+            if (editClass === "substitution") return "#22d3ee"; // turquoise
+            if (editClass === "no_cut") return "#64748b"; // gray
             const stage = ele.data("stage");
             if (stage === "prime_rtt") return "#10b981"; // green
             if (stage === "repaired") return "#3b82f6"; // blue
             if (stage === "error") return "#ef4444"; // red
-            if (stage === "no_edit") return "#64748b"; // gray
             if (stage && String(stage).startsWith("flap")) return "#f59e0b"; // amber
             return "#4f46e5"; // indigo default
           },
@@ -266,6 +281,7 @@ function applyFrame(frame) {
         time: node.metadata?.time_step ?? null,
         sequences,
         on_target: !!node.metadata?.on_target,
+        edit_class: node.metadata?.edit_class,
         desired: typeof node.metadata?.desired === "boolean" ? node.metadata.desired : undefined,
         raw_meta: node.metadata || {},
       },
@@ -276,6 +292,8 @@ function applyFrame(frame) {
     if (cy.$id(edgeId).length) return;
     const tgt = cy.$id(edge.target);
     const weight = tgt.length ? tgt.data("prob") || 0 : 0;
+    const edgeMeta = edge.metadata || {};
+    const mechanism = edgeMeta.mechanism || mechanismFromRule(edge.rule);
     cy.add({
       group: "edges",
       data: {
@@ -283,7 +301,8 @@ function applyFrame(frame) {
         source: edge.source,
         target: edge.target,
         rule: edge.rule,
-        rule_human: humanEdgeLabel(edge.rule),
+        mechanism,
+        rule_human: edgeMeta.human_label || humanEdgeLabel(edge.rule),
         weight,
         event: edge.event || null,
         effect_tag: effectTag(edge.event),

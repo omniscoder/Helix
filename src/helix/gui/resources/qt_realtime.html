@@ -462,8 +462,9 @@
         const edgeEntries = frame.new_edges || [];
         nodeEntries.forEach(([id, node]) => {
           if (cy.$id(id).length) return;
-          const stage = (node.metadata && node.metadata.stage) || "node";
-          const lines = displayLines(stage, null, node.metadata||{});
+          const meta = node.metadata || {};
+          const stage = meta.stage || "node";
+          const lines = displayLines(stage, null, meta);
           const label = `${lines[0]}\n${lines[1]||''}`;
           const prob = Math.exp(node.log_prob || 0);
           const sequences = node.sequences || {};
@@ -472,7 +473,21 @@
             rootChrom = chroms[0];
             rootSeq = sequences[rootChrom];
           }
-          cy.add({ group: "nodes", data: { id, label, stage, log_prob: node.log_prob, prob, phenotype: node.metadata?.phenotype || '', sequences, desired: typeof node.metadata?.desired === 'boolean' ? node.metadata.desired : undefined } });
+          cy.add({
+            group: "nodes",
+            data: {
+              id,
+              label,
+              stage,
+              log_prob: node.log_prob,
+              prob,
+              phenotype: meta.phenotype || '',
+              sequences,
+              edit_class: meta.edit_class,
+              desired: typeof meta.desired === 'boolean' ? meta.desired : undefined,
+              raw_meta: meta,
+            },
+          });
         });
         edgeEntries.forEach((edge, idx) => {
           const edgeId = `${edge.source}->${edge.target}:${edge.rule}:${frame.step}:${idx}`;
@@ -487,6 +502,8 @@
             if (len>0 && ins>0 && len===1 && ins===1) return 'snv';
             return null;
           }
+          const edgeMeta = edge.metadata || {};
+          const mechanism = edgeMeta.mechanism || mechanismFromRule(edge.rule);
           cy.add({
             group: "edges",
             data: {
@@ -494,7 +511,8 @@
               source: edge.source,
               target: edge.target,
               rule: edge.rule,
-              rule_human: humanEdgeLabel(edge.rule),
+              mechanism,
+              rule_human: edgeMeta.human_label || humanEdgeLabel(edge.rule),
               weight,
               event: edge.event || null,
               effect_tag: effectTag(edge.event),

@@ -148,7 +148,8 @@ def _build_dag_record(payload: Mapping[str, Any]) -> str:
         [
             ("nodes", _format_nodes(nodes)),
             ("edges", _format_edges(edges)),
-            ("rootId", _lean_string(str(root_id))),
+            # Match the field name used by Biosim.VeriBiota.EditDAG.EditDAG.
+            ("root", _lean_string(str(root_id))),
         ]
     )
 

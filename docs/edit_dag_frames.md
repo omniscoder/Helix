@@ -60,6 +60,34 @@ dag_payload = {
 }
 ```
 
+### Semantic metadata for frontends
+
+Edit DAG frames carry additional metadata that GUI and web clients rely on for
+coloring and labeling:
+
+- Node `metadata` commonly includes:
+  - `stage`: coarse state label (e.g. `"root"`, `"cut"`, `"repaired"`, `"error"`, `"no_edit"`).
+  - `time_step`: integer depth / frame index for the node.
+  - `desired`: optional boolean flag for “desired” vs “undesired” outcomes.
+  - `edit_class`: coarse edit type derived from the event:
+    - `"deletion"`, `"insertion"`, `"substitution"`, `"no_cut"`, or `"other"`.
+- Edge `metadata` commonly includes:
+  - `mechanism`: human-facing mechanism label inferred from the rule name,
+    e.g. `"CRISPR cleavage"`, `"NHEJ"`, `"Prime editing"`, `"Flap resolution"`,
+    `"No change"`.
+  - `edit_class`: the same coarse edit class as the target node.
+
+These fields are optional, but when present they form the contract that:
+
+- Qt’s realtime DAG view and the web Playground both treat nodes as edit
+  outcomes and color them by `edit_class`.
+- Edge labels and tooltips prefer `mechanism` over raw rule names when
+  available.
+
+The CRISPR DAG runtime populates `edit_class` and `mechanism`
+automatically for CRISPR edit rules; other mechanisms can opt into the same
+conventions so that all frontends share a consistent visual language.
+
 ### CLI quickstart
 
 ```

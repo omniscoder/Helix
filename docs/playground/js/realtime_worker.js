@@ -118,7 +118,7 @@ function computeFrames(payload) {
     new_nodes: {
       [rootId]: {
         log_prob: 0,
-        metadata: { stage: "root", time_step: 0 },
+        metadata: { stage: "root", time_step: 0, edit_class: "no_cut" },
         parent_ids: [],
         seq_hashes: { [chrom]: genome },
         sequences: { [chrom]: genome },
@@ -147,13 +147,19 @@ function computeFrames(payload) {
   const onTargetIdx = selected.length > 0 ? 0 : -1;
   selected.forEach((site, idx) => {
     const cutId = `n_cut_${idx}`;
-    frames.push({
-      kind: "helix.edit_dag.frame.v1",
-      step: frames.length,
-      new_nodes: {
-        [cutId]: {
-          log_prob: Math.log(site.score),
-          metadata: { stage: "cut", time_step: 1, position: site.pos, on_target: idx === onTargetIdx, score: site.score },
+      frames.push({
+        kind: "helix.edit_dag.frame.v1",
+        step: frames.length,
+        new_nodes: {
+          [cutId]: {
+            log_prob: Math.log(site.score),
+            metadata: {
+              stage: "cut",
+              time_step: 1,
+              position: site.pos,
+              on_target: idx === onTargetIdx,
+              score: site.score,
+            },
           parent_ids: [rootId],
           seq_hashes: { [chrom]: genome },
           sequences: { [chrom]: genome },
@@ -181,20 +187,32 @@ function computeFrames(payload) {
     const indelSeq = `${genome.slice(0, site.pos)}${genome.slice(Math.min(genome.length, site.pos + window))}`;
     const intendedId = `${cutId}_intended`;
     const indelId = `${cutId}_indel`;
-    frames.push({
-      kind: "helix.edit_dag.frame.v1",
-      step: frames.length,
-      new_nodes: {
-        [intendedId]: {
-          log_prob: Math.log(site.score * 0.7),
-          metadata: { stage: "repaired", time_step: 2, branch: "intended", on_target: idx === onTargetIdx },
+      frames.push({
+        kind: "helix.edit_dag.frame.v1",
+        step: frames.length,
+        new_nodes: {
+          [intendedId]: {
+            log_prob: Math.log(site.score * 0.7),
+            metadata: {
+              stage: "repaired",
+              time_step: 2,
+              branch: "intended",
+              on_target: idx === onTargetIdx,
+              edit_class: "substitution",
+            },
           parent_ids: [cutId],
           seq_hashes: { [chrom]: intendedSeq },
           sequences: { [chrom]: intendedSeq },
         },
-        [indelId]: {
-          log_prob: Math.log(site.score * 0.3 + 1e-6),
-          metadata: { stage: "error", time_step: 2, branch: "indel", on_target: idx === onTargetIdx },
+          [indelId]: {
+            log_prob: Math.log(site.score * 0.3 + 1e-6),
+            metadata: {
+              stage: "error",
+              time_step: 2,
+              branch: "indel",
+              on_target: idx === onTargetIdx,
+              edit_class: "deletion",
+            },
           parent_ids: [cutId],
           seq_hashes: { [chrom]: indelSeq },
           sequences: { [chrom]: indelSeq },
