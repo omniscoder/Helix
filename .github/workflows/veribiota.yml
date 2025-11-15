@@ -65,4 +65,4 @@ jobs:
         working-directory: veribiota_repo
         run: |
           lake build
-          lake exe veribiota-check Biosim/VeriBiota/Helix/CrisprMicro.lean
+          lake env lean Biosim/VeriBiota/Helix/CrisprMicro.lean
