@@ -3657,9 +3657,15 @@ def _run_config_live(args: argparse.Namespace, config_path: Path) -> None:
     )
 
 
-def _format_kv_pairs(values: Mapping[str, float], limit: int) -> str:
+def _format_kv_pairs(values: Mapping[str, object], limit: int) -> str:
     items = list(values.items())[:limit]
-    return ", ".join(f"{k}={v:.4g}" for k, v in items)
+    parts = []
+    for key, value in items:
+        if isinstance(value, (int, float)):
+            parts.append(f"{key}={value:.4g}")
+        else:
+            parts.append(f"{key}={value}")
+    return ", ".join(parts)
 
 
 

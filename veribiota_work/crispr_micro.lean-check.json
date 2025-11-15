@@ -1976,13 +1976,13 @@
   "terminal_prob_sum": 1.0,
   "meta": {
     "helix_version": "0.3.0",
-    "timestamp": "2025-11-15T18:40:12.326792+00:00",
+    "timestamp": "2025-11-15T19:34:32.003107+00:00",
     "genome_source": "tests/data/crispr_micro.fna",
     "guide_name": "guide_1",
     "guide_sequence": "ACGTACGTACGTACGTACGT",
     "physics_backend": "cpu",
     "schema_version": "1.1",
     "rule_version": "1.0",
-    "created_at": "2025-11-15T18:40:12.326841+00:00"
+    "created_at": "2025-11-15T19:34:32.003183+00:00"
   }
 }

@@ -12,6 +12,22 @@ _SPEC_MANIFEST = json.loads(
 )
 SPEC_VERSION: str = _SPEC_MANIFEST["spec_version"]
 
+# Known schema kinds used for manifests and CLI docs, even when pydantic is
+# not available in the environment.
+_KNOWN_SCHEMA_KINDS = [
+    "viz_minimizers",
+    "viz_seed_chain",
+    "viz_rna_dotplot",
+    "viz_alignment_ribbon",
+    "viz_distance_heatmap",
+    "viz_motif_logo",
+    "crispr.guides",
+    "crispr.offtargets",
+    "crispr.sim",
+    "crispr.cut_events",
+    "prime.edit_sim",
+]
+
 try:  # pragma: no cover - optional dependency
     from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -308,16 +324,28 @@ def validate_viz_payload(kind: str, payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def describe_schema(kind: str | None = None) -> str:
     """Return a JSON description of available schemas or a specific schema."""
-    if not PYDANTIC_AVAILABLE:
-        return "pydantic is not installed; install the 'schema' extra to enable schema descriptions."
     if kind is None:
-        options = ", ".join(sorted(_SCHEMA_MODELS))
+        if _SCHEMA_MODELS:
+            options = ", ".join(sorted(_SCHEMA_MODELS))
+        else:
+            options = ", ".join(sorted(_KNOWN_SCHEMA_KINDS))
         return f"Available viz schemas (spec_version={SPEC_VERSION}): {options}"
-    model = _SCHEMA_MODELS.get(kind)
-    if not model:
+    if PYDANTIC_AVAILABLE:
+        model = _SCHEMA_MODELS.get(kind)
+        if not model:
+            raise SchemaError(f"Unknown schema '{kind}'.")
+        schema = model.model_json_schema()
+        return json.dumps(schema, indent=2)
+    # Fallback: minimal stub schema when pydantic is unavailable.
+    if kind not in _KNOWN_SCHEMA_KINDS:
         raise SchemaError(f"Unknown schema '{kind}'.")
-    schema = model.model_json_schema()
-    return json.dumps(schema, indent=2)
+    stub = {
+        "title": kind,
+        "type": "object",
+        "properties": {},
+        "spec_version": SPEC_VERSION,
+    }
+    return json.dumps(stub, indent=2)
 
 
 def manifest() -> Dict[str, Any]:
@@ -327,12 +355,19 @@ def manifest() -> Dict[str, Any]:
         "schemas": {},
         "validator_enabled": PYDANTIC_AVAILABLE,
     }
-    for kind, model in _SCHEMA_MODELS.items():
+    # Prefer model-backed schemas when pydantic is available; otherwise fall
+    # back to the known schema kind list so the manifest remains useful.
+    if _SCHEMA_MODELS:
+        kinds = sorted(_SCHEMA_MODELS.keys())
+    else:
+        kinds = sorted(_KNOWN_SCHEMA_KINDS)
+    for kind in kinds:
+        model = _SCHEMA_MODELS.get(kind)
         entry: Dict[str, Any] = {
             "spec_version": SPEC_VERSION,
             "validator": PYDANTIC_AVAILABLE,
         }
-        if PYDANTIC_AVAILABLE:
+        if PYDANTIC_AVAILABLE and model is not None:
             entry["schema"] = model.model_json_schema()
         data["schemas"][kind] = entry
     return data

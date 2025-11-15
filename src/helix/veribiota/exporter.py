@@ -51,8 +51,9 @@ def _format_event(event: Mapping[str, Any]) -> str:
     metadata = event.get("metadata") or {}
     fields = [
         ("chrom", _lean_string(str(event.get("chrom", "")))),
-        ("start", str(int(event.get("start", 0)))),
-        ("end", str(int(event.get("end", 0)))),
+        # Use non-keyword field names to avoid clashes with Lean syntax.
+        ("startPos", str(int(event.get("start", 0)))),
+        ("endPos", str(int(event.get("end", 0)))),
         ("replacement", _lean_string(str(event.get("replacement", "")))),
         ("metadata", _format_assoc_list(metadata)),
     ]

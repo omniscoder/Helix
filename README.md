@@ -11,6 +11,18 @@ Helix aims to make digital biology fun: tiny datasets, clean Python APIs, batter
 
 👉 Docs & Playground: https://omniscoder.github.io/Helix/
 
+---
+
+## Why Helix?
+
+- **End-to-end edit DAGs** – CRISPR, Prime, and PCR simulations all produce explicit edit DAGs with per-node genome materialization, log-probabilities, and provenance. The same artifacts drive notebooks, PNGs, and interactive web/desktop viz.
+- **Blueprint-level provenance** – every DAG, PNG, and `.viz.json` is tagged with schema kind, spec version, SHA-256, and runtime metadata. You can always answer *“where did this figure come from?”*.
+- **Realtime + batch in one toolkit** – run tiny “bench” genomes in a notebook, or stream full edit DAGs into a GUI / Playground via JSONL frames for live inspection.
+- **Formal verification hooks** – optional VeriBiota integration re-encodes Helix DAGs in Lean and proves structural + probabilistic invariants. If the badge is green, the math checked out.
+- **Teaching-friendly, research-grade** – small, inspectable examples and clear CLI affordances, but under the hood you get FM-indexes, De Bruijn graphs, MinHash/HLL, prime editing physics, and CRISPR scoring engines.
+
+---
+
 ## Verified by VeriBiota™
 
 Helix’s CRISPR, Prime, and PCR DAGs carry the **Verified by VeriBiota** badge when every generated artifact satisfies:
@@ -33,18 +45,19 @@ The contract is documented in [docs/veribiota.md](docs/veribiota.md) and enforce
 Everything Helix emits is a **software artifact**: JSON, PNG, YAML, GraphML, viz-specs, or CLI summaries. No wet-lab instructions. No reagent guidance.
 
 ## Highlights
-### **Genome and Sequence Tools**
+
+### Core genome + sequence tools
 - DNA summaries, k-mer counting, GC skew, motif clustering
 - FM-index search + approximate search via Myers bit-vector
 - Minimizers, syncmers, and seed-extend demos
 - ORF detection, frameshift heuristics, translation, protein metrics
 
-### RNA Folding
+### RNA folding + ensembles
 - Zuker-style MFE
 - McCaskill partition function
 - Ensembles, dot-plots, entropy tracks, centroids structures
 
-### CRISPR Simulation Stack
+### CRISPR simulation stack
 - Guide discovery with PAM registries
 - Off-target scanning (exact + mismatch-tolerant)
 - Probabilistic CRISPR cut/repair simulation
@@ -53,7 +66,7 @@ Everything Helix emits is a **software artifact**: JSON, PNG, YAML, GraphML, viz
 - Real-time JSONL frames for animation + Playground sync
 - Protein-impact annotation via transcript models
 
-### Prime Editing Simulator
+### Prime editing simulator
 - pegRNA + Prime Editor definitions
 - RTT/RTT-branching logic
 - Outcome probabilities
@@ -61,26 +74,26 @@ Everything Helix emits is a **software artifact**: JSON, PNG, YAML, GraphML, viz
 - Multi-peg batch workflows for large design sets
 - PCR Amplicon DAGs
 
-### PCR Amplicon DAGs
+### PCR amplicon DAGs
 - Primer binding + per-cycle branching
 - Amplicon growth simulation
 - Visualization + JSON artifact export
 
-### Graphs & Sketching
+### Graphs & sketching
 - Build/clean/color De Bruijin graphs
 - MinHash/HLL Sketching for fast genome distance
 
-### Reproducible Visualization
+### Reproducible visualization
 - Viz-spec system (structured spec, SHA-verified)
 - Every PNG ships a provenance sidebar + sibling .viz.json
 - CLI + notebook-friendly
 
-### Workflows
+### Workflows & experiments
 - YAML-driven experiments: CRISPR, Prime, PCR
 - Generates DAGs, PNGs, reports, provenance manifests
 - Reproducible from a single .helix.yml
 
-### GUI
+### GUI + realtime viz
 - Optional PySide6 desktop shell
 - Cytoscape/D3 visualization of live edit DAG streams
 - Offline-capable; accepts CLI artifacts and real-time frames
