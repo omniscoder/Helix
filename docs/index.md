@@ -48,8 +48,8 @@ Two end-to-end recipes ship in `examples/` so you can go from FASTA/configs → 
     --out-dir out/crispr_dags/
   ```
 
-  Artifacts appear in `out/crispr_dags/` and a prebuilt copy lives at [`docs/data/crispr_demo.edit_dag.json`](docs/data/crispr_demo.edit_dag.json).
-  [Open in Playground](playground/?json=docs/data/crispr_demo.edit_dag.json)
+  Artifacts appear in `out/crispr_dags/` and a prebuilt copy lives at [`data/crispr_demo.edit_dag.json`](data/crispr_demo.edit_dag.json).
+  [Open in Playground](playground/?json=data/crispr_demo.edit_dag.json)
 
 - **Prime editing demo (peg sweep)**
 
@@ -62,8 +62,8 @@ Two end-to-end recipes ship in `examples/` so you can go from FASTA/configs → 
     --out-dir out/prime_dags/
   ```
 
-  Produces `helix.prime.edit_dag.v1.1` artifacts per peg (see `docs/data/prime_demo.edit_dag.json` for a hosted example).
-  [Open in Playground](playground/?json=docs/data/prime_demo.edit_dag.json)
+  Produces `helix.prime.edit_dag.v1.1` artifacts per peg (see `data/prime_demo.edit_dag.json` for a hosted example).
+  [Open in Playground](playground/?json=data/prime_demo.edit_dag.json)
 
 - **Experiment configs**
 
@@ -117,7 +117,7 @@ Use this “deep wiki” map to jump directly to the concept or tool you need:
 
 ## Benchmarks & Reproducibility
 
-Helix includes a research‑grade benchmark harness. Every run emits a schema‑tagged JSON that captures git SHA, BLAS vendor, CPU/threads, RNG seed, per‑case timing, and RSS peaks. CI appends results to `docs/data/bench/history.csv`; the live dashboard renders trends without servers or external deps.
+Helix includes a research‑grade benchmark harness. Every run emits a schema‑tagged JSON that captures git SHA, BLAS vendor, CPU/threads, RNG seed, per‑case timing, and RSS peaks. CI appends results to `data/bench/history.csv`; the live dashboard renders trends without servers or external deps.
 
 - See live trends → [Benchmarks](benchmarks.md)
 - Harness CLI → `python -m benchmarks.api_benchmarks --help`

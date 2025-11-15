@@ -29,6 +29,7 @@ nav:
       - Perfect Helix: concepts/perfection.md
       - Multiscale Stack: concepts/multiscale.md
   - CLI:
+      - CLI Overview: cli.md
       - Visualization: cli/viz.md
       - Schema Tools: cli/schema.md
       - Workflows: cli/workflows.md
@@ -44,11 +45,15 @@ nav:
       - Motif Logo: visualization/motif-logo.md
       - Distance Heatmap: visualization/distance-heatmap.md
       - Minimizer Density: visualization/minimizer-density.md
+  - Visualization Overview: viz.md
   - Edit DAG Overview: edit_dag_overview.md
   - Edit DAG Viz: edit-dag-viz.md
+  - Edit DAG Frames: edit_dag_frames.md
   - Playground:
       - Static Playground: playground/index.html
       - Real-Time Simulator: playground/realtime.html
   - Schema Reference: schema-reference.md
+  - Schema Manifest: schema.md
   - Benchmarks: benchmarks.md
+  - VeriBiota: veribiota.md
   - Contributing: contributing.md

@@ -45,15 +45,44 @@ def build_lean_check(
             "parent_ids": list(node.get("parent_ids") or node.get("parents") or []),
             "seq_hashes": dict(node.get("seq_hashes") or {}),
         }
-    edge_entries = []
+
+    # derive per-edge conditional probabilities from log_prob deltas
+    node_logs: Dict[str, float] = {node_id: entry["log_prob"] for node_id, entry in node_entries.items()}
+    edges_by_source: Dict[str, list[Mapping[str, Any]]] = {}
     for edge in edges:
-        edge_entries.append(
-            {
-                "source": edge.get("source"),
-                "target": edge.get("target"),
-                "rule": edge.get("rule") or edge.get("rule_name") or "",
-            }
-        )
+        source = str(edge.get("source"))
+        edges_by_source.setdefault(source, []).append(edge)
+
+    edge_entries: list[Dict[str, Any]] = []
+    for source, edge_list in edges_by_source.items():
+        parent_log = node_logs.get(source, 0.0)
+        weights: list[float] = []
+        for edge in edge_list:
+            target = edge.get("target")
+            child_log = node_logs.get(target, 0.0)
+            delta = child_log - parent_log
+            if math.isinf(delta):
+                weights.append(0.0)
+            else:
+                weights.append(math.exp(delta))
+        total = sum(weights)
+        if not math.isfinite(total) or total <= 0:
+            total = 1.0
+        for edge, weight in zip(edge_list, weights):
+            target = edge.get("target")
+            edge_entries.append(
+                {
+                    "source": source,
+                    "target": target,
+                    "rule": edge.get("rule") or edge.get("rule_name") or "",
+                    "prob": weight / total,
+                }
+            )
+
+    # propagate global masses from root using conditional edge probabilities
+    node_masses = _compute_prob_masses(node_entries, edge_entries, root_id)
+    for node_id, mass in node_masses.items():
+        node_entries[node_id]["prob_mass"] = mass
     check = {
         "schema": {"kind": "helix.veribiota.lean_check", "version": schema_version},
         "dag_name": dag_name,
@@ -63,17 +92,56 @@ def build_lean_check(
         "nodes": node_entries,
         "edges": edge_entries,
     }
-    # derived stats
-    stats = _compute_probability_stats(node_entries, edge_entries, root_id)
+    stats = _compute_probability_stats(node_masses, edge_entries)
     check.update(stats)
     check["meta"] = payload.get("meta") or {}
     return check
 
 
-def _compute_probability_stats(
+def _safe_prob_mass(log_prob: float, root_log: float) -> float:
+    if math.isinf(log_prob):
+        return 0.0
+    return math.exp(log_prob - root_log)
+
+
+def _compute_prob_masses(
     nodes: Mapping[str, Mapping[str, Any]],
     edges: Sequence[Mapping[str, Any]],
     root_id: str,
+) -> Dict[str, float]:
+    """Compute global probability mass for each node given conditional edges."""
+
+    masses: Dict[str, float] = {node_id: 0.0 for node_id in nodes}
+    if root_id not in masses:
+        return masses
+    masses[root_id] = 1.0
+
+    by_source: Dict[str, list[Mapping[str, Any]]] = {}
+    for edge in edges:
+        source = str(edge.get("source"))
+        by_source.setdefault(source, []).append(edge)
+
+    # rely on monotonic time_step metadata for a topological order
+    ordered_nodes = sorted(
+        nodes.items(),
+        key=lambda item: int(item[1].get("metadata", {}).get("time_step", 0)),
+    )
+    for node_id, entry in ordered_nodes:
+        mass = masses.get(node_id, 0.0)
+        if mass <= 0.0:
+            continue
+        for edge in by_source.get(node_id, []):
+            target = edge.get("target")
+            prob = float(edge.get("prob", 0.0))
+            if target is None or prob <= 0.0:
+                continue
+            masses[target] = masses.get(target, 0.0) + mass * prob
+    return masses
+
+
+def _compute_probability_stats(
+    node_masses: Mapping[str, float],
+    edges: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
     adjacency: Dict[str, list[str]] = {}
     for edge in edges:
@@ -82,9 +150,8 @@ def _compute_probability_stats(
         if source is None or target is None:
             continue
         adjacency.setdefault(str(source), []).append(str(target))
-    root_log = float(nodes.get(root_id, {}).get("log_prob", 0.0))
-    terminal_nodes = [node_id for node_id in nodes if node_id not in adjacency]
-    terminal_sum = sum(math.exp(float(nodes[node_id]["log_prob"]) - root_log) for node_id in terminal_nodes)
+    terminal_nodes = [node_id for node_id in node_masses if node_id not in adjacency]
+    terminal_sum = sum(node_masses.get(node_id, 0.0) for node_id in terminal_nodes)
     return {
         "terminal_nodes": terminal_nodes,
         "terminal_prob_sum": terminal_sum,
@@ -109,9 +176,21 @@ def validate_lean_check(
     _ensure(len(edges) == int(edge_count or 0), "Edge count mismatch.")
     _ensure(root_id in nodes, "Root node missing from lean check.")
 
+    node_masses = _extract_prob_masses(nodes, root_id)
     _validate_graph_structure(nodes, edges)
     recorded_sum = float(check_payload.get("terminal_prob_sum", 0.0))
-    _validate_probabilities(nodes, edges, root_id, recorded_sum, prob_tolerance)
+    _validate_probabilities(node_masses, edges, recorded_sum, prob_tolerance)
+
+
+def _extract_prob_masses(nodes: Mapping[str, Mapping[str, Any]], root_id: str) -> Dict[str, float]:
+    root_log = float(nodes[root_id].get("log_prob", 0.0))
+    masses: Dict[str, float] = {}
+    for node_id, entry in nodes.items():
+        if "prob_mass" in entry:
+            masses[node_id] = float(entry["prob_mass"])
+        else:
+            masses[node_id] = _safe_prob_mass(float(entry.get("log_prob", 0.0)), root_log)
+    return masses
 
 
 def _validate_graph_structure(
@@ -142,28 +221,27 @@ def _validate_graph_structure(
 
 
 def _validate_probabilities(
-    nodes: Mapping[str, Mapping[str, Any]],
+    node_masses: Mapping[str, float],
     edges: Sequence[Mapping[str, Any]],
-    root_id: str,
     recorded_sum: float,
     prob_tolerance: float,
 ) -> None:
-    by_source: Dict[str, list[str]] = {}
+    by_source: Dict[str, list[Mapping[str, Any]]] = {}
+    terminals = set(node_masses.keys())
     for edge in edges:
-        by_source.setdefault(edge["source"], []).append(edge["target"])
+        source = str(edge.get("source"))
+        by_source.setdefault(source, []).append(edge)
+        terminals.discard(source)
 
-    for source, targets in by_source.items():
-        parent_log = float(nodes[source]["log_prob"])
-        probs = [math.exp(float(nodes[target]["log_prob"]) - parent_log) for target in targets]
+    for source, edge_list in by_source.items():
+        probs = [float(edge.get("prob", 0.0)) for edge in edge_list]
         total = sum(probs)
         _ensure(
             math.isfinite(total) and abs(total - 1.0) <= prob_tolerance,
             f"Outgoing probabilities from '{source}' sum to {total}, expected 1.",
         )
 
-    root_log = float(nodes[root_id]["log_prob"])
-    terminals = [node_id for node_id in nodes if node_id not in by_source]
-    terminal_sum = sum(math.exp(float(nodes[node_id]["log_prob"]) - root_log) for node_id in terminals)
+    terminal_sum = sum(node_masses.get(node_id, 0.0) for node_id in terminals)
     _ensure(abs(terminal_sum - recorded_sum) <= prob_tolerance, "Terminal probability sum mismatch.")
     _ensure(
         abs(terminal_sum - 1.0) <= prob_tolerance,

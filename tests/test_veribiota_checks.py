@@ -33,6 +33,8 @@ def test_build_and_validate_lean_check(sample_payload: dict) -> None:
     assert summary["node_count"] == 2
     assert summary["edge_count"] == 1
     assert summary["terminal_nodes"] == ["child"]
+    assert summary["nodes"]["root"]["prob_mass"] == pytest.approx(1.0)
+    assert summary["edges"][0]["prob"] == pytest.approx(1.0)
     validate_lean_check(summary)
 
 
@@ -46,6 +48,6 @@ def test_validate_lean_check_detects_cycle(sample_payload: dict) -> None:
 
 def test_validate_detects_probability_mismatch(sample_payload: dict) -> None:
     summary = build_lean_check(sample_payload, dag_name="bad_probs")
-    summary["nodes"]["child"]["log_prob"] = 1.0
+    summary["edges"][0]["prob"] = 0.5
     with pytest.raises(LeanCheckError):
         validate_lean_check(summary)
