@@ -201,6 +201,9 @@ def dag_payload_to_lean(
     lines = [
         f"import {import_module}",
         "",
+        "-- Allow more headroom for elaborating large auto-generated DAG literals.",
+        "set_option maxHeartbeats 1000000",
+        "",
         f"open {import_module}",
         "",
     ]
@@ -264,6 +267,9 @@ def dag_payloads_to_lean(
 
     lines = [
         f"import {import_module}",
+        "",
+        "-- Allow more headroom for elaborating large auto-generated DAG literals.",
+        "set_option maxHeartbeats 1000000",
         "",
         f"open {import_module}",
         "",
