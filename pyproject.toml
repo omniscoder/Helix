@@ -65,6 +65,7 @@ Issues = "https://github.com/omniscoder/Helix/issues"
 
 [project.scripts]
 helix = "helix.cli:main"
+helix-studio = "helix.studio.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -171,6 +171,8 @@ class HelixModernWidget(QOpenGLWindow):
     # Qt overrides -----------------------------------------------------
     def initializeGL(self) -> None:  # pragma: no cover - requires OpenGL context
         print("[HelixModernWidget] initializeGL", flush=True)
+        # QOpenGLWindow should already have a current context, but explicitly ensure it for glcontext
+        self.makeCurrent()
         self.ctx = moderngl.create_context()
         print("[HelixModernWidget] GL version:", self.ctx.version_code, flush=True)
         self.ctx.enable(moderngl.BLEND)

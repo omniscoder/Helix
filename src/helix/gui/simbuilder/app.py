@@ -8,7 +8,8 @@ from dataclasses import asdict, dataclass, fields
 import os
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Optional
+import time
+from typing import Any, Callable, Mapping, Optional
 
 import numpy as np
 from PySide6.QtCore import QByteArray, QObject, QSettings, Qt, Signal, QThread, QTimer
@@ -57,6 +58,7 @@ from helix.gui.modern.builders_2p5d import build_workflow2p5d_crispr, build_work
 from helix.gui.railbands.widget import RailBandWidget
 from helix.gui.modern.spec import EditVisualizationSpec
 from helix.gui.theme import apply_helix_theme
+from helix.studio.session import RunKind, SessionModel
 
 LOGGER = logging.getLogger(__name__)
 from helix.prime.model import PegRNA, PrimeEditor
@@ -98,6 +100,9 @@ class SequenceInput(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._source_kind = "inline"
+        self._source_uri: Optional[str] = None
+        self._sequence_hash: Optional[str] = None
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
         self._load_btn = QPushButton("Load FASTA…", self)
@@ -129,14 +134,23 @@ class SequenceInput(QWidget):
 
     def set_sequence(self, text: str) -> None:
         self._text.setPlainText(text)
+        self._source_kind = "inline"
+        self._source_uri = None
+        self._sequence_hash = self._hash_sequence(text)
 
     def clear(self) -> None:
         self._text.clear()
+        self._source_kind = "inline"
+        self._source_uri = None
+        self._sequence_hash = None
 
     def _on_text_changed(self) -> None:
         seq = self.sequence()
         self._length_label.setText(f"Length: {len(seq)} bp")
         self.sequenceChanged.emit(seq)
+        self._source_kind = "inline"
+        self._source_uri = None
+        self._sequence_hash = self._hash_sequence(seq)
 
     def _load_from_file(self) -> None:
         path_str, _ = QFileDialog.getOpenFileName(self, "Select FASTA", filter="FASTA (*.fa *.fasta *.fna);;All files (*.*)")
@@ -149,6 +163,23 @@ class SequenceInput(QWidget):
             QMessageBox.critical(self, "Failed to load FASTA", str(exc))
             return
         self._text.setPlainText(seq)
+        self._source_kind = "file"
+        self._source_uri = str(path)
+        self._sequence_hash = self._hash_sequence(seq)
+
+    def sequence_metadata(self) -> dict[str, Optional[str]]:
+        return {
+            "source": self._source_kind,
+            "uri": self._source_uri,
+            "hash": self._sequence_hash,
+        }
+
+    def _hash_sequence(self, sequence: str) -> Optional[str]:
+        if not sequence:
+            return None
+        import hashlib
+
+        return hashlib.sha256(sequence.encode("utf-8")).hexdigest()
 
 
 class ViewerPlaceholder(QWidget):
@@ -385,6 +416,8 @@ class CrisprTab(QWidget):
     simPayloadReady = Signal(object)
     logMessage = Signal(str)
     runCompleted = Signal(str, object, object)  # kind, payload, spec
+    runStarted = Signal(str)
+    runFailed = Signal(str, str)
 
     def __init__(self, sequence_input: SequenceInput, sim_settings: SimSettingsModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -395,6 +428,11 @@ class CrisprTab(QWidget):
         self._last_spec: Optional[EditVisualizationSpec] = None
         self._active_thread: QThread | None = None
         self._active_worker: SimJobWorker | None = None
+        self._last_genome: Optional[DigitalGenome] = None
+        self._last_run_config: dict[str, Any] = {}
+        self._last_guide: Optional[dict[str, Any]] = None
+        self._run_start: float | None = None
+        self._last_run_ms: float | None = None
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -461,11 +499,13 @@ class CrisprTab(QWidget):
     def _simulate(self) -> None:
         sequence = self._sequence_or_warn()
         if not sequence:
+            self.runFailed.emit("CRISPR", "No sequence provided.")
             return
 
         guide = self._selected_guide()
         if not guide:
             self.logMessage.emit("Select a guide before running the simulation.")
+            self.runFailed.emit("CRISPR", "No guide selected.")
             return
 
         shared = self._sim_settings.value
@@ -483,12 +523,23 @@ class CrisprTab(QWidget):
             f"(draws={draws}, seed={seed_label}, pam={pam_profile}, softness={pam_softness}, priors={priors_profile})…"
         )
 
+        norm_seq = bioinformatics.normalize_sequence(sequence)
+        self._last_genome = DigitalGenome(sequences={"chrGui": norm_seq})
+        self._last_run_config = {
+            "mode": "dag" if use_dag_mode else "legacy",
+            "draws": draws,
+            "seed": seed,
+            "pam_profile": pam_profile,
+            "pam_softness": pam_softness,
+            "priors_profile": priors_profile,
+        }
+        self._last_guide = guide
+
         # Capture only primitives and immutable data into the closure.
         def task():
             if use_dag_mode:
                 # DAG-first path: build a CRISPR edit DAG and adapt it to a viz spec.
-                norm_seq = bioinformatics.normalize_sequence(sequence)
-                genome = DigitalGenome(sequences={"chrGui": norm_seq})
+                genome = self._last_genome or DigitalGenome(sequences={"chrGui": norm_seq})
                 pam_cfg = guide_module.get_pam(pam_profile) if pam_profile else {"pattern": "NGG"}
                 pattern = pam_cfg.get("pattern") or "NGG"
                 cas = CasSystem(
@@ -565,7 +616,11 @@ class CrisprTab(QWidget):
 
             return payload, spec
 
+        self.runStarted.emit("CRISPR")
         self._start_worker(task)
+
+    def trigger_simulation(self) -> None:
+        self._simulate()
 
     def _start_worker(self, task: Callable[[], tuple[dict, Optional[EditVisualizationSpec]]]) -> None:
         if self._active_thread is not None:
@@ -599,8 +654,20 @@ class CrisprTab(QWidget):
 
         thread.started.connect(worker.run)
 
+        self._mark_run_start()
         thread.start()
 
+    def _mark_run_start(self) -> None:
+        self._run_start = time.perf_counter()
+        self._last_run_ms = None
+
+    def _mark_run_end(self) -> float | None:
+        if self._run_start is None:
+            return None
+        elapsed = max(0.0, (time.perf_counter() - self._run_start) * 1000.0)
+        self._run_start = None
+        self._last_run_ms = elapsed
+        return elapsed
 
     def _on_thread_finished(self) -> None:
         self._active_thread = None
@@ -616,7 +683,11 @@ class CrisprTab(QWidget):
         self.simPayloadReady.emit(payload)
         self.specReady.emit(spec)
         self.runCompleted.emit("CRISPR", payload, spec)
-        self.logMessage.emit("CRISPR simulation complete.")
+        duration_ms = self._mark_run_end()
+        if duration_ms is not None:
+            self.logMessage.emit(f"CRISPR simulation complete ({duration_ms:.0f} ms).")
+        else:
+            self.logMessage.emit("CRISPR simulation complete.")
         outcomes = payload.get("outcomes") or []
         top = outcomes[0] if outcomes else None
         LOGGER.debug("CRISPR top outcome: %r", top)
@@ -624,8 +695,10 @@ class CrisprTab(QWidget):
         LOGGER.debug("CRISPR spec.edit_type: %s", getattr(spec, "edit_type", "<none>"))
 
     def _on_worker_failure(self, message: str) -> None:
+        self._mark_run_end()
         QMessageBox.critical(self, "CRISPR simulation failed", message)
         self.logMessage.emit(f"CRISPR simulation failed: {message}")
+        self.runFailed.emit("CRISPR", message)
 
     def shutdown(self) -> None:
         if self._active_thread is not None:
@@ -656,6 +729,22 @@ class CrisprTab(QWidget):
             return
         Path(path_str).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         self.logMessage.emit(f"Saved viz spec to {path_str}.")
+
+    @property
+    def last_genome(self) -> Optional[DigitalGenome]:
+        return self._last_genome
+
+    @property
+    def last_peg(self) -> Optional[PegRNA]:
+        return self._last_peg
+
+    @property
+    def last_editor(self) -> Optional[PrimeEditor]:
+        return self._last_editor
+
+    @property
+    def last_run_config(self) -> dict[str, Any]:
+        return dict(self._last_run_config)
 
     def save_state(self, settings: QSettings) -> None:
         settings.setValue("crispr/guide_len", self._guide_len.value())
@@ -690,6 +779,22 @@ class CrisprTab(QWidget):
             pattern = "NGG"
         LOGGER.info("Treating PAM profile '%s' as literal pattern '%s'.", profile, pattern)
         return {"pattern": pattern.upper(), "orientation": "3prime"}
+
+    @property
+    def last_genome(self) -> Optional[DigitalGenome]:
+        return self._last_genome
+
+    @property
+    def last_run_config(self) -> dict[str, Any]:
+        return dict(self._last_run_config)
+
+    @property
+    def last_guide(self) -> Optional[dict[str, Any]]:
+        return self._last_guide
+
+    @property
+    def last_run_duration_ms(self) -> Optional[float]:
+        return self._last_run_ms
 
 
 class RunHistoryPanel(QWidget):
@@ -802,6 +907,8 @@ class PrimeTab(QWidget):
     simPayloadReady = Signal(object)
     logMessage = Signal(str)
     runCompleted = Signal(str, object, object)
+    runStarted = Signal(str)
+    runFailed = Signal(str, str)
 
     def __init__(self, sequence_input: SequenceInput, sim_settings: SimSettingsModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -811,6 +918,12 @@ class PrimeTab(QWidget):
         self._last_spec: Optional[EditVisualizationSpec] = None
         self._active_thread: QThread | None = None
         self._active_worker: SimJobWorker | None = None
+        self._last_genome: Optional[DigitalGenome] = None
+        self._last_peg: Optional[PegRNA] = None
+        self._last_editor: Optional[PrimeEditor] = None
+        self._last_run_config: dict[str, Any] = {}
+        self._run_start: float | None = None
+        self._last_run_ms: float | None = None
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -872,6 +985,7 @@ class PrimeTab(QWidget):
         sequence = self._sequence_input.current_sequence()
         if not sequence:
             self.logMessage.emit("Provide a sequence before running prime simulations.")
+            self.runFailed.emit("PRIME", "No sequence provided.")
             return None
         return sequence
 
@@ -884,6 +998,7 @@ class PrimeTab(QWidget):
         rtt = self._rtt.text().strip()
         if not spacer or not pbs or not rtt:
             self.logMessage.emit("Spacer, PBS, and RTT fields are required for prime simulations.")
+            self.runFailed.emit("PRIME", "pegRNA fields missing.")
             return
 
         peg = PegRNA(spacer=spacer, pbs=pbs, rtt=rtt, name=self._peg_name.text().strip() or None)
@@ -913,6 +1028,16 @@ class PrimeTab(QWidget):
             "Running prime editing simulation "
             f"(draws={draws}, seed={seed_label}, priors={priors_profile}, PAM={pam_profile})…"
         )
+        self._last_genome = genome
+        self._last_peg = peg
+        self._last_editor = editor
+        self._last_run_config = {
+            "draws": draws,
+            "seed": seed,
+            "pam_profile": pam_profile,
+            "pam_softness": pam_softness,
+            "priors_profile": priors_profile,
+        }
 
         def task() -> tuple[dict, Optional[EditVisualizationSpec]]:
             priors = resolve_prime_priors(priors_profile)
@@ -941,7 +1066,11 @@ class PrimeTab(QWidget):
 
             return payload, spec
 
+        self.runStarted.emit("PRIME")
         self._start_worker(task)
+
+    def trigger_simulation(self) -> None:
+        self._simulate()
 
     def _start_worker(self, task: Callable[[], tuple[dict, Optional[EditVisualizationSpec]]]) -> None:
         if self._active_thread is not None:
@@ -970,7 +1099,20 @@ class PrimeTab(QWidget):
         thread.finished.connect(self._on_thread_finished)
         thread.finished.connect(thread.deleteLater)
         thread.started.connect(worker.run)
+        self._mark_run_start()
         thread.start()
+
+    def _mark_run_start(self) -> None:
+        self._run_start = time.perf_counter()
+        self._last_run_ms = None
+
+    def _mark_run_end(self) -> float | None:
+        if self._run_start is None:
+            return None
+        elapsed = max(0.0, (time.perf_counter() - self._run_start) * 1000.0)
+        self._run_start = None
+        self._last_run_ms = elapsed
+        return elapsed
 
     def _on_thread_finished(self) -> None:
         self._active_thread = None
@@ -985,7 +1127,11 @@ class PrimeTab(QWidget):
         self.simPayloadReady.emit(payload)
         self.specReady.emit(spec)
         self.runCompleted.emit("PRIME", payload, spec)
-        self.logMessage.emit("Prime simulation complete.")
+        duration_ms = self._mark_run_end()
+        if duration_ms is not None:
+            self.logMessage.emit(f"Prime simulation complete ({duration_ms:.0f} ms).")
+        else:
+            self.logMessage.emit("Prime simulation complete.")
         top = payload.get("outcomes", [{}])
         top_label = top[0].get("label") if top and isinstance(top[0], dict) else None
         LOGGER.debug(
@@ -995,8 +1141,10 @@ class PrimeTab(QWidget):
         )
 
     def _on_worker_failure(self, message: str) -> None:
+        self._mark_run_end()
         QMessageBox.critical(self, "Prime simulation failed", message)
         self.logMessage.emit(f"Prime simulation failed: {message}")
+        self.runFailed.emit("PRIME", message)
 
     def shutdown(self) -> None:
         if self._active_thread is not None:
@@ -1072,16 +1220,42 @@ class PrimeTab(QWidget):
         if max_outcomes is not None:
             self._max_outcomes.setValue(int(float(max_outcomes)))
 
+    @property
+    def last_genome(self) -> Optional[DigitalGenome]:
+        return self._last_genome
 
-class SimBuilderWindow(QMainWindow):
-    """Main window combining forms, logs, and the ModernGL viewer."""
+    @property
+    def last_peg(self) -> Optional[PegRNA]:
+        return self._last_peg
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.setWindowTitle("Helix Sim Builder")
-        central = QWidget(self)
-        self.setCentralWidget(central)
-        root_layout = QHBoxLayout(central)
+    @property
+    def last_editor(self) -> Optional[PrimeEditor]:
+        return self._last_editor
+
+    @property
+    def last_run_config(self) -> dict[str, Any]:
+        return dict(self._last_run_config)
+
+    @property
+    def last_run_duration_ms(self) -> Optional[float]:
+        return self._last_run_ms
+
+
+class SimBuilderWidget(QWidget):
+    """Embeddable Sim Builder panel that hosts sequence + viz controls."""
+
+    def __init__(
+        self,
+        session: Optional[SessionModel] = None,
+        parent: Optional[QWidget] = None,
+        *,
+        enable_gl_viewer: bool = True,
+    ) -> None:
+        super().__init__(parent)
+        self._session = session
+        self._enable_gl_viewer = enable_gl_viewer
+        self._studio_redirect_logged = False
+        root_layout = QHBoxLayout(self)
         self.sim_settings = SimSettingsModel(parent=self)
 
         left = QWidget(self)
@@ -1102,24 +1276,33 @@ class SimBuilderWindow(QMainWindow):
         self.log_panel.setMaximumHeight(150)
         left_layout.addWidget(self.log_panel)
 
-        self.gl_window = HelixModernWidget()
-        gl_container = QWidget.createWindowContainer(self.gl_window, self)
-        gl_container.setMinimumWidth(600)
-        gl_container.setMinimumHeight(320)
-        gl_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.viewer = gl_container
-        self.gl_window.frameDrawn.connect(self._on_viewer_frame)
+        self.gl_window: HelixModernWidget | None = None
+        self.viewer: QWidget | None = None
+        self.rail_widget: RailBandWidget | None = None
 
-        self.rail_widget = RailBandWidget(self)
         self.viewer_placeholder = ViewerPlaceholder(self)
         self.viewer_container = QWidget(self)
         self.viewer_container.setAutoFillBackground(False)
         self.viewer_stack = QStackedLayout(self.viewer_container)
         self.viewer_stack.addWidget(self.viewer_placeholder)
-        self.viewer_stack.addWidget(self.rail_widget)
-        self.viewer_stack.addWidget(self.viewer)
-        self.viewer_stack.setCurrentWidget(self.viewer_placeholder)
         self._active_view_widget: QWidget = self.viewer_placeholder
+
+        if self._enable_gl_viewer:
+            self.gl_window = HelixModernWidget()
+            gl_container = QWidget.createWindowContainer(self.gl_window, self)
+            gl_container.setMinimumWidth(600)
+            gl_container.setMinimumHeight(320)
+            gl_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            self.viewer = gl_container
+            self.gl_window.frameDrawn.connect(self._on_viewer_frame)
+
+            self.rail_widget = RailBandWidget(self)
+            self.viewer_stack.addWidget(self.rail_widget)
+            self.viewer_stack.addWidget(self.viewer)
+            self.viewer_stack.setCurrentWidget(self.viewer_placeholder)
+        else:
+            self.viewer_placeholder.set_message("Viewer output is available in the Helix Studio viewport.")
+
         right = QWidget(self)
         right_layout = QVBoxLayout(right)
         self.right_splitter = QSplitter(Qt.Vertical, right)
@@ -1135,11 +1318,14 @@ class SimBuilderWindow(QMainWindow):
         self.viewer_reset_btn = QPushButton("Reset Camera", self)
         self.viewer_reset_btn.setToolTip("Return the 3D view to its default orbit.")
         self.viewer_reset_btn.clicked.connect(self._reset_viewer_camera)
+        if not self._enable_gl_viewer:
+            self.viewer_reset_btn.setEnabled(False)
+            self.viewer_reset_btn.setToolTip("Viewer controls are available in standalone Sim Builder.")
         controls.addWidget(self.viewer_reset_btn)
         controls.addStretch(1)
         right_layout.addLayout(controls)
 
-        self.main_splitter = QSplitter(Qt.Horizontal, central)
+        self.main_splitter = QSplitter(Qt.Horizontal, self)
         self.main_splitter.addWidget(left)
         self.main_splitter.addWidget(right)
         self.main_splitter.setStretchFactor(0, 1)
@@ -1147,9 +1333,6 @@ class SimBuilderWindow(QMainWindow):
         self.main_splitter.setCollapsible(0, False)
         self.main_splitter.setCollapsible(1, False)
         root_layout.addWidget(self.main_splitter)
-
-        self._settings = QSettings("Helix", "SimBuilder")
-        self._load_settings()
 
         self.crispr_tab.specReady.connect(self._display_spec)
         self.prime_tab.specReady.connect(self._display_spec)
@@ -1159,55 +1342,74 @@ class SimBuilderWindow(QMainWindow):
         self.history_panel.logMessage.connect(self._log)
         self.crispr_tab.runCompleted.connect(self._record_run)
         self.prime_tab.runCompleted.connect(self._record_run)
-        self._show_viewer_canvas(False, "Viewer initializing…")
+        self.crispr_tab.runCompleted.connect(self._sync_session_state)
+        self.prime_tab.runCompleted.connect(self._sync_session_state)
+        self.crispr_tab.runStarted.connect(self._on_run_started)
+        self.prime_tab.runStarted.connect(self._on_run_started)
+        self.crispr_tab.runFailed.connect(self._on_run_failed)
+        self.prime_tab.runFailed.connect(self._on_run_failed)
+        if self._enable_gl_viewer:
+            self._show_viewer_canvas(False, "Viewer initializing…")
+        else:
+            self.viewer_placeholder.set_message("Sim Builder viewer disabled; see Helix Studio viewport for visuals.")
 
         # DEBUG bootstrap: load a trivial CRISPR spec so the viewer renders something on startup.
-        try:
-            fake_payload = {
-                "schema": {"kind": "crispr.sim", "spec_version": "1.0"},
-                "meta": {},
-                "site": {"length": 40, "sequence": "ACGT" * 10},
-                "guide": {"id": "debug", "start": 10, "end": 30, "strand": "+", "gc_content": 0.5},
-                "priors": {},
-                "draws": 1,
-                "outcomes": [
-                    {
-                        "label": "fake_del",
-                        "count": 1,
-                        "probability": 1.0,
-                        "diff": {
-                            "kind": "deletion",
-                            "start": 15,
-                            "end": 18,
-                        },
-                    }
-                ],
-            }
-            mode = (self.sim_settings.value.viz_mode or "rail_3d").lower()
-            seq = fake_payload["site"]["sequence"]
-            guide = fake_payload["guide"]
-            if mode == "orbitals_3d":
-                fake_spec = build_crispr_orbitals_3d_spec(seq, guide, fake_payload)
-            else:
-                fake_spec = build_crispr_rail_3d_spec(seq, guide, fake_payload)
-            if fake_spec is None:
-                fake_spec = build_crispr_viz_spec(seq, guide, fake_payload)
-            if fake_spec and mode == "workflow_2p5d":
-                workflow = build_workflow2p5d_crispr(seq, guide, fake_payload)
-                meta = fake_spec.metadata or {}
-                meta["workflow_view"] = _workflow_to_serializable(workflow)
-                fake_spec.metadata = meta
-            def _load_debug_spec(spec=fake_spec) -> None:
-                self._display_spec(spec)
-                self._log("Loaded DEBUG visualization: " + spec.edit_type)
-            QTimer.singleShot(0, _load_debug_spec)
-        except Exception as exc:
-            self._show_viewer_canvas(False, f"Failed to load debug viz: {exc}")
-            self._log(f"Failed to load debug spec: {exc}")
+        if self._enable_gl_viewer:
+            try:
+                fake_payload = {
+                    "schema": {"kind": "crispr.sim", "spec_version": "1.0"},
+                    "meta": {},
+                    "site": {"length": 40, "sequence": "ACGT" * 10},
+                    "guide": {"id": "debug", "start": 10, "end": 30, "strand": "+", "gc_content": 0.5},
+                    "priors": {},
+                    "draws": 1,
+                    "outcomes": [
+                        {
+                            "label": "fake_del",
+                            "count": 1,
+                            "probability": 1.0,
+                            "diff": {
+                                "kind": "deletion",
+                                "start": 15,
+                                "end": 18,
+                            },
+                        }
+                    ],
+                }
+                mode = (self.sim_settings.value.viz_mode or "rail_3d").lower()
+                seq = fake_payload["site"]["sequence"]
+                guide = fake_payload["guide"]
+                if mode == "orbitals_3d":
+                    fake_spec = build_crispr_orbitals_3d_spec(seq, guide, fake_payload)
+                else:
+                    fake_spec = build_crispr_rail_3d_spec(seq, guide, fake_payload)
+                if fake_spec is None:
+                    fake_spec = build_crispr_viz_spec(seq, guide, fake_payload)
+                if fake_spec and mode == "workflow_2p5d":
+                    workflow = build_workflow2p5d_crispr(seq, guide, fake_payload)
+                    meta = fake_spec.metadata or {}
+                    meta["workflow_view"] = _workflow_to_serializable(workflow)
+                    fake_spec.metadata = meta
+
+                def _load_debug_spec(spec=fake_spec) -> None:
+                    self._display_spec(spec)
+                    self._log("Loaded DEBUG visualization: " + spec.edit_type)
+
+                QTimer.singleShot(0, _load_debug_spec)
+            except Exception as exc:
+                self._show_viewer_canvas(False, f"Failed to load debug viz: {exc}")
+                self._log(f"Failed to load debug spec: {exc}")
 
     def _display_spec(self, spec: EditVisualizationSpec) -> None:
         if spec is None:
             self._show_viewer_canvas(False, "No visualization available for this run.")
+            return
+        if not self._enable_gl_viewer or self.gl_window is None or self.viewer is None:
+            self.viewer_placeholder.set_message("Visualization ready – view in the Helix Studio viewport.")
+            self._log(f"Visualization ready: {spec.edit_type} (Studio viewport)")
+            if self._session is not None and not self._studio_redirect_logged:
+                self._session.log("SimBuilder in Studio mode: visualization redirected to Helix Studio viewport.")
+                self._studio_redirect_logged = True
             return
         metadata = spec.metadata or {}
         viz_mode = (self.sim_settings.value.viz_mode or "rail_3d").lower()
@@ -1218,7 +1420,7 @@ class SimBuilderWindow(QMainWindow):
         self.gl_window.set_spec(spec)
 
         if viz_mode == "rail_2d":
-            if rail_meta and rail_meta.get("bands"):
+            if self.rail_widget is not None and rail_meta and rail_meta.get("bands"):
                 self.rail_widget.set_spec(spec)
                 self.gl_window.set_workflow_view(None)
                 self._show_viewer_canvas(True, widget=self.rail_widget)
@@ -1243,11 +1445,106 @@ class SimBuilderWindow(QMainWindow):
         self.history_panel.add_entry(kind, spec, payload)
         self._log(f"Recorded {kind} run: {spec.edit_type}")
 
+    def _on_run_started(self, kind: str) -> None:
+        if self._session is not None:
+            self._session.set_status(f"Running {kind.title()} simulation…")
+
+    def _on_run_failed(self, kind: str, message: str) -> None:
+        if self._session is not None:
+            self._session.error(f"{kind.title()} simulation failed: {message}")
+
+    def _sync_session_state(self, kind: str, payload: dict, spec: EditVisualizationSpec) -> None:
+        if self._session is None:
+            return
+        spec_payload = spec.to_payload()
+        config: dict[str, Any] = {
+            "sim_type": kind,
+            "sim_settings": self.sim_settings.to_dict(),
+        }
+        perf: dict[str, float] = {}
+        workflow_meta = (spec.metadata or {}).get("workflow_view")
+        if workflow_meta:
+            config["workflow_view"] = workflow_meta
+        if isinstance(payload, Mapping):
+            config["sim_payload"] = dict(payload)
+        genome: Optional[DigitalGenome] = None
+        peg: Optional[PegRNA] = None
+        editor: Optional[PrimeEditor] = None
+        dag_payload: Optional[Any] = None
+        outcomes: list[dict[str, Any]] = []
+        if isinstance(payload, Mapping):
+            raw_outcomes = payload.get("outcomes")
+            if isinstance(raw_outcomes, list):
+                outcomes = [dict(outcome) for outcome in raw_outcomes if isinstance(outcome, Mapping)]
+
+        run_kind = RunKind.NONE
+        normalized_kind = kind.upper()
+        if normalized_kind == "CRISPR":
+            genome = self.crispr_tab.last_genome
+            config["run_config"] = self.crispr_tab.last_run_config
+            guide = self.crispr_tab.last_guide
+            if guide:
+                config["guide"] = dict(guide)
+            if isinstance(payload, Mapping) and isinstance(payload.get("artifact"), str):
+                dag_payload = dict(payload)
+            run_kind = RunKind.CRISPR
+            duration = self.crispr_tab.last_run_duration_ms
+            if duration is not None:
+                perf["sim_ms"] = duration
+        elif normalized_kind == "PRIME":
+            genome = self.prime_tab.last_genome
+            peg = self.prime_tab.last_peg
+            editor = self.prime_tab.last_editor
+            config["run_config"] = self.prime_tab.last_run_config
+            run_kind = RunKind.PRIME
+            duration = self.prime_tab.last_run_duration_ms
+            if duration is not None:
+                perf["sim_ms"] = duration
+
+        seq_meta = self.sequence_input.sequence_metadata()
+        if perf:
+            config["perf"] = perf
+
+        self._session.update(
+            genome=genome,
+            peg=peg,
+            editor=editor,
+            dag_from_runtime=dag_payload,
+            viz_spec_payload=spec_payload,
+            config=config,
+            run_kind=run_kind,
+            genome_source=seq_meta.get("source", "inline"),
+            genome_uri=seq_meta.get("uri"),
+            genome_hash=seq_meta.get("hash"),
+            outcomes=outcomes,
+            viz_dirty=True,
+        )
+        if outcomes:
+            self._session.log(f"{kind.title()} run synced to session ({len(outcomes)} outcomes).")
+        else:
+            self._session.log(f"{kind.title()} run synced to session.")
+        if self._session is not None:
+            self._session.set_status(
+                f"{kind.title()} run #{self._session.state.run_id} finished with {len(outcomes)} outcomes."
+            )
+
+    def run_active_tab(self) -> None:
+        active = self.tabs.currentWidget()
+        trigger = getattr(active, "trigger_simulation", None)
+        if callable(trigger):
+            trigger()
+        else:
+            self._log("Active tab cannot be triggered automatically.")
+
     def _log(self, message: str) -> None:
         self.log_panel.log(message)
-        self._console_log(message)
+        _console_log(message)
 
     def _show_viewer_canvas(self, ready: bool, message: str | None = None, widget: QWidget | None = None) -> None:
+        if not self._enable_gl_viewer or self.viewer is None:
+            if message:
+                self.viewer_placeholder.set_message(message)
+            return
         if ready:
             target = widget or self.viewer
             self.viewer_stack.setCurrentWidget(target)
@@ -1259,6 +1556,8 @@ class SimBuilderWindow(QMainWindow):
             self._active_view_widget = self.viewer_placeholder
 
     def _on_viewer_frame(self) -> None:
+        if not self._enable_gl_viewer or self.gl_window is None:
+            return
         if not hasattr(self, "_gl_logged"):
             self._gl_logged = True
             try:
@@ -1287,22 +1586,16 @@ class SimBuilderWindow(QMainWindow):
             self._show_viewer_canvas(True, widget=self.viewer)
 
     def _reset_viewer_camera(self) -> None:
+        if not self._enable_gl_viewer or self.gl_window is None:
+            return
         self.gl_window.reset_camera()
         self._log("Viewer camera reset.")
 
-    def _load_settings(self) -> None:
-        geometry = self._settings.value("geometry", type=QByteArray)
-        if geometry and isinstance(geometry, QByteArray):
-            self.restoreGeometry(geometry)
-        else:
-            self.resize(1400, 900)
-        window_state = self._settings.value("windowState", type=QByteArray)
-        if window_state and isinstance(window_state, QByteArray):
-            self.restoreState(window_state)
-        splitter_state = self._settings.value("main_splitter_state", type=QByteArray)
+    def load_state(self, settings: QSettings) -> None:
+        splitter_state = settings.value("main_splitter_state", type=QByteArray)
         if not splitter_state or not isinstance(splitter_state, QByteArray) or not self.main_splitter.restoreState(splitter_state):
             self.main_splitter.setSizes([450, 950])
-        right_splitter_state = self._settings.value("right_splitter_state", type=QByteArray)
+        right_splitter_state = settings.value("right_splitter_state", type=QByteArray)
         if not right_splitter_state or not isinstance(right_splitter_state, QByteArray) or not self.right_splitter.restoreState(right_splitter_state):
             self.right_splitter.setSizes([600, 300])
         sizes = self.right_splitter.sizes()
@@ -1311,7 +1604,7 @@ class SimBuilderWindow(QMainWindow):
         main_sizes = self.main_splitter.sizes()
         if not main_sizes or len(main_sizes) < 2 or main_sizes[0] < 200:
             self.main_splitter.setSizes([450, 950])
-        sim_settings_blob = self._settings.value("sim_settings")
+        sim_settings_blob = settings.value("sim_settings")
         if sim_settings_blob:
             try:
                 if isinstance(sim_settings_blob, (bytes, bytearray)):
@@ -1324,32 +1617,83 @@ class SimBuilderWindow(QMainWindow):
             else:
                 if isinstance(payload, dict):
                     self.sim_settings.apply_dict(payload)
-        sequence_text = self._settings.value("sequence_text")
+        sequence_text = settings.value("sequence_text")
         if sequence_text:
             self.sequence_input.set_sequence(str(sequence_text))
-        self.crispr_tab.load_state(self._settings)
-        self.prime_tab.load_state(self._settings)
+        self.crispr_tab.load_state(settings)
+        self.prime_tab.load_state(settings)
 
-    def _save_settings(self) -> None:
-        self._settings.setValue("geometry", self.saveGeometry())
-        self._settings.setValue("windowState", self.saveState())
-        self._settings.setValue("main_splitter_state", self.main_splitter.saveState())
-        self._settings.setValue("right_splitter_state", self.right_splitter.saveState())
-        self._settings.setValue("sequence_text", self.sequence_input.sequence())
-        self._settings.setValue("sim_settings", json.dumps(self.sim_settings.to_dict()))
-        self.crispr_tab.save_state(self._settings)
-        self.prime_tab.save_state(self._settings)
+    def save_state(self, settings: QSettings) -> None:
+        settings.setValue("main_splitter_state", self.main_splitter.saveState())
+        settings.setValue("right_splitter_state", self.right_splitter.saveState())
+        settings.setValue("sequence_text", self.sequence_input.sequence())
+        settings.setValue("sim_settings", json.dumps(self.sim_settings.to_dict()))
+        self.crispr_tab.save_state(settings)
+        self.prime_tab.save_state(settings)
 
-    def closeEvent(self, event: QCloseEvent) -> None:
+    def shutdown(self) -> None:
         self.crispr_tab.shutdown()
         self.prime_tab.shutdown()
-        self._save_settings()
+
+    def on_simulation_finished(self, genome, dag, config, outcomes: list[dict[str, Any]]) -> None:
+        if self._session is not None:
+            self._session.update(genome=genome, dag=dag, config=config)
+            for outcome in outcomes:
+                self._session.append_outcome(outcome)
+
+
+class SimBuilderWindow(QMainWindow):
+    """Standalone window wrapper for the Sim Builder widget."""
+
+    def __init__(self, session: Optional[SessionModel] = None) -> None:
+        super().__init__()
+        self.setWindowTitle("Helix Sim Builder")
+        self._settings = QSettings("Helix", "SimBuilder")
+        self._widget = SimBuilderWidget(session=session, parent=self)
+        self.setCentralWidget(self._widget)
+        self._restore_window_state()
+        self._widget.load_state(self._settings)
+
+    def _restore_window_state(self) -> None:
+        geometry = self._settings.value("geometry", type=QByteArray)
+        if geometry and isinstance(geometry, QByteArray):
+            self.restoreGeometry(geometry)
+        else:
+            self.resize(1400, 900)
+        window_state = self._settings.value("windowState", type=QByteArray)
+        if window_state and isinstance(window_state, QByteArray):
+            self.restoreState(window_state)
+
+    def _save_window_state(self) -> None:
+        self._settings.setValue("geometry", self.saveGeometry())
+        self._settings.setValue("windowState", self.saveState())
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self._widget.shutdown()
+        self._widget.save_state(self._settings)
+        self._save_window_state()
         self._settings.sync()
         super().closeEvent(event)
 
-    @staticmethod
-    def _console_log(message: str) -> None:
-        print(f"[SimBuilder] {message}", flush=True)
+
+def create_simbuilder_widget(
+    session: Optional[SessionModel] = None,
+    parent: Optional[QWidget] = None,
+    *,
+    enable_gl_viewer: bool = True,
+) -> SimBuilderWidget:
+    return SimBuilderWidget(session=session, parent=parent, enable_gl_viewer=enable_gl_viewer)
+
+
+def configure_opengl_surface_format() -> None:
+    fmt = QSurfaceFormat()
+    fmt.setRenderableType(QSurfaceFormat.OpenGL)
+    fmt.setProfile(QSurfaceFormat.CoreProfile)
+    fmt.setVersion(3, 3)
+    fmt.setSwapBehavior(QSurfaceFormat.DoubleBuffer)
+    fmt.setDepthBufferSize(24)
+    fmt.setStencilBufferSize(8)
+    QSurfaceFormat.setDefaultFormat(fmt)
 
 
 def run_sim_builder() -> None:
@@ -1360,25 +1704,40 @@ def run_sim_builder() -> None:
     if app is None:
         app = QApplication([])
         owns_app = True
-    fmt = QSurfaceFormat()
-    fmt.setRenderableType(QSurfaceFormat.OpenGL)
-    fmt.setProfile(QSurfaceFormat.CoreProfile)
-    fmt.setVersion(3, 3)
-    fmt.setSwapBehavior(QSurfaceFormat.DoubleBuffer)
-    fmt.setDepthBufferSize(24)
-    fmt.setStencilBufferSize(8)
-    QSurfaceFormat.setDefaultFormat(fmt)
+    configure_opengl_surface_format()
     apply_helix_theme(app)
-    window = SimBuilderWindow()
+    session = SessionModel()
+    window = SimBuilderWindow(session=session)
     window.show()
     if owns_app:
         app.exec()
+
+
+def main() -> None:
+    """Standalone entry point exposed via console script."""
+    import sys
+
+    app = QApplication(sys.argv)
+    configure_opengl_surface_format()
+    apply_helix_theme(app)
+    session = SessionModel()
+    window = SimBuilderWindow(session=session)
+    window.show()
+    sys.exit(app.exec())
+
+
+def _console_log(message: str) -> None:
+    print(f"[SimBuilder] {message}", flush=True)
+
+
 class HelixComboBox(QComboBox):
     """ComboBox tuned for Sim Builder interactions."""
 
     def __init__(self, parent: QWidget | None = None, *, searchable: bool = True) -> None:
         super().__init__(parent)
         self._searchable = searchable
+        if self._searchable:
+            self.setEditable(True)
         self._init_completer()
 
     def _init_completer(self) -> None:
