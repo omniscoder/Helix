@@ -15,7 +15,13 @@ If the goal is “badge everywhere”, every DAG emitted by Helix must pass thes
 
 ## CLI Pipeline
 
-1. **Generate DAGs** with the usual Helix CLIs (`helix crispr dag`, `helix prime dag`, `helix pcr dag`).
+1. **Generate DAGs** with the helper scripts in `tests/veribiota/` (they wrap the usual Helix CLIs and drop outputs under `veribiota_work/`):
+
+   ```bash
+   python tests/veribiota/gen_crispr_micro.py
+   python tests/veribiota/gen_prime_micro.py
+   python tests/veribiota/gen_pcr_micro.py
+   ```
 2. **Emit lean-check metadata** – for each DAG JSON, run:
    ```bash
    helix veribiota lean-check --input dag.json --out dag.lean-check.json
@@ -41,11 +47,11 @@ When collaborating with the external [`VeriBiota/VeriBiota`](https://github.com/
 helix veribiota export-suite \
   --inputs out/dag*.json \
   --veribiota-root ../VeriBiota \
-  --module-path Biosim/VeriBiota/Helix/CrisprMicro.lean \
-  --module-name Biosim.VeriBiota.Helix.CrisprMicro \
+  --module-path Biosim/VeriBiota/Helix/MicroSuite.lean \
+  --module-name Biosim.VeriBiota.Helix.MicroSuite \
   --list-name allDags
 ```
-`export-suite` shares the same template as `export-dags` but respects VeriBiota’s namespace conventions (`Biosim.VeriBiota.Helix.*`) and writes directly into the repo so Lake can import `Biosim/VeriBiota/Helix/CrisprMicro.lean`.
+`export-suite` shares the same template as `export-dags` but respects VeriBiota’s namespace conventions (`Biosim.VeriBiota.Helix.*`) and writes directly into the repo so Lake can import `Biosim/VeriBiota/Helix/MicroSuite.lean`.
 
 ## GitHub Action
 

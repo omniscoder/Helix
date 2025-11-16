@@ -1,0 +1,8 @@
+{
+  "cycles": 6,
+  "per_cycle_efficiency": 0.8,
+  "error_rate": 0.0005,
+  "min_amplicon_length": 60,
+  "max_amplicon_length": 200,
+  "max_amplicons": 32
+}

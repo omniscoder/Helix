@@ -2,7 +2,7 @@ workflows:
 - name: plasmid_screen
   steps:
   - args:
-      input: /tmp/helix_bench_data_xpvwo9d3/dna_limit.fna
+      input: /home/chris/Helix/src/helix/datasets/dna/plasmid_demo.fna
       k: 5
       max_diff: 1
       step: 30
@@ -11,7 +11,7 @@ workflows:
     command: dna
     stdout: dna_summary.txt
   - args:
-      input: /tmp/helix_bench_data_xpvwo9d3/dna_limit.fna
+      input: /home/chris/Helix/src/helix/datasets/dna/plasmid_demo.fna
       json: plasmid_triage.json
       k: 4
       max_diff: 1
@@ -27,7 +27,7 @@ workflows:
     stdout: spectrum_hits.txt
   - args:
       dotbracket: plasmid_mfe.dbn
-      fasta: /tmp/helix_bench_data_xpvwo9d3/dna_limit.fna
+      fasta: /home/chris/Helix/src/helix/datasets/dna/plasmid_demo.fna
     command:
     - rna
     - mfe

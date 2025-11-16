@@ -1,0 +1,17 @@
+{
+  "name": "micro_pcr",
+  "forward": {
+    "name": "micro_forward",
+    "sequence": "ATGCGTACGTTG",
+    "max_mismatches": 0
+  },
+  "reverse": {
+    "name": "micro_reverse",
+    "sequence": "CGGTCAACGTAC",
+    "max_mismatches": 0
+  },
+  "metadata": {
+    "use_case": "veribiota_micro",
+    "notes": "Minimal PCR primer pair for VeriBiota regression tests."
+  }
+}

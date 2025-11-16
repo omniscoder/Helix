@@ -1,0 +1,16 @@
+{
+  "name": "PE2-demo",
+  "nick_to_edit_offset": 1,
+  "efficiency_scale": 0.8,
+  "indel_bias": 0.2,
+  "mismatch_tolerance": 3,
+  "flap_balance": 0.6,
+  "cas": {
+    "name": "SpCas9-H840A",
+    "system_type": "cas9",
+    "pam_rules": [
+      {"pattern": "NGG"}
+    ],
+    "cut_offset": 3
+  }
+}

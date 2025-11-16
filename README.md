@@ -428,10 +428,10 @@ This exposes the `helix` console command and the `helix` Python package (`from h
   helix veribiota export-suite \
     --inputs out/dag*.json \
     --veribiota-root ../VeriBiota \
-    --module-path Biosim/VeriBiota/Helix/CrisprMicro.lean \
-    --module-name Biosim.VeriBiota.Helix.CrisprMicro
+    --module-path Biosim/VeriBiota/Helix/MicroSuite.lean \
+    --module-name Biosim.VeriBiota.Helix.MicroSuite
   ```
-  This writes the Lean file straight into `Biosim/VeriBiota/Helix/CrisprMicro.lean`, ready for VeriBiota’s Lake build + proof pipeline.
+  This writes the Lean file straight into `Biosim/VeriBiota/Helix/MicroSuite.lean`, ready for VeriBiota’s Lake build + proof pipeline.
 
 - **Frames → dataset**
   ```bash

@@ -30,30 +30,34 @@ jobs:
           python -m pip install --upgrade pip
           pip install '.[dev]'
 
-      - name: Generate DAGs + lean-check metadata
+      - name: Generate micro DAGs for VeriBiota
         run: |
-          mkdir -p veribiota_work
-          helix crispr dag \
-            --genome tests/data/crispr_micro.fna \
-            --guide-sequence ACGTACGTACGTACGTACGT \
-            --max-depth 2 \
-            --json veribiota_work/crispr_micro.dag.json
-          helix veribiota lean-check \
-            --input veribiota_work/crispr_micro.dag.json \
-            --out veribiota_work/crispr_micro.lean-check.json
-          helix veribiota preflight \
-            --checks veribiota_work/crispr_micro.lean-check.json \
-            --payloads veribiota_work/crispr_micro.dag.json
+          python tests/veribiota/gen_crispr_micro.py
+          python tests/veribiota/gen_prime_micro.py
+          python tests/veribiota/gen_pcr_micro.py
+
+      - name: Preflight lean-check metadata
+        run: >
+          helix veribiota preflight
+          --checks veribiota_work/crispr_micro.lean-check.json
+          veribiota_work/prime_micro.lean-check.json
+          veribiota_work/pcr_micro.lean-check.json
+          --payloads veribiota_work/crispr_micro.dag.json
+          veribiota_work/prime_micro.dag.json
+          veribiota_work/pcr_micro.dag.json
 
       - name: Export Lean suites into VeriBiota
         run: |
           helix veribiota export-suite \
-            --inputs veribiota_work/crispr_micro.dag.json \
+            --inputs \
+              veribiota_work/crispr_micro.dag.json \
+              veribiota_work/prime_micro.dag.json \
+              veribiota_work/pcr_micro.dag.json \
             --veribiota-root veribiota_repo \
-            --module-path Biosim/VeriBiota/Helix/CrisprMicro.lean \
-            --module-name Biosim.VeriBiota.Helix.CrisprMicro \
+            --module-path Biosim/VeriBiota/Helix/MicroSuite.lean \
+            --module-name Biosim.VeriBiota.Helix.MicroSuite \
             --list-name allDags \
-            --theorem-name crispr_all_checked \
+            --theorem-name helix_micro_all_checked \
             --skip-theorem
 
       - name: Install Lean + Lake
@@ -65,4 +69,4 @@ jobs:
         working-directory: veribiota_repo
         run: |
           lake build
-          lake env lean Biosim/VeriBiota/Helix/CrisprMicro.lean
+          lake env lean Biosim/VeriBiota/Helix/MicroSuite.lean
