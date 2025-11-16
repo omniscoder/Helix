@@ -47,17 +47,38 @@ def _format_string_list(items: Sequence[str]) -> str:
     return "[ " + ", ".join(_lean_string(str(item)) for item in items) + " ]"
 
 
-def _format_event(event: Mapping[str, Any]) -> str:
-    metadata = event.get("metadata") or {}
-    fields = [
-        ("chrom", _lean_string(str(event.get("chrom", "")))),
-        # Use non-keyword field names to avoid clashes with Lean syntax.
-        ("startPos", str(int(event.get("start", 0)))),
-        ("endPos", str(int(event.get("end", 0)))),
-        ("replacement", _lean_string(str(event.get("replacement", "")))),
-        ("metadata", _format_assoc_list(metadata)),
-    ]
-    return _format_record(fields)
+def _format_event_option(event: Mapping[str, Any] | None) -> str:
+    """
+    Format an optional CutEvent for the VeriBiota EditDAG.Edge.
+
+    VeriBiota's CutEvent has the shape:
+
+      structure CutEvent where
+        chrom : String
+        pos   : Nat
+        guide : String
+        kind  : String
+
+    We derive a best-effort mapping from the Helix EditEvent payload.
+    """
+
+    if not event:
+        return "none"
+    meta = event.get("metadata") or {}
+    chrom = _lean_string(str(event.get("chrom", "")))
+    pos = str(int(event.get("start", 0)))
+    # Use replacement sequence as a stand-in for guide; fall back to empty.
+    guide = _lean_string(str(event.get("replacement", "")))
+    kind = _lean_string(str(meta.get("label") or meta.get("mechanism") or ""))
+    inner = _format_record(
+        [
+            ("chrom", chrom),
+            ("pos", pos),
+            ("guide", guide),
+            ("kind", kind),
+        ]
+    )
+    return f"some {inner}"
 
 
 def _format_record(fields: Iterable[tuple[str, str]]) -> str:
@@ -73,51 +94,54 @@ def _indent(text: str, spaces: int) -> str:
     return "\n".join(prefix + line if line else "" for line in text.splitlines())
 
 
-def _format_nodes(nodes: Mapping[str, Any]) -> str:
+def _format_nodes(nodes: Mapping[str, Any], id_map: Mapping[str, int], *, root_id: str) -> str:
     if not nodes:
         return "[]"
+    # Use root node's log_prob as reference for probMass.
+    root_log = float(nodes.get(root_id, {}).get("log_prob", 0.0))
     formatted = []
     for node_id in sorted(nodes):
         node = nodes[node_id]
-        metadata = node.get("metadata") or {}
-        parent_ids = node.get("parent_ids") or node.get("parents") or []
-        seq_hashes = node.get("seq_hashes") or {}
-        diffs = [_format_event(entry) for entry in node.get("diffs", [])]
+        idx = int(id_map[str(node_id)])
+        meta = node.get("metadata") or {}
         sequences = node.get("sequences") or {}
+        depth = int(meta.get("time_step", 0))
+        log_prob = float(node.get("log_prob", 0.0))
+        if math.isinf(log_prob):
+            prob_mass = 0.0
+        else:
+            prob_mass = math.exp(log_prob - root_log)
+
+        genome_record = _format_record([("chroms", _format_assoc_list(sequences))])
 
         fields = [
-            ("id", _lean_string(str(node_id))),
-            ("logProb", _lean_float(float(node.get("log_prob", 0.0)))),
-            ("metadata", _format_assoc_list(metadata)),
-            ("parentIds", _format_string_list(parent_ids)),
-            ("seqHashes", _format_assoc_list(seq_hashes)),
-            (
-                "diffs",
-                "[]"
-                if not diffs
-                else "[\n"
-                + ",\n".join(_indent(entry, 8) for entry in diffs)
-                + "\n    ]",
-            ),
-            ("sequences", _format_assoc_list(sequences)),
+            ("id", str(idx)),
+            ("depth", str(depth)),
+            ("sequence", genome_record),
+            ("probMass", _lean_float(prob_mass)),
         ]
         formatted.append(_indent(_format_record(fields), 4))
     return "[\n" + ",\n".join(formatted) + "\n  ]"
 
 
-def _format_edges(edges: Sequence[Mapping[str, Any]]) -> str:
+def _format_edges(edges: Sequence[Mapping[str, Any]], id_map: Mapping[str, int]) -> str:
     if not edges:
         return "[]"
     formatted = []
     for edge in edges:
-        metadata = edge.get("metadata") or {}
+        source_id = str(edge.get("source", ""))
+        target_id = str(edge.get("target", ""))
+        src_idx = id_map.get(source_id)
+        dst_idx = id_map.get(target_id)
+        if src_idx is None or dst_idx is None:
+            # Skip edges that reference unknown nodes; Lean will reject them anyway.
+            continue
         event = edge.get("event") or {}
         fields = [
-            ("source", _lean_string(str(edge.get("source", "")))),
-            ("target", _lean_string(str(edge.get("target", "")))),
-            ("rule", _lean_string(str(edge.get("rule", edge.get("rule_name", ""))))),
-            ("event", _format_event(event)),
-            ("metadata", _format_assoc_list(metadata)),
+            ("src", str(int(src_idx))),
+            ("dst", str(int(dst_idx))),
+            ("event", _format_event_option(event)),
+            ("prob", _lean_float(0.0)),
         ]
         formatted.append(_indent(_format_record(fields), 4))
     return "[\n" + ",\n".join(formatted) + "\n  ]"
@@ -144,12 +168,16 @@ def _build_dag_record(payload: Mapping[str, Any]) -> str:
     nodes = payload.get("nodes", {})
     edges = payload.get("edges", [])
     root_id = payload.get("root_id") or (nodes and sorted(nodes)[0]) or ""
+    # Map string node identifiers to Nat indices expected by VeriBiota EditDAG.
+    ordered_ids = sorted(nodes)
+    id_map: Dict[str, int] = {node_id: idx for idx, node_id in enumerate(ordered_ids)}
+    root_idx = id_map.get(root_id, 0)
     return _format_record(
         [
-            ("nodes", _format_nodes(nodes)),
-            ("edges", _format_edges(edges)),
-            # Match the field name used by Biosim.VeriBiota.EditDAG.EditDAG.
-            ("root", _lean_string(str(root_id))),
+            ("nodes", _format_nodes(nodes, id_map, root_id=root_id)),
+            ("edges", _format_edges(edges, id_map)),
+            # Match the field name and type used by Biosim.VeriBiota.EditDAG.EditDAG.
+            ("root", str(int(root_idx))),
         ]
     )
 

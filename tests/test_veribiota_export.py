@@ -66,8 +66,9 @@ def test_dag_payload_to_lean_nested_namespace() -> None:
     assert "namespace VeriBiota" in lean_text
     assert "namespace Bridge" in lean_text
     assert "def microDag : EditDAG :=" in lean_text
-    assert "root := \"root\"" in lean_text
-    assert "logProb := -0.5" in lean_text
+    # root node index (0-based) should be present, and nodes should carry probMass.
+    assert "root := " in lean_text
+    assert "probMass :=" in lean_text
     assert "#eval" not in lean_text
     expected_tail = textwrap.dedent(
         """
