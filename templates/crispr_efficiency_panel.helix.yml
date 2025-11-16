@@ -1,0 +1,47 @@
+kind: helix.crispr.efficiency_panel.v1
+name: example_crispr_efficiency_panel
+description: "Synthetic CRISPR efficiency panel (example)."
+
+# This template drives benchmarks/crispr_efficiency_panel.py.
+# It models per-target edited fractions for endogenous-like sites.
+#
+# For real panels, copy/extend this file and either:
+#   - keep edited_fraction.value inline, or
+#   - point at a TSV with edited_fraction.file + column.
+
+cas:
+  name: "SpCas9-demo"
+  system_type: "cas9"
+  pam_pattern: "NGG"
+  cut_offset: 3
+  max_mismatches: 3
+  weight_mismatch_penalty: 1.0
+  weight_pam_penalty: 2.0
+
+defaults:
+  edited_fraction_column: "edited_fraction"
+
+targets:
+  - id: "endo_0001"
+    reference_sequence: "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+    guide:
+      id: "g1"
+      sequence: "ACCCAGGAAACCCGGGTTTT"
+      strand: "+"
+    measurements:
+      edited_fraction:
+        value: 0.45
+      chromatin_features:
+        atac_score: 0.87
+        histone_mark_H3K27ac: 1.2
+
+  - id: "endo_0002"
+    reference_sequence: "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+    guide:
+      id: "g2"
+      sequence: "ACGTACGTACGTACGTACGT"
+      strand: "+"
+    measurements:
+      edited_fraction:
+        value: 0.15
+

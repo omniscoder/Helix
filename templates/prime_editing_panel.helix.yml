@@ -1,0 +1,31 @@
+kind: helix.prime.editing_panel.v1
+name: example_prime_editing_panel
+description: "Synthetic prime editing outcome panel (example)."
+
+# This template drives benchmarks/prime_panel.py.
+# It models a set of prime editing experiments over simple digital
+# reference windows so the harness can run without external data.
+
+defaults:
+  priors_profile: default_indel
+  draws: 2000
+  seed: 1337
+
+targets:
+  - id: "prime_0001"
+    reference_sequence: "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+    peg:
+      id: "peg_demo"
+      spacer: "ACCCAGGAAACCCGGGTTTT"
+      pbs: "GAAAC"
+      rtt: "TTTTAA"
+      simulation:
+        draws: 2000
+        priors_profile: "default_indel"
+        seed: 1337
+    measurements:
+      counts_file: "benchmarks/data/prime/example_prime_0001_counts.csv"
+      label_column: "label"
+      count_column: "count"
+      timepoint_h: 48
+

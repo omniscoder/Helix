@@ -1,0 +1,68 @@
+kind: helix.crispr.plasmid_panel.v1
+name: example_crispr_plasmid_panel
+description: "Synthetic plasmid library benchmark (example)."
+
+# This template drives the benchmarks/crispr_plasmid_panel.py harness.
+# It intentionally stays lightweight: you can point at real plasmid
+# windows and amplicon count tables without changing Helix core code.
+#
+# Each target describes a single plasmid window plus one or more guides.
+# For real panels, extend this file or create your own with the same shape.
+
+defaults:
+  # Default CRISPR priors profile used by helix.crispr.simulate.resolve_crispr_priors.
+  priors_profile: default_indel
+  # Default number of multinomial draws per (target, guide).
+  draws: 2000
+  # Default RNG seed for reproducibility.
+  seed: 1337
+
+targets:
+  - id: "lib_0001"
+    # Inline reference window for this plasmid entry.
+    # Replace with your own design sequence as needed.
+    reference_sequence: "TTTACCCAGGAAACCCGGGTTTTAGGTTT"
+
+    guides:
+      - id: "g1"
+        sequence: "ACCCAGGAAACCCGGGTTTT"
+        pam_profile: "SpCas9_NGG"
+        simulation:
+          # Optional overrides; fall back to defaults.* when omitted.
+          draws: 2000
+          priors_profile: "default_indel"
+        measurements:
+          # Optional amplicon-Seq counts; when absent or missing on disk,
+          # the benchmark will still run but skip distance metrics.
+          counts_file: "benchmarks/data/plasmid/example_lib_0001_g1_counts.csv"
+          label_column: "label"
+          count_column: "count"
+          timepoint_h: 48
+
+    # Optional prime editing pegRNAs targeting the same plasmid window.
+    prime_pegs:
+      - id: "peg1"
+        spacer: "ACCCAGGAAACCCGGGTTTT"
+        pbs: "GAAAC"
+        rtt: "TTTTAA"
+        simulation:
+          draws: 2000
+          priors_profile: "default_indel"
+        measurements:
+          counts_file: "benchmarks/data/plasmid/example_lib_0001_peg1_counts.csv"
+          label_column: "label"
+          count_column: "count"
+          timepoint_h: 48
+
+  - id: "lib_0002"
+    # Alternative style: load a small plasmid reference from FASTA.
+    # The harness concatenates all records and uses the resulting string
+    # as the simulation window.
+    reference_fasta: "../src/helix/datasets/dna/plasmid_demo.fna"
+
+    guides:
+      - id: "demo"
+        sequence: "ACGTACGTACGTACGTACGT"
+        pam_profile: "SpCas9_NGG"
+        # No measurements provided here; this entry exercises the harness
+        # without requiring any lab data.

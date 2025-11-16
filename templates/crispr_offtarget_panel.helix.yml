@@ -1,0 +1,32 @@
+kind: helix.crispr.offtarget_panel.v1
+name: example_crispr_offtarget_panel
+description: "Synthetic CRISPR off-target panel (example)."
+
+# This template drives benchmarks/crispr_offtarget_panel.py.
+# It models a CHANGE-seq / CIRCLE-seq style assay over a simple plasmid
+# genome so the harness can run without external data.
+
+genome:
+  # Path is resolved relative to this file; "../" escapes templates/.
+  fasta: "../src/helix/datasets/dna/plasmid_demo.fna"
+
+defaults:
+  pam: "SpCas9-NGG"
+  max_mm: 1
+  max_gap: 0
+
+guides:
+  - id: "g_demo"
+    sequence: "ATGCGTACGTTGACCTGACG"
+    pam: "SpCas9-NGG"
+    search:
+      max_mm: 1
+      max_gap: 0
+    assay:
+      type: "synthetic_demo"
+      file: "../benchmarks/data/offtarget/example_g_demo.tsv"
+      columns:
+        chrom: "chrom"
+        start: "start"
+        strand: "strand"
+        read_count: "reads"

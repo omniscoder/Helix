@@ -60,6 +60,7 @@ class RealtimeServer:
         self._running = threading.Event()
         self._running.set()
         self._on_command: Optional[Callable[[Dict[str, Any]], None]] = None
+        self._latest_payload: Optional[Dict[str, Any]] = None
         threading.Thread(target=self._accept_loop, daemon=True).start()
 
     def _accept_loop(self) -> None:
@@ -70,6 +71,17 @@ class RealtimeServer:
                 break
             with self._lock:
                 self._clients.append(conn)
+                if self._latest_payload is not None:
+                    try:
+                        conn.send(self._latest_payload)
+                    except (EOFError, OSError):
+                        # Drop immediately if the client vanished.
+                        self._clients.remove(conn)
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        continue
             threading.Thread(target=self._command_loop, args=(conn,), daemon=True).start()
 
     def _command_loop(self, conn) -> None:
@@ -86,6 +98,7 @@ class RealtimeServer:
 
     def broadcast(self, payload: Dict[str, Any]) -> None:
         with self._lock:
+            self._latest_payload = dict(payload)
             alive = []
             for conn in self._clients:
                 try:
