@@ -114,6 +114,11 @@ class RailBandWidget(QWidget):
         # Cut line
         painter.setPen(QPen(QColor("#f97316"), 2))
         painter.drawLine(cut_x, rail_y - 30, cut_x, rail_y + height * 0.5)
+        self._draw_axis_annotations(painter, QRectF(margin_x, margin_top - 20, width, 20))
+        self._draw_probability_scale(painter, QRectF(margin_x, rail_y + height + 10, width, 40))
+        painter.setFont(QFont("Inter", 10, QFont.Medium))
+        painter.setPen(QColor("#fbbf24"))
+        painter.drawText(QRectF(cut_x + 6, rail_y - 48, 140, 18), Qt.AlignLeft | Qt.AlignVCenter, "Cut site (0 bp)")
 
         self._draw_reference_strip(painter, x_for, rail_y, len(self._sequence))
 
@@ -183,6 +188,34 @@ class RailBandWidget(QWidget):
                 offset = idx - self._cut_index
                 label = f"{offset:+d}"
                 painter.drawText(int(x - 10), int(strip_y + tick_len + 12), label)
+        painter.restore()
+
+    def _draw_axis_annotations(self, painter: QPainter, rect: QRectF) -> None:
+        painter.save()
+        painter.setPen(QColor("#94a3b8"))
+        painter.setFont(QFont("Inter", 10))
+        painter.drawText(
+            rect.adjusted(0, 0, 0, 0),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            "Position (bp relative to cut)",
+        )
+        painter.restore()
+
+    def _draw_probability_scale(self, painter: QPainter, rect: QRectF) -> None:
+        painter.save()
+        painter.setPen(QColor("#94a3b8"))
+        painter.setFont(QFont("Inter", 10))
+        painter.drawText(rect, Qt.AlignLeft | Qt.AlignTop, "Bar length ∝ probability")
+        line_y = rect.top() + 18
+        scale_width = min(180.0, rect.width())
+        painter.setPen(QPen(QColor("#475569"), 1))
+        painter.drawLine(rect.left(), line_y, rect.left() + scale_width, line_y)
+        ticks = [0.0, 0.5, 1.0]
+        for frac in ticks:
+            x = rect.left() + scale_width * frac
+            painter.drawLine(x, line_y - 4, x, line_y + 4)
+            label = f"{int(frac * 100)}%"
+            painter.drawText(QRectF(x - 12, line_y + 6, 40, 14), Qt.AlignLeft | Qt.AlignTop, label)
         painter.restore()
 
     def _draw_band_texture(self, painter: QPainter, rect: QRectF, kind: str, prob: float) -> None:

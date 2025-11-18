@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, Optional, List
 
 Snapshot = Mapping[str, Any]
 
@@ -21,6 +21,18 @@ class RunMetrics:
     top_outcomes: Sequence[tuple[str, float]]
     perf: Mapping[str, float]
     config: Mapping[str, Any]
+    is_pcr: bool = False
+    pcr_amplicon_length: Optional[int] = None
+    pcr_final_mass_ng: Optional[float] = None
+    pcr_final_copies: Optional[float] = None
+    pcr_final_mutation_rate: Optional[float] = None
+    pcr_mass_curve: Optional[List[float]] = None
+    pcr_mutation_curve: Optional[List[float]] = None
+    pcr_cycles: Optional[int] = None
+    pcr_forward_primer: Optional[str] = None
+    pcr_reverse_primer: Optional[str] = None
+    pcr_amplicon_start: Optional[int] = None
+    pcr_amplicon_end: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -49,14 +61,20 @@ def summarize_snapshot(snapshot: Snapshot) -> dict[str, str]:
     run_kind_key = str(state_payload.get("run_kind", "NONE"))
     run_kind_label = run_kind_key.title()
     run_id = str(state_payload.get("run_id", "—"))
-    guide = _guide_snippet(state_payload)
+    guide = _guide_snippet(state_payload, run_kind_key)
     genome = _genome_label(state_payload)
     label = str(state_payload.get("label", ""))
     config = state_payload.get("config") or {}
     run_cfg = config.get("run_config") or {}
     draws = ""
     if isinstance(run_cfg, Mapping):
-        draws = str(run_cfg.get("draws") or "")
+        if run_kind_key == "PCR":
+            cycles = run_cfg.get("cycles")
+            draws = f"{cycles} cycles" if cycles else "cycles"
+        else:
+            draws = str(run_cfg.get("draws") or "")
+    elif run_kind_key == "PCR":
+        draws = "cycles"
     outcomes = state_payload.get("outcomes") or []
     intended_count = sum(1 for outcome in outcomes if _is_intended_outcome(outcome))
     profile_key = (run_kind_key, genome, guide)
@@ -74,6 +92,7 @@ def summarize_snapshot(snapshot: Snapshot) -> dict[str, str]:
         "has_intended": intended_count > 0,
         "profile_key": profile_key,
         "profile_label": profile_label,
+        "genome_source": str(state_payload.get("genome_source", "")),
     }
 
 
@@ -101,6 +120,7 @@ def compute_run_metrics(snapshot: Snapshot) -> RunMetrics:
     config = state.get("config")
     if not isinstance(config, Mapping):
         config = {}
+    pcr_fields = _extract_pcr_metrics(state)
     return RunMetrics(
         summary=summary,
         intended_count=intended,
@@ -113,6 +133,7 @@ def compute_run_metrics(snapshot: Snapshot) -> RunMetrics:
         top_outcomes=_top_outcomes(outcomes),
         perf=_extract_perf(config),
         config=config,
+        **pcr_fields,
     )
 
 
@@ -174,6 +195,7 @@ def diff_summary_text(lhs: RunMetrics, rhs: RunMetrics) -> str:
 def build_report(snapshot: Snapshot) -> Mapping[str, Any]:
     metrics = compute_run_metrics(snapshot)
     verdict = classify_run_quality(metrics)
+    pcr_section = build_pcr_report_section(metrics)
     return {
         "summary": metrics.summary,
         "genome": {
@@ -199,6 +221,7 @@ def build_report(snapshot: Snapshot) -> Mapping[str, Any]:
         "perf": metrics.perf,
         "config": metrics.config,
         "verdict": asdict(verdict),
+        "pcr": pcr_section,
     }
 
 
@@ -259,6 +282,10 @@ def render_markdown_report(report: Mapping[str, Any]) -> str:
             "```",
         ]
     )
+    pcr_section = report.get("pcr")
+    if isinstance(pcr_section, Mapping):
+        lines.append("")
+        lines.append(_render_pcr_markdown(pcr_section))
     return "\n".join(lines)
 
 
@@ -266,7 +293,15 @@ def is_intended_outcome(outcome: Mapping[str, Any]) -> bool:
     return _is_intended_outcome(outcome)
 
 
-def _guide_snippet(state_payload: Mapping[str, Any]) -> str:
+def _guide_snippet(state_payload: Mapping[str, Any], run_kind_key: str) -> str:
+    if run_kind_key == "PCR":
+        cfg = state_payload.get("pcr_config")
+        if isinstance(cfg, Mapping):
+            fwd = str(cfg.get("fwd_primer", ""))[:6]
+            rev = str(cfg.get("rev_primer", ""))[:6]
+            fwd = fwd or "F?"
+            rev = rev or "R?"
+            return f"PCR F:{fwd}… / R:{rev}…"
     config = state_payload.get("config") or {}
     guide = config.get("guide")
     if isinstance(guide, Mapping):
@@ -300,6 +335,50 @@ def _extract_perf(config: Mapping[str, Any]) -> dict[str, float]:
             except Exception:
                 continue
     return perf
+
+
+def _extract_pcr_metrics(state_payload: Mapping[str, Any]) -> dict[str, Any]:
+    result = state_payload.get("pcr_result")
+    if not isinstance(result, Mapping):
+        return {
+            "is_pcr": False,
+            "pcr_amplicon_length": None,
+            "pcr_final_mass_ng": None,
+            "pcr_final_copies": None,
+            "pcr_final_mutation_rate": None,
+            "pcr_mass_curve": None,
+            "pcr_mutation_curve": None,
+            "pcr_cycles": None,
+            "pcr_forward_primer": None,
+            "pcr_reverse_primer": None,
+            "pcr_amplicon_start": None,
+            "pcr_amplicon_end": None,
+        }
+    cycles = result.get("cycles") or []
+    mass_curve = [
+        float(entry.get("amplicon_mass_ng", 0.0))
+        for entry in cycles
+        if isinstance(entry, Mapping)
+    ]
+    mutation_curve = [
+        float(entry.get("cumulative_mutation_rate", 0.0))
+        for entry in cycles
+        if isinstance(entry, Mapping)
+    ]
+    return {
+        "is_pcr": True,
+        "pcr_amplicon_length": int(result.get("amplicon_length", 0)),
+        "pcr_final_mass_ng": float(result.get("final_amplicon_mass_ng", 0.0)),
+        "pcr_final_copies": float(result.get("final_amplicon_copies", 0.0)),
+        "pcr_final_mutation_rate": float(result.get("final_mutation_rate", 0.0)),
+        "pcr_mass_curve": mass_curve,
+        "pcr_mutation_curve": mutation_curve,
+        "pcr_cycles": len(cycles),
+        "pcr_forward_primer": str((state_payload.get("pcr_config") or {}).get("fwd_primer", "")) or None,
+        "pcr_reverse_primer": str((state_payload.get("pcr_config") or {}).get("rev_primer", "")) or None,
+        "pcr_amplicon_start": int(result.get("amplicon_start", 0)),
+        "pcr_amplicon_end": int(result.get("amplicon_end", 0)),
+    }
 
 
 def _estimate_dag_stats(payload: object) -> dict[str, int]:
@@ -403,6 +482,8 @@ def classify_run_quality(metrics: RunMetrics) -> RunVerdict:
 
 
 def classify_run_delta(baseline: RunMetrics, contender: RunMetrics) -> RunVerdict:
+    if baseline.is_pcr and contender.is_pcr:
+        return classify_pcr_delta(baseline, contender)
     intended_delta = contender.intended_mass - baseline.intended_mass
     off_delta = contender.off_target_mass - baseline.off_target_mass
     intended_count_delta = contender.intended_count - baseline.intended_count
@@ -423,6 +504,41 @@ def classify_run_delta(baseline: RunMetrics, contender: RunMetrics) -> RunVerdic
         f"Δ off-target mass {off_delta:+.2f} (counts {off_count_delta:+d})"
     )
     return RunVerdict(label=label, details=details, intended_delta=intended_delta, off_target_delta=off_delta)
+
+
+def classify_pcr_delta(baseline: RunMetrics, contender: RunMetrics) -> RunVerdict:
+    base_mass = baseline.pcr_final_mass_ng or 0.0
+    new_mass = contender.pcr_final_mass_ng or 0.0
+    base_mut = baseline.pcr_final_mutation_rate or 0.0
+    new_mut = contender.pcr_final_mutation_rate or 0.0
+    mass_delta = new_mass - base_mass
+    mut_delta = new_mut - base_mut
+    threshold_mass = max(0.05 * max(base_mass, 1.0), 0.01)
+    threshold_mut = 0.0005
+    better_yield = mass_delta > threshold_mass
+    worse_yield = mass_delta < -threshold_mass
+    cleaner = mut_delta < -threshold_mut
+    dirtier = mut_delta > threshold_mut
+    if better_yield and cleaner:
+        label = "Higher yield, cleaner amplicon"
+    elif worse_yield and dirtier:
+        label = "Lower yield, higher mutation"
+    elif better_yield and dirtier:
+        label = "Higher yield, lower fidelity"
+    elif worse_yield and cleaner:
+        label = "Lower yield, cleaner amplicon"
+    elif better_yield:
+        label = "Higher yield"
+    elif worse_yield:
+        label = "Lower yield"
+    elif cleaner and not dirtier:
+        label = "Cleaner amplicon"
+    elif dirtier and not cleaner:
+        label = "Higher mutation load"
+    else:
+        label = "No significant change"
+    details = f"Δ mass {mass_delta:+.2f} ng, Δ mutation {mut_delta:+.4f}"
+    return RunVerdict(label=label, details=details, intended_delta=mass_delta, off_target_delta=-mut_delta)
 
 
 def _format_perf_line(perf: Mapping[str, float]) -> str:
@@ -447,4 +563,68 @@ def _format_perf_delta(lhs: Mapping[str, float], rhs: Mapping[str, float]) -> st
     parts: list[str] = []
     for key in sorted(keys):
         parts.append(f"{key}: {(lhs.get(key, 0.0) - rhs.get(key, 0.0)):.0f} ms")
-    return "Δ Perf → " + "  ".join(parts)
+        return "Δ Perf → " + "  ".join(parts)
+
+
+def build_pcr_report_section(metrics: RunMetrics) -> Mapping[str, Any] | None:
+    if not metrics.is_pcr:
+        return None
+    mass_curve = metrics.pcr_mass_curve or []
+    mutation_curve = metrics.pcr_mutation_curve or []
+    return {
+        "type": "PCR",
+        "amplicon_length": metrics.pcr_amplicon_length,
+        "amplicon_start": metrics.pcr_amplicon_start,
+        "amplicon_end": metrics.pcr_amplicon_end,
+        "cycles": metrics.pcr_cycles,
+        "primers": {
+            "forward": metrics.pcr_forward_primer,
+            "reverse": metrics.pcr_reverse_primer,
+        },
+        "final_mass_ng": metrics.pcr_final_mass_ng,
+        "final_copies": metrics.pcr_final_copies,
+        "final_mutation_rate": metrics.pcr_final_mutation_rate,
+        "mass_curve": mass_curve,
+        "mutation_curve": mutation_curve,
+    }
+
+
+def _render_pcr_markdown(section: Mapping[str, Any]) -> str:
+    lines = ["## PCR Simulation"]
+    lines.append("")
+    lines.append("**Config**")
+    lines.append("")
+    lines.append(f"- Amplicon length: `{section.get('amplicon_length', 0)} bp`")
+    start = section.get("amplicon_start")
+    end = section.get("amplicon_end")
+    if start is not None and end is not None:
+        lines.append(f"- Amplicon region: `{start}–{end}`")
+    cycles = section.get("cycles")
+    if cycles:
+        lines.append(f"- Cycles: `{cycles}`")
+    primers = section.get("primers") or {}
+    fwd = primers.get("forward")
+    rev = primers.get("reverse")
+    if fwd:
+        lines.append(f"- Forward primer: `{fwd}`")
+    if rev:
+        lines.append(f"- Reverse primer: `{rev}`")
+    lines.append(f"- Final mass: `{section.get('final_mass_ng', 0.0):.2f} ng`")
+    final_copies = section.get("final_copies")
+    if final_copies is not None:
+        lines.append(f"- Final copies: `{final_copies:.3g}`")
+    lines.append(f"- Final mutation rate: `{section.get('final_mutation_rate', 0.0):.4f}`")
+    lines.append("")
+    lines.append("**Per-cycle summary (last 5 cycles)**")
+    lines.append("")
+    lines.append("| Cycle | Mass (ng) | Mutation |")
+    lines.append("|-------|-----------|----------|")
+    mass_curve = section.get("mass_curve") or []
+    mutation_curve = section.get("mutation_curve") or []
+    total_cycles = int(section.get("cycles") or len(mass_curve))
+    start_index = max(0, total_cycles - 5)
+    for idx in range(start_index, total_cycles):
+        mass = mass_curve[idx] if idx < len(mass_curve) else 0.0
+        mut = mutation_curve[idx] if idx < len(mutation_curve) else 0.0
+        lines.append(f"| {idx + 1} | {mass:.3f} | {mut:.4f} |")
+    return "\n".join(lines)

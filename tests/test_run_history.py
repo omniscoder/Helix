@@ -3,7 +3,14 @@ from __future__ import annotations
 from PySide6.QtWidgets import QApplication
 
 from helix.studio.run_history import RunHistoryWidget
-from helix.studio.session import SessionModel
+from helix.studio.run_compare import RunCompareWidget
+from helix.studio.session import (
+    SessionModel,
+    PCRConfig,
+    _serialize_pcr_config,
+    _serialize_pcr_result,
+)
+from helix.studio.pcr_engine import simulate_pcr, _revcomp
 
 
 def _get_app() -> QApplication:
@@ -71,3 +78,54 @@ def test_run_history_filters_and_compare() -> None:
     widget._tree.topLevelItem(1).setSelected(True)
     widget._compare_selected()
     assert compared, "Compare callback should receive selected snapshots"
+
+
+def _pcr_snapshot(run_id: int, efficiency: float, error_rate: float) -> dict:
+    cfg = PCRConfig(
+        template_seq=PCR_TEMPLATE,
+        fwd_primer=PCR_FWD,
+        rev_primer=PCR_REV,
+        cycles=30,
+        polymerase_name="Taq",
+        base_error_rate=error_rate,
+        indel_fraction=0.1,
+        efficiency=efficiency,
+        initial_copies=1,
+    )
+    result = simulate_pcr(cfg)
+    return {
+        "timestamp": f"pcr-{run_id}",
+        "state": {
+            "run_kind": "PCR",
+            "run_id": run_id,
+            "viz_dirty": False,
+            "config": {"run_config": {"cycles": cfg.cycles}, "sim_type": "PCR"},
+            "genome_source": "inline",
+            "pcr_config": _serialize_pcr_config(cfg),
+            "pcr_result": _serialize_pcr_result(result),
+        },
+    }
+
+
+def test_run_history_formats_pcr_row() -> None:
+    _get_app()
+    session = SessionModel()
+    widget = RunHistoryWidget(session)
+    widget._add_entry(_pcr_snapshot(10, efficiency=0.85, error_rate=1e-5))
+    item = widget._tree.topLevelItem(0)
+    assert "pcr" in item.text(2).lower()
+    assert "F:" in item.text(3)
+    assert "cycles" in item.text(7)
+
+
+def test_run_compare_pcr_verdict() -> None:
+    _get_app()
+    widget = RunCompareWidget()
+    snap_a = _pcr_snapshot(11, efficiency=0.75, error_rate=2e-5)
+    snap_b = _pcr_snapshot(12, efficiency=0.95, error_rate=1e-5)
+    widget.compare_snapshots(snap_a, snap_b)
+    verdict_text = widget._verdict_label.text().lower()
+    assert any(token in verdict_text for token in ("yield", "amplicon", "mutation"))
+PCR_TEMPLATE = "AAACCCGGGGTTTTAAAACCCGGGGTTTT"
+PCR_FWD = PCR_TEMPLATE[:10]
+PCR_REV = _revcomp(PCR_TEMPLATE[-10:])

@@ -16,6 +16,7 @@ from helix.gui.modern.builders import (
 )
 from helix.gui.modern.dag_adapters import crispr_dag_to_viz_spec
 from helix.gui.modern.qt import HelixModernWidget
+from helix.gui.railbands.widget import RailBandWidget
 from helix.gui.modern.spec import EditVisualizationSpec, load_viz_spec
 from helix.studio.session import ExperimentState, RunKind, SessionModel
 from helix.studio.run_metrics import RunMetrics, classify_run_quality, compute_run_metrics
@@ -65,6 +66,8 @@ class GLViewport(QWidget):
         self._gl = HelixModernWidget()
         self._gl_container = QWidget.createWindowContainer(self._gl, self)
         self._stack.addWidget(self._gl_container)
+        self._rail_widget = RailBandWidget(self)
+        self._stack.addWidget(self._rail_widget)
         self._stack.setCurrentWidget(self._placeholder)
 
         self._overlay = QLabel(self._stack_host)
@@ -89,13 +92,27 @@ class GLViewport(QWidget):
             spec = self._build_spec_from_state(state)
         config = state.config if isinstance(state.config, Mapping) else {}
         if spec is not None:
+            settings = config.get("sim_settings") or {}
+            viz_mode = str((settings.get("viz_mode") or "rail_3d")).lower()
+            metadata = spec.metadata or {}
+            workflow_meta = config.get("workflow_view") or metadata.get("workflow_view")
+
+            if viz_mode == "rail_2d":
+                rail_meta = metadata.get("rail_bands")
+                if isinstance(rail_meta, Mapping) and rail_meta.get("bands"):
+                    self._rail_widget.set_spec(spec)
+                    self._gl.set_workflow_view(None)
+                    self._stack.setCurrentWidget(self._rail_widget)
+                    self._overlay.hide()
+                    self._last_error_run_id = None
+                    return
+
             self._stack.setCurrentWidget(self._gl_container)
-            workflow_meta = config.get("workflow_view") or (spec.metadata or {}).get("workflow_view")
-            if isinstance(workflow_meta, Mapping):
+            self._gl.set_spec(spec)
+            if viz_mode == "workflow_2p5d" and isinstance(workflow_meta, Mapping):
                 self._gl.set_workflow_view(_workflow_from_serializable(workflow_meta))
             else:
                 self._gl.set_workflow_view(None)
-            self._gl.set_spec(spec)
             self._gl.update()
             metrics = None
             try:
@@ -233,6 +250,23 @@ def build_overlay_lines(metrics: RunMetrics | None) -> list[str]:
     perf_line = _build_perf_line(metrics.perf)
     if perf_line:
         lines.append(perf_line)
+    if metrics.is_pcr:
+        region = ""
+        if (
+            metrics.pcr_amplicon_start is not None
+            and metrics.pcr_amplicon_end is not None
+            and metrics.pcr_amplicon_end > metrics.pcr_amplicon_start
+        ):
+            region = f" ({metrics.pcr_amplicon_start}–{metrics.pcr_amplicon_end})"
+        lines.append(
+            "PCR: {length} bp{region} · {cycles} cycles · {mass:.2f} ng · mut {mut:.4f}".format(
+                length=metrics.pcr_amplicon_length or 0,
+                region=region,
+                cycles=metrics.pcr_cycles or "?",
+                mass=metrics.pcr_final_mass_ng or 0.0,
+                mut=metrics.pcr_final_mutation_rate or 0.0,
+            )
+        )
     quality_line = _build_quality_line(metrics)
     if quality_line:
         lines.append(quality_line)

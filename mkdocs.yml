@@ -30,12 +30,16 @@ nav:
       - Multiscale Stack: concepts/multiscale.md
   - CLI:
       - CLI Overview: cli.md
+      - CLI Alpha: cli/alpha.md
+      - Headless CLI: cli_headless.md
       - Visualization: cli/viz.md
       - Schema Tools: cli/schema.md
       - Workflows: cli/workflows.md
       - Demos: cli/demo.md
       - PCR DAGs: cli/pcr.md
       - Live Runtime: cli/live.md
+  - Studio Strategy: helix_studio_strategy.md
+  - Snapshot Spec v1: snapshot_spec_v1.md
   - API Reference:
       - helix.api: reference/api.md
   - What's New: whats-new.md

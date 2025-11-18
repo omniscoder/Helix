@@ -155,7 +155,30 @@ class RunHistoryWidget(QWidget):
                 ]
             )
             item.setData(0, Qt.UserRole, idx)
-            item.setToolTip(0, format_snapshot_text(metrics))
+            tooltip = format_snapshot_text(metrics)
+            if metrics.is_pcr:
+                pcr_lines = [
+                    "PCR run",
+                    f"Amplicon: {metrics.pcr_amplicon_length} bp",
+                ]
+                if (
+                    metrics.pcr_amplicon_start is not None
+                    and metrics.pcr_amplicon_end is not None
+                    and metrics.pcr_amplicon_end > metrics.pcr_amplicon_start
+                ):
+                    pcr_lines.append(f"Region: {metrics.pcr_amplicon_start}–{metrics.pcr_amplicon_end}")
+                if metrics.pcr_cycles:
+                    pcr_lines.append(f"Cycles: {metrics.pcr_cycles}")
+                if metrics.pcr_forward_primer:
+                    pcr_lines.append(f"Forward primer: {metrics.pcr_forward_primer}")
+                if metrics.pcr_reverse_primer:
+                    pcr_lines.append(f"Reverse primer: {metrics.pcr_reverse_primer}")
+                if metrics.pcr_final_mass_ng is not None:
+                    pcr_lines.append(f"Final mass: {metrics.pcr_final_mass_ng:.2f} ng")
+                if metrics.pcr_final_mutation_rate is not None:
+                    pcr_lines.append(f"Mutation rate: {metrics.pcr_final_mutation_rate:.4f}")
+                tooltip = tooltip + "\n\n" + "\n".join(pcr_lines)
+            item.setToolTip(0, tooltip)
             self._tree.addTopLevelItem(item)
             if previous_index is not None and previous_index == idx:
                 self._tree.setCurrentItem(item)

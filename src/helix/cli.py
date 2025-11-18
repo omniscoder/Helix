@@ -11,6 +11,7 @@ import random
 import re
 import sys
 import queue
+import tempfile
 import threading
 import time
 import uuid
@@ -88,7 +89,17 @@ from .live.cli_utils import (
     sanitize_run_name,
 )
 from .live.livelab import LiveSession, LiveDevShell
+from .engine import EngineResult, LocalEngine, OGNEngine, RunRequest
+from .snapshot_bundle import SnapshotBundle, SnapshotBundleError, pack_snapshot_bundle, select_run_entry
 from .slices import resolve_slice, SLICE_REGISTRY
+from .studio.run_metrics import (
+    RunMetrics,
+    build_report,
+    classify_run_delta,
+    compute_run_metrics,
+    render_markdown_report,
+)
+from .metrics_utils import run_metrics_to_summary
 
 if TYPE_CHECKING:
     from .gui.modern.spec import EditVisualizationSpec
@@ -1783,6 +1794,77 @@ def command_crispr_find_guides(args: argparse.Namespace) -> None:
 
 def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_run_snapshot_from_path(path: Path) -> tuple[str, Mapping[str, Any]]:
+    candidate = Path(path)
+    if candidate.is_dir():
+        snapshot_path = candidate / "snapshot.json"
+        if snapshot_path.exists():
+            candidate = snapshot_path
+    if not candidate.exists():
+        raise SystemExit(f"Run snapshot not found: {path}")
+    payload = _read_json(candidate)
+    state = payload.get("state") if isinstance(payload, Mapping) else {}
+    run_id = str((state or {}).get("run_id") or candidate.stem)
+    return run_id, payload
+
+
+def _resolve_run_snapshot_arg(
+    value: str,
+    bundle: SnapshotBundle | None,
+    manifest: Mapping[str, Any] | None,
+) -> tuple[str, Mapping[str, Any]]:
+    candidate_path = Path(value)
+    if candidate_path.exists():
+        return _load_run_snapshot_from_path(candidate_path)
+    if bundle is None or manifest is None:
+        raise SystemExit(f"Run '{value}' not found. Provide a filesystem path or pass --snapshot for bundle lookup.")
+    entry = select_run_entry(manifest, run_id=value)
+    payload = bundle.read_json(entry["params"]["path"])
+    return str(entry.get("id", value)), payload
+
+
+def _apply_snapshot_overrides(snapshot: Mapping[str, Any], overrides: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not overrides:
+        return snapshot
+    updated = dict(snapshot)
+    base_state = updated.get("state")
+    state = dict(base_state) if isinstance(base_state, Mapping) else {}
+    for key, value in overrides.items():
+        state[key] = value
+    updated["state"] = state
+    return updated
+
+
+def _emit_telemetry(event: str, data: Mapping[str, Any], *, log_dir: Path | None = None) -> None:
+    record: Dict[str, Any] = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "event": event,
+    }
+    for key, value in data.items():
+        if isinstance(value, Path):
+            record[key] = str(value)
+        elif isinstance(value, Mapping):
+            record[key] = json.dumps(value)
+        else:
+            record[key] = value
+    line = json.dumps(record)
+    print(f"[telemetry] {line}")
+    if log_dir:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = Path(log_dir) / "telemetry.jsonl"
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
+
+def _resolve_engine(engine_name: str | None, *, queue: str | None = None) -> LocalEngine | OGNEngine:
+    normalized = (engine_name or "local").lower()
+    if normalized == "local":
+        return LocalEngine()
+    if normalized == "ogn":
+        return OGNEngine(queue=queue or "gpu-a100")
+    raise SystemExit(f"Unknown engine '{engine_name}'. Use 'local' or 'ogn'.")
 
 
 def command_crispr_offtargets(args: argparse.Namespace) -> None:
@@ -4107,6 +4189,195 @@ def _plan_config_live(args: argparse.Namespace, config_path: Path) -> None:
     )
 
 
+def command_snapshot_pack(args: argparse.Namespace) -> None:
+    session_path = Path(args.session)
+    run_paths = [Path(path) for path in args.run_paths or []]
+    if not run_paths:
+        raise SystemExit("Provide at least one --include-run path.")
+    assets = [Path(path) for path in (args.asset or [])]
+    out_path = Path(args.out)
+    try:
+        manifest = pack_snapshot_bundle(
+            session_path=session_path,
+            run_paths=run_paths,
+            out_path=out_path,
+            extra_assets=assets,
+        )
+    except SnapshotBundleError as exc:
+        raise SystemExit(str(exc))
+    run_ids = ", ".join(entry.get("id", "?") for entry in manifest.get("runs", []))
+    print(f"Snapshot bundle created at {out_path} · runs: {run_ids or 'none'}")
+
+
+def command_snapshot_inspect(args: argparse.Namespace) -> None:
+    bundle = SnapshotBundle(Path(args.bundle))
+    manifest = bundle.load_manifest()
+    runs = manifest.get("runs", [])
+    summary = {
+        "snapshot_id": manifest.get("snapshot_id"),
+        "created_at": manifest.get("created_at"),
+        "studio_version": manifest.get("studio_version"),
+        "cli_version": manifest.get("cli_version"),
+        "run_count": len(runs),
+        "runs": [
+            {
+                "id": entry.get("id"),
+                "kind": entry.get("kind"),
+                "status": (entry.get("status") or {}).get("outcome"),
+            }
+            for entry in runs
+        ],
+        "assets": manifest.get("assets", []),
+    }
+    if args.json:
+        _write_json_output(summary, args.json)
+        return
+    print(f"Snapshot: {summary['snapshot_id']} ({summary['created_at']})")
+    print(f"Studio {summary['studio_version']} · CLI {summary['cli_version']}")
+    print(f"Runs: {summary['run_count']}")
+    for entry in summary["runs"]:
+        print(f"  - {entry['id']} [{entry['kind']}] status={entry['status']}")
+
+
+def command_headless_run(args: argparse.Namespace) -> None:
+    start_time = perf_counter()
+    bundle = SnapshotBundle(Path(args.snapshot))
+    manifest = bundle.load_manifest()
+    try:
+        entry = select_run_entry(manifest, run_id=args.run_id, kind=args.kind)
+    except SnapshotBundleError as exc:
+        raise SystemExit(str(exc))
+    payload = bundle.read_json(entry["params"]["path"])
+    overrides = _read_json(args.params) if args.params else None
+    snapshot_payload = _apply_snapshot_overrides(payload, overrides)
+    run_kind = str(entry.get("kind", "UNKNOWN"))
+    session_id = str(manifest.get("snapshot_id") or manifest.get("session_id") or Path(args.snapshot).stem)
+    run_id = str(entry.get("id"))
+    engine = _resolve_engine(args.engine, queue=args.queue)
+    request = RunRequest(
+        run_kind=run_kind,
+        session_id=session_id,
+        run_id=run_id,
+        snapshot_payload=snapshot_payload,
+        parameters=overrides or {},
+        labels={"source": "helix-cli"},
+    )
+    try:
+        engine_result = engine.execute(request)
+    except RuntimeError as exc:
+        duration_ms = (perf_counter() - start_time) * 1000.0
+        _emit_telemetry(
+            "run_completed",
+            {
+                "session_id": session_id,
+                "run_id": run_id,
+                "run_kind": run_kind,
+                "engine": (args.engine or "local").lower(),
+                "status": "failed",
+                "ttfv_ms": duration_ms,
+                "error": str(exc),
+            },
+            log_dir=Path(args.out),
+        )
+        raise SystemExit(str(exc))
+
+    final_snapshot = engine_result.snapshot
+    if overrides:
+        final_snapshot = _apply_snapshot_overrides(final_snapshot, overrides)
+
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = out_dir / "snapshot.json"
+    snapshot_path.write_text(json.dumps(final_snapshot, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "run_id.txt").write_text(f"{run_id}\n", encoding="utf-8")
+
+    if engine_result.metrics:
+        metrics_payload = engine_result.metrics
+    else:
+        metrics = compute_run_metrics(final_snapshot)
+        metrics_payload = run_metrics_to_summary(metrics)
+
+    report_payload = build_report(final_snapshot)
+    _write_json_output(metrics_payload, out_dir / "metrics.json")
+    _write_json_output(report_payload, out_dir / "report.json")
+    duration = metrics_payload.get("perf", {}).get("sim_ms") if isinstance(metrics_payload, Mapping) else None
+    perf_line = f" (sim_ms={duration})" if duration else ""
+    print(f"Run {run_id} exported to {out_dir}{perf_line}.")
+
+    telemetry_data: Dict[str, Any] = {
+        "session_id": session_id,
+        "run_id": run_id,
+        "run_kind": run_kind,
+        "engine": (args.engine or "local").lower(),
+        "status": engine_result.status,
+        "ttfv_ms": (perf_counter() - start_time) * 1000.0,
+        "verdict_label": (report_payload.get("verdict") or {}).get("label"),
+        "compare_used": False,
+        "report_exported": True,
+    }
+    if engine_result.info:
+        for key, value in engine_result.info.items():
+            telemetry_data[key] = value
+    _emit_telemetry("run_completed", telemetry_data, log_dir=out_dir)
+
+
+def command_headless_compare(args: argparse.Namespace) -> None:
+    runs = args.runs or []
+    if len(runs) != 2:
+        raise SystemExit("Provide exactly two --run arguments.")
+    start_time = perf_counter()
+    bundle = SnapshotBundle(Path(args.snapshot)) if args.snapshot else None
+    manifest = bundle.load_manifest() if bundle else None
+    left_id, left_snapshot = _resolve_run_snapshot_arg(runs[0], bundle, manifest)
+    right_id, right_snapshot = _resolve_run_snapshot_arg(runs[1], bundle, manifest)
+    left_metrics = compute_run_metrics(left_snapshot)
+    right_metrics = compute_run_metrics(right_snapshot)
+    verdict = classify_run_delta(left_metrics, right_metrics)
+    result = {
+        "left": run_metrics_to_summary(left_metrics),
+        "right": run_metrics_to_summary(right_metrics),
+        "verdict": {
+            "label": verdict.label,
+            "details": verdict.details,
+            "intended_delta": verdict.intended_delta,
+            "off_target_delta": verdict.off_target_delta,
+        },
+    }
+    _write_json_output(result, args.out)
+    log_dir = Path(args.out).parent if args.out else None
+    telemetry = {
+        "left_run": left_id,
+        "right_run": right_id,
+        "verdict": verdict.label,
+        "duration_ms": (perf_counter() - start_time) * 1000.0,
+    }
+    _emit_telemetry("compare_completed", telemetry, log_dir=log_dir)
+
+
+def command_headless_report(args: argparse.Namespace) -> None:
+    start_time = perf_counter()
+    run_id, snapshot = _load_run_snapshot_from_path(args.run)
+    report = build_report(snapshot)
+    if args.format == "json":
+        _write_json_output(report, args.out)
+    else:
+        text = render_markdown_report(report)
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(text + "\n", encoding="utf-8")
+        print(f"Report for run {run_id} written to {out_path}.")
+    out_dir = Path(args.out).parent if args.out else None
+    _emit_telemetry(
+        "report_completed",
+        {
+            "run_id": run_id,
+            "format": args.format,
+            "duration_ms": (perf_counter() - start_time) * 1000.0,
+        },
+        log_dir=out_dir,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     description = (
         "Helix unified CLI for computational bioinformatics workflows.\n\n"
@@ -4300,6 +4571,65 @@ def build_parser() -> argparse.ArgumentParser:
     live_dev.add_argument("--sync-dt", type=float, default=0.25, help="Synchronization Δt (default: 0.25).")
     live_dev.add_argument("--default-dt", type=float, default=0.1, help="Default island Δt (default: 0.1).")
     live_dev.set_defaults(func=command_live_dev)
+
+    run_cmd = subparsers.add_parser("run", help="Replay a stored run snapshot from a bundle.")
+    run_cmd.add_argument("--snapshot", type=Path, required=True, help="Snapshot bundle (.hxs).")
+    run_cmd.add_argument("--run-id", help="Manifest run identifier to export.")
+    run_cmd.add_argument("--kind", help="Run kind filter (CRISPR, PRIME, PCR).")
+    run_cmd.add_argument("--out", type=Path, required=True, help="Directory to write run artifacts.")
+    run_cmd.add_argument("--params", type=Path, help="JSON overrides merged into the run state.")
+    run_cmd.add_argument("--engine", default="local", help="Execution engine (local or ogn).")
+    run_cmd.add_argument("--queue", default="gpu-a100", help="OGN queue when --engine ogn (default: gpu-a100).")
+    run_cmd.set_defaults(func=command_headless_run)
+
+    compare_cmd = subparsers.add_parser("compare", help="Compare two run snapshots and emit a verdict.")
+    compare_cmd.add_argument(
+        "--run",
+        dest="runs",
+        action="append",
+        required=True,
+        help="Path or run_id (repeat twice, e.g., --run A --run B).",
+    )
+    compare_cmd.add_argument(
+        "--snapshot",
+        type=Path,
+        help="Optional snapshot bundle for resolving run_ids when paths are not provided.",
+    )
+    compare_cmd.add_argument("--out", type=Path, help="Optional JSON output path (defaults to stdout).")
+    compare_cmd.set_defaults(func=command_headless_compare)
+
+    report_cmd = subparsers.add_parser("report", help="Render a Markdown/JSON report for a run snapshot.")
+    report_cmd.add_argument("--run", type=Path, required=True, help="Run directory or snapshot JSON file.")
+    report_cmd.add_argument("--format", choices=["md", "json"], default="md", help="Report output format.")
+    report_cmd.add_argument("--out", type=Path, required=True, help="Output file path.")
+    report_cmd.set_defaults(func=command_headless_report)
+
+    snapshot_cmd = subparsers.add_parser("snapshot", help="Snapshot bundle utilities.")
+    snapshot_sub = snapshot_cmd.add_subparsers(dest="snapshot_command", required=True)
+
+    snapshot_pack = snapshot_sub.add_parser("pack", help="Create a snapshot bundle (.hxs).")
+    snapshot_pack.add_argument("--session", type=Path, required=True, help="Session JSON exported from Studio.")
+    snapshot_pack.add_argument(
+        "--include-run",
+        dest="run_paths",
+        action="append",
+        type=Path,
+        required=True,
+        help="Run snapshot JSON or directory (repeat per run).",
+    )
+    snapshot_pack.add_argument(
+        "--asset",
+        action="append",
+        type=Path,
+        help="Additional file to embed in the bundle (repeatable).",
+    )
+    snapshot_pack.add_argument("--out", type=Path, required=True, help="Output bundle path (e.g., session.hxs).")
+    snapshot_pack.set_defaults(func=command_snapshot_pack)
+
+    snapshot_inspect = snapshot_sub.add_parser("inspect", help="Summarize a snapshot bundle.")
+    snapshot_inspect.add_argument("--bundle", type=Path, required=True, help="Path to a .hxs file.")
+    snapshot_inspect.add_argument("--json", type=Path, help="Optional JSON output path.")
+    snapshot_inspect.set_defaults(func=command_snapshot_inspect)
 
     crispr = subparsers.add_parser("crispr", help="CRISPR design helpers.")
     crispr_sub = crispr.add_subparsers(dest="crispr_command", required=True)

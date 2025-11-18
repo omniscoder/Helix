@@ -10,6 +10,9 @@ Helix is a hobbyist-friendly, simulation-only toolkit for computational genomics
 Helix aims to make digital biology fun: tiny datasets, clean Python APIs, batteries-included CLI commands, and a full provenance system so every plot, JSON, and DAG can be reproduced down to the SHA-256.
 
 👉 Docs & Playground: https://omniscoder.github.io/Helix/
+👉 Strategy Playbook: [docs/helix_studio_strategy.md](docs/helix_studio_strategy.md)
+👉 Snapshot Spec v1: [docs/snapshot_spec_v1.md](docs/snapshot_spec_v1.md)
+👉 Headless CLI: [docs/cli_headless.md](docs/cli_headless.md)
 
 ---
 

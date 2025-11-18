@@ -836,23 +836,58 @@ def _build_ribbon_curve(
     pan_bias: tuple[float, float, float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if not strand_start or not strand_end:
-        return np.zeros((0, 3), dtype="f4"), np.zeros((0,), dtype="f4"), np.zeros((0,), dtype="f4")
+        return (
+            np.zeros((0, 3), dtype="f4"),
+            np.zeros((0,), dtype="f4"),
+            np.zeros((0,), dtype="f4"),
+        )
+
+    # Clamp indices into strand ranges
     start_idx = max(0, min(start_idx, len(strand_start) - 1))
     end_idx = max(0, min(end_idx, len(strand_end) - 1))
+
     start_point = np.array(strand_start[start_idx], dtype="f4")
     end_point = np.array(strand_end[end_idx], dtype="f4")
-    start_tan = np.array(tangents_start[start_idx], dtype="f4") if tangents_start else np.array([0.0, 0.0, 1.0], dtype="f4")
-    end_tan = np.array(tangents_end[end_idx], dtype="f4") if tangents_end else np.array([0.0, 0.0, 1.0], dtype="f4")
+    start_tan = (
+        np.array(tangents_start[start_idx], dtype="f4")
+        if tangents_start
+        else np.array([0.0, 0.0, 1.0], dtype="f4")
+    )
+    end_tan = (
+        np.array(tangents_end[end_idx], dtype="f4")
+        if tangents_end
+        else np.array([0.0, 0.0, 1.0], dtype="f4")
+    )
+
     weight = _prob_weight(probability)
-    span_nm = abs(end_idx - start_idx) * RISE_NM
-    alpha = max(0.25, span_nm * (0.25 + 0.35 * weight))
-    beta = 0.5 + 3.5 * weight
+
+    # --- NEW: cap the "span" so ribbons stay local ---
+    raw_bp_span = abs(end_idx - start_idx)
+    span_bp = max(1, min(raw_bp_span, 12))  # at most 12 bp span
+    span_nm = span_bp * RISE_NM
+
+    # Pull the ribbon in closer to the helix
+    # (old version used ~0.25–0.60 for the multiplier and much larger beta)
+    alpha = span_nm * (0.10 + 0.20 * weight)      # how far we go along the tangent
+    beta = 0.40 + 1.50 * weight                  # how far we push out from the helix
+
     bias = pan_bias or (0.0, 0.0, 1.0)
     normal_start = _normal_from_tangent(start_tan, bias)
     normal_end = _normal_from_tangent(end_tan, bias)
+
     control1 = start_point + _vec_norm(start_tan) * alpha + normal_start * beta
     control2 = end_point - _vec_norm(end_tan) * alpha + normal_end * beta
-    steps = int(min(128, max(32, 28 + int(0.5 * abs(end_idx - start_idx)) + int(48 * weight))))
+
+    # Resolution: enough points to look smooth, but not insane
+    steps = int(
+        min(
+            96,
+            max(
+                24,
+                16 + int(0.4 * span_bp) + int(32 * weight),
+            ),
+        )
+    )
     curve = _bezier3(start_point, control1, control2, end_point, steps)
     weights = np.full((steps,), weight, dtype="f4")
     kinds = np.full((steps,), kind_code, dtype="f4")

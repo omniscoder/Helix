@@ -58,7 +58,9 @@ from helix.gui.modern.builders_2p5d import build_workflow2p5d_crispr, build_work
 from helix.gui.railbands.widget import RailBandWidget
 from helix.gui.modern.spec import EditVisualizationSpec
 from helix.gui.theme import apply_helix_theme
-from helix.studio.session import RunKind, SessionModel
+from helix.studio.session import RunKind, SessionModel, PCRConfig, PCRResult
+from helix.studio.pcr_engine import simulate_pcr, find_amplicon, AmpliconInfo
+from helix.studio.pcr_workflow import build_pcr_workflow_meta
 
 LOGGER = logging.getLogger(__name__)
 from helix.prime.model import PegRNA, PrimeEditor
@@ -406,6 +408,24 @@ class SimJobWorker(QObject):
                 raise ValueError("Simulation succeeded but no visualization spec was generated.")
             self.finished.emit(payload, spec)
         except Exception as exc:  # pragma: no cover - errors reported via UI
+            self.failed.emit(str(exc))
+
+
+class PCRWorker(QObject):
+    """Worker that runs PCR simulations off the UI thread."""
+
+    finished = Signal(object)  # PCRResult
+    failed = Signal(str)
+
+    def __init__(self, config: PCRConfig, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._config = config
+
+    def run(self) -> None:
+        try:
+            result = simulate_pcr(self._config)
+            self.finished.emit(result)
+        except Exception as exc:  # pragma: no cover - surfaced via UI/logs
             self.failed.emit(str(exc))
 
 
@@ -802,6 +822,15 @@ class RunHistoryPanel(QWidget):
 
     previewRequested = Signal(object)
     logMessage = Signal(str)
+    _VIZ_SUFFIXES = (
+        "rail_3d",
+        "rail_2d",
+        "orbitals_3d",
+        "orbitals",
+        "prime_scaffold_3d",
+        "scaffold_3d",
+        "workflow_2p5d",
+    )
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -828,14 +857,31 @@ class RunHistoryPanel(QWidget):
         self._list.itemDoubleClicked.connect(lambda _: self._preview_selected())
         self._list.currentItemChanged.connect(lambda _current, _previous: self._update_save_buttons())
 
-    def add_entry(self, kind: str, spec: EditVisualizationSpec, payload: dict) -> None:
-        label = f"[{kind}] {spec.edit_type}"
-        item = QListWidgetItem(label)
+    def add_entry(self, kind: str, spec: EditVisualizationSpec, payload: dict, viz_mode: str | None = None) -> None:
+        meta = spec.metadata or {}
+        label_text = meta.get("label") or meta.get("name") or spec.edit_type
+        display_label = self._format_label(kind, label_text, viz_mode)
+        item = QListWidgetItem(display_label)
         is_dag = isinstance(payload, dict) and isinstance(payload.get("artifact"), str)
         item.setData(Qt.UserRole, {"spec": spec, "payload": payload, "kind": kind, "is_dag": is_dag})
         self._list.addItem(item)
         self._list.setCurrentItem(item)
         self._update_save_buttons()
+
+    def _format_label(self, kind: str, label: str, viz_mode: str | None) -> str:
+        if viz_mode:
+            base = self._strip_viz_suffix(label)
+            return f"[{kind}] {base} ({viz_mode})"
+        return f"[{kind}] {label}"
+
+    @classmethod
+    def _strip_viz_suffix(cls, label: str) -> str:
+        lower = label.lower()
+        for suffix in cls._VIZ_SUFFIXES:
+            token = f" ({suffix})"
+            if lower.endswith(token):
+                return label[: -len(token)]
+        return label
 
     def _current_entry(self) -> Optional[dict]:
         item = self._list.currentItem()
@@ -1220,6 +1266,252 @@ class PrimeTab(QWidget):
         if max_outcomes is not None:
             self._max_outcomes.setValue(int(float(max_outcomes)))
 
+
+class PCRTab(QWidget):
+    """PCR simulation form."""
+
+    logMessage = Signal(str)
+    runStarted = Signal(str)
+    runFailed = Signal(str, str)
+    runCompleted = Signal(PCRConfig, PCRResult)
+
+    def __init__(self, sequence_input: SequenceInput, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._sequence_input = sequence_input
+        self._active_thread: QThread | None = None
+        self._active_worker: PCRWorker | None = None
+        self._pending_config: PCRConfig | None = None
+        self._last_result: PCRResult | None = None
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        form = QFormLayout()
+
+        self._template_override = QPlainTextEdit(self)
+        self._template_override.setPlaceholderText("Optional override – leave blank to use the main sequence.")
+        self._template_override.setMaximumHeight(70)
+        form.addRow("Template override", self._template_override)
+
+        self._fwd_edit = QLineEdit(self)
+        self._fwd_edit.setPlaceholderText("5'→3' forward primer")
+        form.addRow("Forward primer", self._fwd_edit)
+
+        self._rev_edit = QLineEdit(self)
+        self._rev_edit.setPlaceholderText("5'→3' reverse primer")
+        form.addRow("Reverse primer", self._rev_edit)
+
+        self._cycles_spin = QSpinBox(self)
+        self._cycles_spin.setRange(1, 60)
+        self._cycles_spin.setValue(30)
+        form.addRow("Cycles", self._cycles_spin)
+
+        self._polymerase_combo = QComboBox(self)
+        self._polymerase_combo.addItems(["Taq standard", "High-fidelity", "Low-fidelity test"])
+        form.addRow("Polymerase", self._polymerase_combo)
+
+        self._error_rate_spin = QDoubleSpinBox(self)
+        self._error_rate_spin.setDecimals(8)
+        self._error_rate_spin.setRange(0.0, 1.0)
+        self._error_rate_spin.setSingleStep(1e-6)
+        self._error_rate_spin.setValue(1e-5)
+        form.addRow("Base error rate", self._error_rate_spin)
+
+        self._indel_fraction_spin = QDoubleSpinBox(self)
+        self._indel_fraction_spin.setDecimals(3)
+        self._indel_fraction_spin.setRange(0.0, 1.0)
+        self._indel_fraction_spin.setSingleStep(0.05)
+        self._indel_fraction_spin.setValue(0.1)
+        form.addRow("Indel fraction", self._indel_fraction_spin)
+
+        self._efficiency_spin = QDoubleSpinBox(self)
+        self._efficiency_spin.setDecimals(3)
+        self._efficiency_spin.setRange(0.0, 1.0)
+        self._efficiency_spin.setSingleStep(0.05)
+        self._efficiency_spin.setValue(0.8)
+        form.addRow("Efficiency", self._efficiency_spin)
+
+        self._initial_copies_spin = QSpinBox(self)
+        self._initial_copies_spin.setRange(1, 10000000)
+        self._initial_copies_spin.setValue(1)
+        form.addRow("Initial copies", self._initial_copies_spin)
+
+        layout.addLayout(form)
+
+        self._run_btn = QPushButton("Simulate PCR", self)
+        self._run_btn.clicked.connect(self.trigger_simulation)
+        layout.addWidget(self._run_btn)
+        self._check_btn = QPushButton("Check amplicon", self)
+        self._check_btn.clicked.connect(self._check_amplicon)
+        layout.addWidget(self._check_btn)
+        layout.addStretch(1)
+
+        self._polymerase_combo.currentTextChanged.connect(self._apply_polymerase_profile)
+        self._apply_polymerase_profile(self._polymerase_combo.currentText())
+
+    def _apply_polymerase_profile(self, name: str) -> None:
+        profile = name.lower()
+        if "high" in profile:
+            self._error_rate_spin.setValue(1e-6)
+            self._efficiency_spin.setValue(0.85)
+        elif "low" in profile:
+            self._error_rate_spin.setValue(5e-5)
+            self._efficiency_spin.setValue(0.9)
+        else:
+            self._error_rate_spin.setValue(1e-5)
+            self._efficiency_spin.setValue(0.88)
+
+    def trigger_simulation(self) -> None:
+        config = self._build_config()
+        if not config:
+            return
+        self.logMessage.emit("Starting PCR simulation…")
+        self._start_worker(config)
+
+    def _build_config(self) -> Optional[PCRConfig]:
+        template = self._resolve_template()
+        fwd = bioinformatics.normalize_sequence(self._fwd_edit.text().strip())
+        rev = bioinformatics.normalize_sequence(self._rev_edit.text().strip())
+        if not template:
+            QMessageBox.warning(self, "PCR", "Provide a template sequence (either override or main sequence).")
+            return None
+        if len(fwd) < 10 or len(rev) < 10:
+            QMessageBox.warning(self, "PCR", "Primers must be at least 10 bases long.")
+            return None
+        return PCRConfig(
+            template_seq=template,
+            fwd_primer=fwd,
+            rev_primer=rev,
+            cycles=int(self._cycles_spin.value()),
+            polymerase_name=self._polymerase_combo.currentText(),
+            base_error_rate=float(self._error_rate_spin.value()),
+            indel_fraction=float(self._indel_fraction_spin.value()),
+            efficiency=float(self._efficiency_spin.value()),
+            initial_copies=int(self._initial_copies_spin.value()),
+        )
+
+    def _resolve_template(self) -> str:
+        template_override = self._template_override.toPlainText().strip()
+        base_template = self._sequence_input.current_sequence()
+        template = template_override or base_template
+        return bioinformatics.normalize_sequence(template)
+
+    def _start_worker(self, config: PCRConfig) -> None:
+        if self._active_thread is not None:
+            self.logMessage.emit("PCR simulation already running.")
+            return
+        self._pending_config = config
+        worker = PCRWorker(config)
+        thread = QThread(self)
+        self._active_thread = thread
+        self._active_worker = worker
+        self._run_btn.setEnabled(False)
+        self._check_btn.setEnabled(False)
+
+        worker.moveToThread(thread)
+        worker.finished.connect(self._on_worker_success, Qt.QueuedConnection)
+        worker.failed.connect(self._on_worker_failure, Qt.QueuedConnection)
+        worker.finished.connect(worker.deleteLater)
+        worker.failed.connect(worker.deleteLater)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(self._on_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+
+        thread.started.connect(worker.run)
+        self.runStarted.emit("PCR")
+        thread.start()
+
+    def _on_worker_success(self, result: PCRResult) -> None:
+        self._last_result = result
+        config = self._pending_config or result.config
+        self.runCompleted.emit(config, result)
+        self.logMessage.emit("PCR simulation complete.")
+
+    def _on_worker_failure(self, message: str) -> None:
+        self.runFailed.emit("PCR", message)
+        QMessageBox.critical(self, "PCR simulation failed", message)
+        self.logMessage.emit(f"PCR simulation failed: {message}")
+
+    def _on_thread_finished(self) -> None:
+        self._active_thread = None
+        self._active_worker = None
+        self._pending_config = None
+        self._run_btn.setEnabled(True)
+        self._check_btn.setEnabled(True)
+
+    def shutdown(self) -> None:
+        if self._active_thread is not None:
+            self._active_thread.quit()
+            self._active_thread.wait()
+            self._active_thread = None
+            self._active_worker = None
+        self._run_btn.setEnabled(True)
+        self._check_btn.setEnabled(True)
+
+    def save_state(self, settings: QSettings) -> None:
+        settings.setValue("pcr/template_override", self._template_override.toPlainText())
+        settings.setValue("pcr/fwd_primer", self._fwd_edit.text())
+        settings.setValue("pcr/rev_primer", self._rev_edit.text())
+        settings.setValue("pcr/cycles", self._cycles_spin.value())
+        settings.setValue("pcr/polymerase", self._polymerase_combo.currentText())
+        settings.setValue("pcr/error_rate", self._error_rate_spin.value())
+        settings.setValue("pcr/indel_fraction", self._indel_fraction_spin.value())
+        settings.setValue("pcr/efficiency", self._efficiency_spin.value())
+        settings.setValue("pcr/initial_copies", self._initial_copies_spin.value())
+
+    def load_state(self, settings: QSettings) -> None:
+        template_override = settings.value("pcr/template_override")
+        if template_override is not None:
+            self._template_override.setPlainText(str(template_override))
+        fwd = settings.value("pcr/fwd_primer")
+        if fwd is not None:
+            self._fwd_edit.setText(str(fwd))
+        rev = settings.value("pcr/rev_primer")
+        if rev is not None:
+            self._rev_edit.setText(str(rev))
+        cycles = settings.value("pcr/cycles")
+        if cycles is not None:
+            self._cycles_spin.setValue(int(float(cycles)))
+        polymerase = settings.value("pcr/polymerase")
+        if polymerase is not None:
+            idx = self._polymerase_combo.findText(str(polymerase))
+            if idx >= 0:
+                self._polymerase_combo.setCurrentIndex(idx)
+        error_rate = settings.value("pcr/error_rate")
+        if error_rate is not None:
+            self._error_rate_spin.setValue(float(error_rate))
+        indel_frac = settings.value("pcr/indel_fraction")
+        if indel_frac is not None:
+            self._indel_fraction_spin.setValue(float(indel_frac))
+        efficiency = settings.value("pcr/efficiency")
+        if efficiency is not None:
+            self._efficiency_spin.setValue(float(efficiency))
+        initial = settings.value("pcr/initial_copies")
+        if initial is not None:
+            self._initial_copies_spin.setValue(int(float(initial)))
+
+    def _check_amplicon(self) -> None:
+        template = self._resolve_template()
+        fwd = bioinformatics.normalize_sequence(self._fwd_edit.text().strip())
+        rev = bioinformatics.normalize_sequence(self._rev_edit.text().strip())
+        if not template:
+            QMessageBox.warning(self, "PCR", "Provide a template sequence before checking primers.")
+            return
+        if len(fwd) < 10 or len(rev) < 10:
+            QMessageBox.warning(self, "PCR", "Primers must be at least 10 bases long.")
+            return
+        try:
+            info = find_amplicon(template, fwd, rev)
+        except Exception as exc:
+            QMessageBox.warning(self, "PCR", f"No valid amplicon detected: {exc}")
+            return
+        msg = (
+            f"Amplicon detected.\n\n"
+            f"Length: {info.length} bp\n"
+            f"Template positions: {info.start}–{info.end}"
+        )
+        QMessageBox.information(self, "PCR amplicon", msg)
+        self.logMessage.emit(f"Amplicon: {info.length} bp ({info.start}–{info.end})")
     @property
     def last_genome(self) -> Optional[DigitalGenome]:
         return self._last_genome
@@ -1260,6 +1552,9 @@ class SimBuilderWidget(QWidget):
 
         left = QWidget(self)
         left_layout = QVBoxLayout(left)
+        hero_label = QLabel("Helix Studio · Experiment Control", self)
+        hero_label.setObjectName("StudioHero")
+        left_layout.addWidget(hero_label)
         self.sequence_input = SequenceInput(self)
         left_layout.addWidget(self.sequence_input)
         self.pam_config = PamConfigPanel(self.sim_settings, self)
@@ -1268,11 +1563,14 @@ class SimBuilderWidget(QWidget):
         self.tabs = QTabWidget(self)
         self.crispr_tab = CrisprTab(self.sequence_input, self.sim_settings, self)
         self.prime_tab = PrimeTab(self.sequence_input, self.sim_settings, self)
+        self.pcr_tab = PCRTab(self.sequence_input, self)
         self.tabs.addTab(self.crispr_tab, "CRISPR Sim")
         self.tabs.addTab(self.prime_tab, "Prime Sim")
+        self.tabs.addTab(self.pcr_tab, "PCR Sim")
         left_layout.addWidget(self.tabs)
 
         self.log_panel = LogPanel(self)
+        self.log_panel.setObjectName("LogPanel")
         self.log_panel.setMaximumHeight(150)
         left_layout.addWidget(self.log_panel)
 
@@ -1281,6 +1579,7 @@ class SimBuilderWidget(QWidget):
         self.rail_widget: RailBandWidget | None = None
 
         self.viewer_placeholder = ViewerPlaceholder(self)
+        self.viewer_placeholder.setObjectName("ViewerPlaceholder")
         self.viewer_container = QWidget(self)
         self.viewer_container.setAutoFillBackground(False)
         self.viewer_stack = QStackedLayout(self.viewer_container)
@@ -1339,6 +1638,7 @@ class SimBuilderWidget(QWidget):
         self.history_panel.previewRequested.connect(self._display_spec)
         self.crispr_tab.logMessage.connect(self._log)
         self.prime_tab.logMessage.connect(self._log)
+        self.pcr_tab.logMessage.connect(self._log)
         self.history_panel.logMessage.connect(self._log)
         self.crispr_tab.runCompleted.connect(self._record_run)
         self.prime_tab.runCompleted.connect(self._record_run)
@@ -1348,6 +1648,9 @@ class SimBuilderWidget(QWidget):
         self.prime_tab.runStarted.connect(self._on_run_started)
         self.crispr_tab.runFailed.connect(self._on_run_failed)
         self.prime_tab.runFailed.connect(self._on_run_failed)
+        self.pcr_tab.runStarted.connect(self._on_run_started)
+        self.pcr_tab.runFailed.connect(self._on_run_failed)
+        self.pcr_tab.runCompleted.connect(self._on_pcr_completed)
         if self._enable_gl_viewer:
             self._show_viewer_canvas(False, "Viewer initializing…")
         else:
@@ -1442,7 +1745,8 @@ class SimBuilderWidget(QWidget):
         self._log(f"Loaded visualization: {spec.edit_type}")
 
     def _record_run(self, kind: str, payload: dict, spec: EditVisualizationSpec) -> None:
-        self.history_panel.add_entry(kind, spec, payload)
+        viz_mode = (self.sim_settings.value.viz_mode or "rail_3d").lower()
+        self.history_panel.add_entry(kind, spec, payload, viz_mode=viz_mode)
         self._log(f"Recorded {kind} run: {spec.edit_type}")
 
     def _on_run_started(self, kind: str) -> None:
@@ -1452,6 +1756,47 @@ class SimBuilderWidget(QWidget):
     def _on_run_failed(self, kind: str, message: str) -> None:
         if self._session is not None:
             self._session.error(f"{kind.title()} simulation failed: {message}")
+
+    def _on_pcr_completed(self, config: PCRConfig, result: PCRResult) -> None:
+        if self._session is None:
+            return
+        workflow_meta = build_pcr_workflow_meta(result)
+        config_summary = {
+            "sim_type": "PCR",
+            "run_config": {
+                "polymerase": config.polymerase_name,
+                "cycles": config.cycles,
+                "base_error_rate": config.base_error_rate,
+                "indel_fraction": config.indel_fraction,
+                "efficiency": config.efficiency,
+                "initial_copies": config.initial_copies,
+            },
+            "workflow_view": workflow_meta,
+        }
+        self._session.update(
+            pcr_config=config,
+            pcr_result=result,
+            config=config_summary,
+            run_kind=RunKind.PCR,
+            dag_from_runtime=None,
+            viz_spec_payload=None,
+            outcomes=[],
+            viz_dirty=True,
+        )
+        self._session.log(
+            "PCR run synced to session: "
+            f"{result.amplicon_length} bp, "
+            f"{result.final_amplicon_mass_ng:.2f} ng mass."
+        )
+        region = ""
+        if result.amplicon_end > result.amplicon_start:
+            region = f" ({result.amplicon_start}–{result.amplicon_end})"
+        self._session.set_status(
+            f"PCR run #{self._session.state.run_id} finished: "
+            f"{result.amplicon_length} bp{region} · {config.cycles} cycles · "
+            f"{result.final_amplicon_mass_ng:.2f} ng · "
+            f"mutation {result.final_mutation_rate:.4f}"
+        )
 
     def _sync_session_state(self, kind: str, payload: dict, spec: EditVisualizationSpec) -> None:
         if self._session is None:
@@ -1622,6 +1967,7 @@ class SimBuilderWidget(QWidget):
             self.sequence_input.set_sequence(str(sequence_text))
         self.crispr_tab.load_state(settings)
         self.prime_tab.load_state(settings)
+        self.pcr_tab.load_state(settings)
 
     def save_state(self, settings: QSettings) -> None:
         settings.setValue("main_splitter_state", self.main_splitter.saveState())
@@ -1630,10 +1976,12 @@ class SimBuilderWidget(QWidget):
         settings.setValue("sim_settings", json.dumps(self.sim_settings.to_dict()))
         self.crispr_tab.save_state(settings)
         self.prime_tab.save_state(settings)
+        self.pcr_tab.save_state(settings)
 
     def shutdown(self) -> None:
         self.crispr_tab.shutdown()
         self.prime_tab.shutdown()
+        self.pcr_tab.shutdown()
 
     def on_simulation_finished(self, genome, dag, config, outcomes: list[dict[str, Any]]) -> None:
         if self._session is not None:

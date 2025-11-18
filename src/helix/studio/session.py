@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import Enum, auto
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, List
 
 from PySide6.QtCore import QObject, Signal
 
@@ -17,7 +17,7 @@ class RunKind(Enum):
     PRIME = auto()
     PCR = auto()
 
-SESSION_SNAPSHOT_VERSION = 1
+SESSION_SNAPSHOT_VERSION = 2
 
 
 @dataclass
@@ -33,6 +33,8 @@ class ExperimentState:
     viz_spec_payload: Optional[dict[str, Any]] = None
     outcomes: list[dict[str, Any]] = field(default_factory=list)
     config: dict[str, Any] = field(default_factory=dict)
+    pcr_config: Optional["PCRConfig"] = None
+    pcr_result: Optional["PCRResult"] = None
 
     run_kind: RunKind = RunKind.NONE
     viz_dirty: bool = True
@@ -127,6 +129,10 @@ class SessionModel(QObject):
             state_payload["peg"] = _serialize_peg(self._state.peg)
         if self._state.editor is not None:
             state_payload["editor"] = _serialize_editor(self._state.editor)
+        if self._state.pcr_config is not None:
+            state_payload["pcr_config"] = _serialize_pcr_config(self._state.pcr_config)
+        if self._state.pcr_result is not None:
+            state_payload["pcr_result"] = _serialize_pcr_result(self._state.pcr_result)
         payload = {
             "version": SESSION_SNAPSHOT_VERSION,
             "state": state_payload,
@@ -162,6 +168,12 @@ class SessionModel(QObject):
         editor_data = state_payload.get("editor")
         if isinstance(editor_data, Mapping):
             state.editor = _deserialize_editor(editor_data)
+        pcr_cfg_data = state_payload.get("pcr_config")
+        if isinstance(pcr_cfg_data, Mapping):
+            state.pcr_config = _deserialize_pcr_config(pcr_cfg_data)
+        pcr_res_data = state_payload.get("pcr_result")
+        if isinstance(pcr_res_data, Mapping):
+            state.pcr_result = _deserialize_pcr_result(pcr_res_data)
         snapshot_timestamp = payload.get("timestamp")
         if version == 0 and "timestamp" in state_payload:
             snapshot_timestamp = state_payload["timestamp"]
@@ -213,6 +225,116 @@ def _deserialize_editor(data: Mapping[str, Any]) -> PrimeEditor:
         system_type=CasSystemType.CAS9,
         pam_rules=[PAMRule(pattern="NGG")],
         cut_offset=3,
+    )
+
+
+@dataclass(frozen=True)
+class PCRConfig:
+    template_seq: str
+    fwd_primer: str
+    rev_primer: str
+    cycles: int
+    polymerase_name: str
+    base_error_rate: float
+    indel_fraction: float
+    efficiency: float
+    initial_copies: int = 1
+
+
+@dataclass
+class PCRCycleStats:
+    cycle_index: int
+    amplicon_copies: float
+    amplicon_mass_ng: float
+    cumulative_mutation_rate: float
+    sub_rate: float
+    indel_rate: float
+
+
+@dataclass
+class PCRResult:
+    config: PCRConfig
+    amplicon_length: int
+    amplicon_start: int = 0
+    amplicon_end: int = 0
+    cycles: List[PCRCycleStats] = field(default_factory=list)
+    final_mutation_rate: float = 0.0
+    final_amplicon_copies: float = 0.0
+    final_amplicon_mass_ng: float = 0.0
+
+
+def _serialize_pcr_config(cfg: PCRConfig) -> dict[str, Any]:
+    return asdict(cfg)
+
+
+def _deserialize_pcr_config(data: Mapping[str, Any]) -> PCRConfig:
+    return PCRConfig(
+        template_seq=str(data.get("template_seq", "")),
+        fwd_primer=str(data.get("fwd_primer", "")),
+        rev_primer=str(data.get("rev_primer", "")),
+        cycles=int(data.get("cycles", 0)),
+        polymerase_name=str(data.get("polymerase_name", "")),
+        base_error_rate=float(data.get("base_error_rate", 0.0)),
+        indel_fraction=float(data.get("indel_fraction", 0.0)),
+        efficiency=float(data.get("efficiency", 0.0)),
+        initial_copies=int(data.get("initial_copies", 1)),
+    )
+
+
+def _serialize_pcr_cycle(stats: PCRCycleStats) -> dict[str, Any]:
+    return asdict(stats)
+
+
+def _deserialize_pcr_cycle(data: Mapping[str, Any]) -> PCRCycleStats:
+    return PCRCycleStats(
+        cycle_index=int(data.get("cycle_index", 0)),
+        amplicon_copies=float(data.get("amplicon_copies", 0.0)),
+        amplicon_mass_ng=float(data.get("amplicon_mass_ng", 0.0)),
+        cumulative_mutation_rate=float(data.get("cumulative_mutation_rate", 0.0)),
+        sub_rate=float(data.get("sub_rate", 0.0)),
+        indel_rate=float(data.get("indel_rate", 0.0)),
+    )
+
+
+def _serialize_pcr_result(result: PCRResult) -> dict[str, Any]:
+    return {
+        "config": _serialize_pcr_config(result.config),
+        "amplicon_length": result.amplicon_length,
+        "amplicon_start": result.amplicon_start,
+        "amplicon_end": result.amplicon_end,
+        "cycles": [_serialize_pcr_cycle(cycle) for cycle in result.cycles],
+        "final_mutation_rate": result.final_mutation_rate,
+        "final_amplicon_copies": result.final_amplicon_copies,
+        "final_amplicon_mass_ng": result.final_amplicon_mass_ng,
+    }
+
+
+def _deserialize_pcr_result(data: Mapping[str, Any]) -> PCRResult:
+    cfg_data = data.get("config") or {}
+    cfg = _deserialize_pcr_config(cfg_data) if isinstance(cfg_data, Mapping) else PCRConfig(
+        template_seq="",
+        fwd_primer="",
+        rev_primer="",
+        cycles=0,
+        polymerase_name="",
+        base_error_rate=0.0,
+        indel_fraction=0.0,
+        efficiency=0.0,
+        initial_copies=1,
+    )
+    cycles_data = data.get("cycles") or []
+    cycles: List[PCRCycleStats] = []
+    if isinstance(cycles_data, list):
+        cycles = [_deserialize_pcr_cycle(entry) for entry in cycles_data if isinstance(entry, Mapping)]
+    return PCRResult(
+        config=cfg,
+        amplicon_length=int(data.get("amplicon_length", 0)),
+        amplicon_start=int(data.get("amplicon_start", 0)),
+        amplicon_end=int(data.get("amplicon_end", 0)),
+        cycles=cycles,
+        final_mutation_rate=float(data.get("final_mutation_rate", 0.0)),
+        final_amplicon_copies=float(data.get("final_amplicon_copies", 0.0)),
+        final_amplicon_mass_ng=float(data.get("final_amplicon_mass_ng", 0.0)),
     )
     return PrimeEditor(
         name=str(data.get("name", "PrimeEditor")),

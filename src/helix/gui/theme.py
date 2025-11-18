@@ -37,7 +37,8 @@ def _build_palette() -> QPalette:
 _GLOBAL_STYLESHEET = f"""
 * {{
     font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    font-size: 12px;
+    font-size: 13px;
+    letter-spacing: 0.01em;
 }}
 QWidget {{
     color: {_TEXT};
@@ -46,18 +47,33 @@ QWidget {{
 QLabel#phaseLabel {{
     font-weight: 600;
 }}
+QLabel#StudioHero {{
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: {_ACCENT};
+}}
+QWidget#ViewerPlaceholder {{
+    border: 1px dashed #233043;
+    border-radius: 8px;
+    background-color: #0b1221;
+}}
 QPushButton {{
     background-color: {_ELEVATED_BG};
     border: 1px solid #243447;
-    border-radius: 4px;
-    padding: 6px 12px;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-weight: 500;
 }}
 QPushButton:hover {{
     border-color: {_ACCENT};
+    color: {_ACCENT};
 }}
 QPushButton:pressed {{
     background-color: {_ACCENT_DARK};
     border-color: {_ACCENT};
+    color: #05131b;
 }}
 QPushButton:disabled {{
     background-color: #1b2533;
@@ -65,23 +81,62 @@ QPushButton:disabled {{
     border-color: #1b2533;
 }}
 QLineEdit, QPlainTextEdit, QListWidget, QSpinBox, QDoubleSpinBox {{
-    background-color: #{_BASE_BG.strip('#')}ee;
-    border: 1px solid #1f2933;
-    border-radius: 4px;
-    padding: 4px;
+    background-color: rgba(15, 23, 42, 0.85);
+    border: 1px solid #253247;
+    border-radius: 6px;
+    padding: 6px 10px;
+}}
+QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+    border-color: {_ACCENT};
+}}
+QPlainTextEdit#LogPanel {{
+    font-family: "JetBrains Mono", "Fira Mono", monospace;
+    background-color: #0c1324;
+    border-radius: 8px;
 }}
 QTabWidget::pane {{
     border: 1px solid #1f2a37;
+    border-radius: 8px;
     background: {_BASE_BG};
 }}
 QTabBar::tab {{
     background: {_ELEVATED_BG};
     border: 1px solid #1f2a37;
     border-bottom: none;
-    padding: 6px 12px;
+    min-width: 120px;
+    padding: 8px 16px;
+    margin-right: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
 }}
 QTabBar::tab:selected {{
     background: {_ACCENT_DARK};
+    color: #041017;
+    font-weight: 600;
+}}
+QSplitter::handle {{
+    background-color: #192133;
+    border: 1px solid #101624;
+    margin: 0 4px;
+}}
+QSplitter::handle:horizontal {{
+    width: 6px;
+}}
+QSplitter::handle:vertical {{
+    height: 6px;
+}}
+QTreeWidget, QTableWidget {{
+    background-color: rgba(11, 17, 29, 0.9);
+    border: 1px solid #212b3d;
+    border-radius: 6px;
+}}
+QHeaderView::section {{
+    background-color: {_ELEVATED_BG};
+    padding: 6px;
+    border: none;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }}
 QScrollBar:vertical {{
     background: {_BASE_BG};
@@ -95,6 +150,13 @@ QScrollBar::handle:vertical {{
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
+}}
+QToolTip {{
+    background-color: {_ELEVATED_BG};
+    color: {_TEXT};
+    border: 1px solid {_ACCENT_DARK};
+    padding: 6px;
+    border-radius: 6px;
 }}
 """
 
