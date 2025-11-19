@@ -63,6 +63,9 @@ class HelixModernWidget(QOpenGLWindow):
         self._vao: moderngl.VertexArray | None = None
         self._arc_vbo: moderngl.Buffer | None = None
         self._arc_vao: moderngl.VertexArray | None = None
+        self._arc_heads_vbo: moderngl.Buffer | None = None
+        self._arc_heads_vao: moderngl.VertexArray | None = None
+        self._arc_heads_count: int = 0
         self._arc_ranges: list[tuple[int, int]] = []
         self._arc_firsts: np.ndarray = np.zeros((0,), dtype="i4")
         self._arc_counts: np.ndarray = np.zeros((0,), dtype="i4")
@@ -193,6 +196,13 @@ class HelixModernWidget(QOpenGLWindow):
             st = self.engine.state
             time_value = float(getattr(st, "time", 0.0))
             phase = getattr(st, "phase", AnimationPhase.APPROACH)
+            loop = float(getattr(self.engine, "loop_duration", 0.0))
+            if loop > 0.0:
+                t_gate = max(0.0, min(1.0, time_value / loop))
+            else:
+                t_gate = 1.0
+        else:
+            t_gate = 1.0
 
         # Identity MVP keeps rails in clip space
         aspect = self.width() / max(1, self.height())
@@ -217,6 +227,8 @@ class HelixModernWidget(QOpenGLWindow):
             self._arc_program["u_mvp"].write(mvp.tobytes())
             self._arc_program["u_time"].value = time_value
             self._arc_program["u_flap"].value = 1.0 if self._show_flap else 0.0
+            if "u_t_gate" in self._arc_program:
+                self._arc_program["u_t_gate"].value = t_gate
             for start, count in self._arc_ranges:
                 if count > 1:
                     self._arc_vao.render(
@@ -224,6 +236,23 @@ class HelixModernWidget(QOpenGLWindow):
                         first=start,
                         vertices=count,
                     )
+
+        # Arrowheads for ribbons
+        if (
+            self._show_ribbons
+            and self._arc_program
+            and self._arc_heads_vao
+            and self._arc_heads_count
+        ):
+            self._arc_program["u_mvp"].write(mvp.tobytes())
+            self._arc_program["u_time"].value = time_value
+            self._arc_program["u_flap"].value = 1.0 if self._show_flap else 0.0
+            if "u_t_gate" in self._arc_program:
+                self._arc_program["u_t_gate"].value = t_gate
+            self._arc_heads_vao.render(
+                mode=moderngl.TRIANGLES,
+                vertices=self._arc_heads_count,
+            )
 
         if not self._has_drawn_frame:
             self._has_drawn_frame = True
@@ -245,6 +274,8 @@ class HelixModernWidget(QOpenGLWindow):
             self._rail_vertex_count = 0
             self._vao = None
             self._arc_vao = None
+            self._arc_heads_vao = None
+            self._arc_heads_count = 0
             self._arc_ranges = []
             self._arc_firsts = np.zeros((0,), dtype="i4")
             self._arc_counts = np.zeros((0,), dtype="i4")
@@ -313,10 +344,13 @@ class HelixModernWidget(QOpenGLWindow):
         )
 
         # ------------------------------------------------------------------
-        # Param-space arcs: build simple Bezier ribbons between genome
-        # positions using the spec events (no 3D helix positions).
+        # Param-space arcs: build at most two ribbons:
+        #  - one for the first NICK_PRIMARY (cut-like event)
+        #  - one for the first REPAIR_COMPLETE (repair event)
         # ------------------------------------------------------------------
         self._arc_vao = None
+        self._arc_heads_vao = None
+        self._arc_heads_count = 0
         self._arc_ranges = []
         self._arc_firsts = np.zeros((0,), dtype="i4")
         self._arc_counts = np.zeros((0,), dtype="i4")
@@ -329,105 +363,131 @@ class HelixModernWidget(QOpenGLWindow):
         if seq_len <= 1:
             return
 
-        # Only build ribbons for a subset of event types
-        arc_types = {
-            EditEventType.NICK_PRIMARY,
-            EditEventType.CUT,
-            EditEventType.FLAP_RESOLUTION,
-            EditEventType.REPAIR_COMPLETE,
-        }
-
-        verts_list: list[np.ndarray] = []
-        weights_list: list[np.ndarray] = []
-        kinds_list: list[np.ndarray] = []
-        arc_ranges: list[tuple[int, int]] = []
-        first_index = 0
-
         denom = max(1, seq_len - 1)
         rail_spacing = 0.3
         y_top = rail_spacing
         y_bottom = -rail_spacing
         base_z = -0.05
 
+        # Pick the first cut-like and repair events
+        cut_ev: Any | None = None
+        repair_ev: Any | None = None
         for ev in spec.events:
-            et = ev.type
-            if et not in arc_types:
-                continue
+            if cut_ev is None and ev.type in (EditEventType.NICK_PRIMARY, EditEventType.CUT):
+                cut_ev = ev
+            if repair_ev is None and ev.type is EditEventType.REPAIR_COMPLETE:
+                repair_ev = ev
 
-            # Derive start/end indices along the genome.
-            start_idx: int | None
-            end_idx: int | None
-            if ev.start is not None and ev.length:
-                start_idx = int(ev.start)
-                end_idx = int(ev.start + ev.length)
-            elif ev.index is not None:
-                start_idx = int(ev.index)
-                end_idx = int(ev.index)
+        chosen = [ev for ev in (cut_ev, repair_ev) if ev is not None]
+        if not chosen:
+            return
+
+        verts_list: list[np.ndarray] = []
+        weights_list: list[np.ndarray] = []
+        kinds_list: list[np.ndarray] = []
+        arc_ranges: list[tuple[int, int]] = []
+        cursor = 0
+
+        # Stacking: fan ribbons that share a locus
+        stack_bins: dict[int, int] = {}
+        stack_dx = 0.03
+        stack_dh = 0.05
+
+        for ev in chosen:
+            # Determine a base genome index
+            if getattr(ev, "index", None) is not None:
+                idx = int(ev.index)
+            elif getattr(ev, "start", None) is not None:
+                idx = int(ev.start)
             else:
                 continue
 
-            start_idx = max(0, min(seq_len - 1, start_idx))
-            end_idx = max(0, min(seq_len - 1, end_idx))
+            idx = max(0, min(seq_len - 1, idx))
+            t_pos = idx / denom
 
-            # If it's effectively a point event (start == end), widen
-            # it into a tiny span so the ribbon gets curvature.
-            if end_idx == start_idx:
-                if end_idx < seq_len - 1:
-                    end_idx = start_idx + 1
-                elif start_idx > 0:
-                    start_idx = start_idx - 1
-                else:
-                    # Single base sequence, nothing to draw
-                    continue
+            # Stack level for this locus
+            center_idx = idx
+            stack_level = stack_bins.get(center_idx, 0)
+            stack_bins[center_idx] = stack_level + 1
 
-            if end_idx < start_idx:
-                start_idx, end_idx = end_idx, start_idx
+            x_center = (t_pos * 2.0 - 1.0) * 0.8 + stack_level * stack_dx
 
-            # --- Span: arch above the top rail between t0 and t1 ---
-            t0 = start_idx / denom
-            t1 = end_idx   / denom
-            x0 = (t0 * 2.0 - 1.0) * 0.8
-            x1 = (t1 * 2.0 - 1.0) * 0.8
+            if ev is cut_ev:
+                # Short arch above the top rail
+                span = 0.04
+                x0 = x_center - span
+                x1 = x_center + span
+                p0 = np.array([x0, y_top, base_z], dtype="f4")
+                p2 = np.array([x1, y_top, base_z], dtype="f4")
+                base_height = 0.2
+                height = base_height + stack_level * stack_dh
+                mid = np.array([x_center, y_top + height, base_z], dtype="f4")
+                kind_code = 0.0  # "cut"
+                p1 = mid
+            else:
+                # Repair ribbon: from top rail down toward bottom rail, bowed right
+                p0 = np.array([x_center, y_top, base_z], dtype="f4")
+                p2 = np.array([x_center, y_bottom, base_z], dtype="f4")
+                bend = 0.12
+                p1 = np.array([x_center + bend, 0.0, base_z], dtype="f4")
+                kind_code = 2.0  # "repair"
 
-            p0 = np.array([x0, y_top, base_z], dtype="f4")
-            p2 = np.array([x1, y_top, base_z], dtype="f4")
-
-            span = abs(x1 - x0)
-            # Taller arch for longer spans, but clamp
-            height = 0.2 + 0.5 * min(1.0, span)
-            mid_x = 0.5 * (x0 + x1)
-            p1 = np.array([mid_x, y_top + height, base_z], dtype="f4")
-
-            # Sample the quadratic Bezier
-            samples = np.linspace(0.0, 1.0, 40, dtype="f4")
-            one_minus = 1.0 - samples
+            # Sample quadratic Bezier
+            s = np.linspace(0.0, 1.0, 40, dtype="f4")
+            um = 1.0 - s
             curve = (
-                (one_minus[:, None] ** 2) * p0
-                + 2.0 * (one_minus[:, None] * samples[:, None]) * p1
-                + (samples[:, None] ** 2) * p2
+                (um[:, None] ** 2) * p0
+                + 2.0 * (um[:, None] * s[:, None]) * p1
+                + (s[:, None] ** 2) * p2
             ).astype("f4")
 
-            # Map event type to a small kind code for the shader palette.
-            if et in (EditEventType.NICK_PRIMARY, EditEventType.CUT):
-                kind_val = 0.0   # "cut-like"
-            elif et in (EditEventType.FLAP_RESOLUTION,):
-                kind_val = 1.0   # flap / intermediate
-            elif et is EditEventType.REPAIR_COMPLETE:
-                kind_val = 2.0   # repair
-            else:
-                kind_val = 4.0   # fallback
-
             verts_list.append(curve)
-            weights_list.append(np.ones((curve.shape[0], 1), dtype="f4"))
-            kinds_list.append(np.full((curve.shape[0], 1), kind_val, dtype="f4"))
+            # Use event time as a gating parameter (0..1) for the fragment shader
+            t_evt = float(getattr(ev, "t", 1.0))
+            weights_list.append(np.full((curve.shape[0], 1), t_evt, dtype="f4"))
+            kinds_list.append(np.full((curve.shape[0], 1), kind_code, dtype="f4"))
 
             count = curve.shape[0]
-            arc_ranges.append((first_index, count))
-            first_index += count
-
+            arc_ranges.append((cursor, count))
+            cursor += count
 
         if not verts_list:
             return
+
+        # --- Build arrowheads at the end of each ribbon ---
+        head_verts_list: list[np.ndarray] = []
+        head_weights_list: list[np.ndarray] = []
+        head_kinds_list: list[np.ndarray] = []
+
+        arrow_len = 0.04
+        arrow_width = 0.02
+
+        for curve, kind_array, weight_array in zip(verts_list, kinds_list, weights_list):
+            if curve.shape[0] < 2:
+                continue
+            tip = curve[-1]
+            prev = curve[-2]
+            d = tip - prev
+            d_xy = d.copy()
+            d_xy[2] = 0.0
+            norm = float(np.linalg.norm(d_xy))
+            if norm < 1e-6:
+                continue
+            d_xy /= norm
+
+            n_xy = np.array([-d_xy[1], d_xy[0], 0.0], dtype="f4")
+
+            base = tip - d_xy * arrow_len
+            left = base + n_xy * arrow_width
+            right = base - n_xy * arrow_width
+
+            head = np.stack([tip, left, right], axis=0).astype("f4")
+            head_verts_list.append(head)
+
+            kind_val = float(kind_array[0, 0])
+            t_evt = float(weight_array[0, 0])
+            head_weights_list.append(np.full((3, 1), t_evt, dtype="f4"))
+            head_kinds_list.append(np.full((3, 1), kind_val, dtype="f4"))
 
         verts = np.vstack(verts_list).astype("f4")
         weights = np.vstack(weights_list).astype("f4")
@@ -446,6 +506,30 @@ class HelixModernWidget(QOpenGLWindow):
                 (self._arc_vbo, "3f 1f 1f", "in_pos", "in_weight", "in_kind"),
             ],
         )
+
+        # Arrowhead geometry
+        if head_verts_list:
+            head_verts = np.vstack(head_verts_list).astype("f4")
+            head_weights = np.vstack(head_weights_list).astype("f4")
+            head_kinds = np.vstack(head_kinds_list).astype("f4")
+            head_interleaved = np.hstack(
+                [head_verts, head_weights, head_kinds]
+            ).astype("f4")
+
+            if self._arc_heads_vbo is None:
+                self._arc_heads_vbo = self.ctx.buffer(head_interleaved.tobytes())
+            else:
+                self._arc_heads_vbo.orphan(head_interleaved.nbytes)
+                self._arc_heads_vbo.write(head_interleaved.tobytes())
+
+            self._arc_heads_vao = self.ctx.vertex_array(
+                self._arc_program,
+                [(self._arc_heads_vbo, "3f 1f 1f", "in_pos", "in_weight", "in_kind")],
+            )
+            self._arc_heads_count = head_verts.shape[0]
+        else:
+            self._arc_heads_vao = None
+            self._arc_heads_count = 0
 
         self._arc_ranges = arc_ranges
         if arc_ranges:
@@ -848,6 +932,7 @@ class HelixModernWidget(QOpenGLWindow):
         return """
         #version 330
         uniform float u_flap;
+        uniform float u_t_gate;
         in float v_weight;
         in float v_kind;
         out vec4 f_color;
@@ -859,8 +944,11 @@ class HelixModernWidget(QOpenGLWindow):
             return vec3(0.76, 0.65, 0.92);
         }
         void main() {
-            float w = clamp(v_weight, 0.0, 1.0);
-            float alpha = mix(0.18, 0.95, w) * u_flap;
+            // Time gating: discard ribbons whose event time is in the future.
+            if (v_weight > u_t_gate) {
+                discard;
+            }
+            float alpha = 0.95 * u_flap;
             vec3 color = kind_color(v_kind);
             f_color = vec4(color, alpha);
         }
@@ -1026,6 +1114,7 @@ class HelixModernWidget(QOpenGLWindow):
 
     def set_flap_visible(self, visible: bool) -> None:
         self._show_flap = visible
+        self._show_ribbons = visible
         self.update()
 
     def scrub_to(self, normalized_t: float) -> None:
@@ -1273,14 +1362,6 @@ class HelixControlPanel(QWidget):
         if self._block_slider:
             return
         self.timeScrubbed.emit(value / 1000.0)
-        
-    def set_flap_visible(self, visible: bool) -> None:
-        # keep existing behavior
-        self._show_flap = visible
-        # also use this toggle to show/hide ribbons on the rail view
-        self._show_ribbons = visible
-        self.update()
-
 
     def _on_play_toggled(self, checked: bool) -> None:
         self.play_button.setText("Pause" if checked else "Play")
