@@ -14,10 +14,8 @@ from math import exp
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from helix.gui.modern.spec import EditVisualizationSpec
-from helix.gui.modern.builders import (
-    build_crispr_viz_spec,
-    build_prime_viz_spec,
-)
+from helix.gui.modern.builders import build_crispr_viz_spec, build_prime_viz_spec
+from helix.gui.modern.builders_2p5d import build_workflow2p5d_crispr
 from helix.edit.dag import dag_from_payload
 from helix import bioinformatics
 from helix.crispr.model import DigitalGenome
@@ -191,6 +189,14 @@ def crispr_dag_to_viz_spec(dag_payload: Mapping[str, Any]) -> Optional[EditVisua
         guide=ctx.guide,
         sim_payload=ctx.sim_payload,
     )
+
+
+def crispr_dag_to_workflow(dag_payload: Mapping[str, Any]) -> Optional[dict[str, Any]]:
+    """Build 2.5D workflow buffers directly from a CRISPR edit DAG payload."""
+    ctx = _extract_crispr_viz_context_from_dag_payload(dag_payload)
+    if ctx is None:
+        return None
+    return build_workflow2p5d_crispr(ctx.sequence, ctx.guide, ctx.sim_payload)
 
 
 def prime_dag_to_viz_spec(_: Mapping[str, Any]) -> Optional[EditVisualizationSpec]:

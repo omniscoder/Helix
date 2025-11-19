@@ -6,6 +6,7 @@ import math
 import sys
 from pathlib import Path
 from typing import Sequence, Any, Mapping
+from enum import Enum
 
 import moderngl
 import numpy as np
@@ -28,7 +29,12 @@ from PySide6.QtWidgets import (
 
 from ..theme import apply_helix_theme
 from .engine import AnimationPhase, HelixVizEngine
-from .spec import EditVisualizationSpec, EditEventType, load_viz_spec, load_viz_specs
+from .spec import EditVisualizationSpec, EditEventType, EditEvent, load_viz_spec, load_viz_specs
+
+
+class RailViewMode(str, Enum):
+    FLAT = "flat"
+    HELIX = "helix"
 
 
 class HelixModernWidget(QOpenGLWindow):
@@ -37,6 +43,7 @@ class HelixModernWidget(QOpenGLWindow):
     timeUpdated = Signal(float)
     phaseChanged = Signal(str)
     frameDrawn = Signal()
+    eventPicked = Signal(object)
 
     def __init__(self, parent: QWindow | None = None) -> None:
         super().__init__(parent=parent)
@@ -69,6 +76,10 @@ class HelixModernWidget(QOpenGLWindow):
         self._arc_ranges: list[tuple[int, int]] = []
         self._arc_firsts: np.ndarray = np.zeros((0,), dtype="i4")
         self._arc_counts: np.ndarray = np.zeros((0,), dtype="i4")
+        self._arc_cpu: np.ndarray | None = None
+        self._arc_events: list[EditEvent] = []
+        self._selected_kind: float | None = None
+        self._world_rail_vertices: np.ndarray | None = None
 
         # Workflow 2.5D pipelines
         self._bars_prog: moderngl.Program | None = None
@@ -96,6 +107,8 @@ class HelixModernWidget(QOpenGLWindow):
         self._playing = True
         self._show_template = True
         self._show_flap = True
+        self._rail_mode = RailViewMode.FLAT
+        self._animate = True
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -186,7 +199,12 @@ class HelixModernWidget(QOpenGLWindow):
             return
 
         # Linear rail mode (3D tab)
-        self.ctx.clear(0.0, 0.0, 0.3, 1.0, 1.0)
+        if self._rail_mode is RailViewMode.FLAT:
+            # Deep indigo for flat param-space rails
+            self.ctx.clear(0.03, 0.05, 0.14, 1.0, 1.0)
+        else:
+            # Darker, more neutral space-like backdrop for helix view
+            self.ctx.clear(0.01, 0.02, 0.06, 1.0, 1.0)
         if not self._vao:
             return
 
@@ -194,27 +212,37 @@ class HelixModernWidget(QOpenGLWindow):
         phase = AnimationPhase.APPROACH
         if self.engine is not None:
             st = self.engine.state
-            time_value = float(getattr(st, "time", 0.0))
+            raw_time = float(getattr(st, "time", 0.0))
             phase = getattr(st, "phase", AnimationPhase.APPROACH)
             loop = float(getattr(self.engine, "loop_duration", 0.0))
-            if loop > 0.0:
-                t_gate = max(0.0, min(1.0, time_value / loop))
-            else:
-                t_gate = 1.0
+            base_gate = max(0.0, min(1.0, raw_time / loop)) if loop > 0.0 else 1.0
         else:
-            t_gate = 1.0
+            raw_time = 0.0
+            base_gate = 1.0
 
-        # Identity MVP keeps rails in clip space
+        # Freeze rail/ribbon motion when animation is disabled, but keep
+        # time gating tied to the current timeline position.
+        time_value = raw_time if self._animate else 0.0
+        t_gate = base_gate
+
         aspect = self.width() / max(1, self.height())
-        mvp = self._mvp_matrix(aspect, orbit_time=time_value)
+        if self._rail_mode is RailViewMode.FLAT:
+            # 2D param-space view: rails + ribbons share a simple pan/zoom MVP.
+            mvp = self._mvp_matrix(aspect, orbit_time=time_value)
+            flat_value = 1.0
+        else:
+            # 3D helix view: orbit a perspective camera around the helix
+            # center to reveal a proper double helix.
+            mvp = self._helix_mvp(aspect)
+            flat_value = 0.0
 
         # Rails
         self._rail_program["u_mvp"].write(mvp.tobytes())
         self._rail_program["u_time"].value = time_value
         self._rail_program["u_phase"].value = self._phase_value(phase)
         self._rail_program["u_template"].value = 1.0 if self._show_template else 0.0
-        # Unwrap to straight rails by default
-        self._rail_program["u_flat"].value = 1.0
+        # Unwrapped (flat) vs helix rails
+        self._rail_program["u_flat"].value = flat_value
         self._rail_program["u_spacing"].value = 0.3
 
         n = self._rail_vertex_count // 2
@@ -222,13 +250,49 @@ class HelixModernWidget(QOpenGLWindow):
             self._vao.render(mode=moderngl.LINE_STRIP, vertices=n, first=0)
             self._vao.render(mode=moderngl.LINE_STRIP, vertices=n, first=n)
 
-        # Param-space ribbons (arcs) between genome positions
-        if self._show_ribbons and self._arc_program and self._arc_vao and self._arc_ranges:
+        # Time cursor along the flat rails to visualize scrubbing.
+        if (
+            self._rail_mode is RailViewMode.FLAT
+            and self._flat_prog is not None
+            and self.engine is not None
+        ):
+            loop = float(getattr(self.engine, "loop_duration", 0.0))
+            if loop > 0.0:
+                gate = max(0.0, min(1.0, raw_time / loop))
+                x_gate = (gate * 2.0 - 1.0) * 0.9
+                cursor = np.array(
+                    [
+                        [x_gate, 0.55, 0.0],
+                        [x_gate, -0.55, 0.0],
+                    ],
+                    dtype="f4",
+                )
+                vbo = self.ctx.buffer(cursor.tobytes())
+                vao = self.ctx.vertex_array(
+                    self._flat_prog,
+                    [(vbo, "3f", "in_pos")],
+                )
+                self._flat_prog["u_mvp"].write(mvp.tobytes())
+                self._flat_prog["u_color"].value = (1.0, 0.95, 0.25, 0.9)
+                vao.render(mode=moderngl.LINES, vertices=2)
+
+        # Param-space ribbons (arcs) between genome positions.
+        # Only shown in flat rail mode.
+        if (
+            self._rail_mode is RailViewMode.FLAT
+            and self._show_ribbons
+            and self._arc_program
+            and self._arc_vao
+            and self._arc_ranges
+        ):
             self._arc_program["u_mvp"].write(mvp.tobytes())
             self._arc_program["u_time"].value = time_value
             self._arc_program["u_flap"].value = 1.0 if self._show_flap else 0.0
             if "u_t_gate" in self._arc_program:
                 self._arc_program["u_t_gate"].value = t_gate
+            if "u_selected_kind" in self._arc_program:
+                sel = self._selected_kind if self._selected_kind is not None else -1.0
+                self._arc_program["u_selected_kind"].value = float(sel)
             for start, count in self._arc_ranges:
                 if count > 1:
                     self._arc_vao.render(
@@ -239,7 +303,8 @@ class HelixModernWidget(QOpenGLWindow):
 
         # Arrowheads for ribbons
         if (
-            self._show_ribbons
+            self._rail_mode is RailViewMode.FLAT
+            and self._show_ribbons
             and self._arc_program
             and self._arc_heads_vao
             and self._arc_heads_count
@@ -249,6 +314,9 @@ class HelixModernWidget(QOpenGLWindow):
             self._arc_program["u_flap"].value = 1.0 if self._show_flap else 0.0
             if "u_t_gate" in self._arc_program:
                 self._arc_program["u_t_gate"].value = t_gate
+            if "u_selected_kind" in self._arc_program:
+                sel = self._selected_kind if self._selected_kind is not None else -1.0
+                self._arc_program["u_selected_kind"].value = float(sel)
             self._arc_heads_vao.render(
                 mode=moderngl.TRIANGLES,
                 vertices=self._arc_heads_count,
@@ -281,7 +349,8 @@ class HelixModernWidget(QOpenGLWindow):
             self._arc_counts = np.zeros((0,), dtype="i4")
             return
 
-        # Use helix_geometry only to know how many bases we have
+        # Use helix_geometry as the authoritative source of base count
+        # and helix-space positions.
         helix_geom = self.engine.helix_geometry
         total = int(helix_geom.rail_vertices.shape[0])
         if total == 0:
@@ -296,37 +365,64 @@ class HelixModernWidget(QOpenGLWindow):
         # 2 * num_bp: first half = strand A, second half = strand B
         num_bp = total // 2
 
-        print(
-            "[HelixModernWidget] uploading LINEAR rails:",
-            num_bp,
-            "bp",
-            flush=True,
-        )
+        if self._rail_mode is RailViewMode.FLAT:
+            print(
+                "[HelixModernWidget] uploading LINEAR rails:",
+                num_bp,
+                "bp",
+                flush=True,
+            )
+            # ---- Build straight rails in param space ----
+            t = np.linspace(0.0, 1.0, num_bp, dtype="f4")  # (N,)
+            x = (t * 2.0 - 1.0) * 0.9
+            z = np.zeros_like(x)
+            y_zero = np.zeros_like(x)
 
-        # ---- Build straight rails in param space ----
-        # param 0..1 along the rail
-        t = np.linspace(0.0, 1.0, num_bp, dtype="f4")  # (N,)
-        # Map to x in [-0.9, 0.9] (horizontal extent)
-        x = (t * 2.0 - 1.0) * 0.9
-        z = np.zeros_like(x)
+            top = np.stack([x, y_zero, z], axis=1)  # (N, 3)
+            bot = np.stack([x, y_zero, z], axis=1)  # (N, 3)
+            rail_vertices = np.vstack([top, bot]).astype("f4")  # (2N, 3)
 
-        # Place both strands at y=0; the shader's u_spacing + in_rail
-        # controls vertical separation in flat mode.
-        y_zero = np.zeros_like(x)
+            rail_ids = np.zeros((2 * num_bp, 1), dtype="f4")
+            rail_ids[num_bp:, 0] = 1.0
 
-        top = np.stack([x, y_zero, z], axis=1)  # (N, 3)
-        bot = np.stack([x, y_zero, z], axis=1)  # (N, 3)
+            param_coords = np.concatenate([t, t], axis=0).reshape(-1, 1).astype("f4")
+        else:
+            print(
+                "[HelixModernWidget] uploading HELIX rails:",
+                num_bp,
+                "bp",
+                flush=True,
+            )
+            # ---- Build a proper double helix in 3D ----
+            t = np.linspace(0.0, 1.0, num_bp, dtype="f4")  # param along genome
 
-        rail_vertices = np.vstack([top, bot])  # (2N, 3)
+            # Turns along this window (~1 turn per 10 bases).
+            turns = max(1.0, num_bp / 10.0)
+            theta = t * turns * 2.0 * math.pi
 
-        # in_rail: 0.0 top, 1.0 bottom
-        rail_ids = np.zeros((2 * num_bp, 1), dtype="f4")
-        rail_ids[num_bp:, 0] = 1.0
+            radius = 1.0
+            height = 0.34 * num_bp
+            z = (t - 0.5) * height
 
-        # in_param: normalized along each strand
-        param_coords = np.concatenate([t, t], axis=0).reshape(-1, 1)  # (2N, 1)
+            # Strand A
+            x_a = radius * np.cos(theta)
+            y_a = radius * np.sin(theta)
+            strand_a = np.stack([x_a, y_a, z], axis=1)
+
+            # Strand B: 180° out of phase
+            x_b = radius * np.cos(theta + math.pi)
+            y_b = radius * np.sin(theta + math.pi)
+            strand_b = np.stack([x_b, y_b, z], axis=1)
+
+            rail_vertices = np.vstack([strand_a, strand_b]).astype("f4")
+
+            rail_ids = np.zeros((2 * num_bp, 1), dtype="f4")
+            rail_ids[num_bp:, 0] = 1.0
+
+            param_coords = np.concatenate([t, t], axis=0).reshape(-1, 1).astype("f4")
 
         # Interleave: [pos.xyz, rail_id, param]
+        self._world_rail_vertices = rail_vertices
         combined = np.hstack([rail_vertices, rail_ids, param_coords]).astype("f4")
         self._rail_vertex_count = combined.shape[0]
 
@@ -344,9 +440,7 @@ class HelixModernWidget(QOpenGLWindow):
         )
 
         # ------------------------------------------------------------------
-        # Param-space arcs: build at most two ribbons:
-        #  - one for the first NICK_PRIMARY (cut-like event)
-        #  - one for the first REPAIR_COMPLETE (repair event)
+        # Param-space arcs: build ribbons directly from the spec.
         # ------------------------------------------------------------------
         self._arc_vao = None
         self._arc_heads_vao = None
@@ -354,145 +448,27 @@ class HelixModernWidget(QOpenGLWindow):
         self._arc_ranges = []
         self._arc_firsts = np.zeros((0,), dtype="i4")
         self._arc_counts = np.zeros((0,), dtype="i4")
+        self._arc_cpu = None
+        self._arc_events = []
 
         spec = self._spec
-        if spec is None or not getattr(spec, "events", None) or self._arc_program is None:
+        if spec is None or self._arc_program is None:
             return
 
-        seq_len = len(spec.sequence)
-        if seq_len <= 1:
+        interleaved, arc_ranges, head_interleaved = HelixModernWidget._build_param_ribbons_from_spec(spec)
+        if interleaved.size == 0 or not arc_ranges:
             return
 
-        denom = max(1, seq_len - 1)
-        rail_spacing = 0.3
-        y_top = rail_spacing
-        y_bottom = -rail_spacing
-        base_z = -0.05
-
-        # Pick the first cut-like and repair events
-        cut_ev: Any | None = None
-        repair_ev: Any | None = None
+        # Mirror the event selection logic used in _build_param_ribbons_from_spec
+        cut_ev: EditEvent | None = None
+        repair_ev: EditEvent | None = None
         for ev in spec.events:
             if cut_ev is None and ev.type in (EditEventType.NICK_PRIMARY, EditEventType.CUT):
                 cut_ev = ev
             if repair_ev is None and ev.type is EditEventType.REPAIR_COMPLETE:
                 repair_ev = ev
-
-        chosen = [ev for ev in (cut_ev, repair_ev) if ev is not None]
-        if not chosen:
-            return
-
-        verts_list: list[np.ndarray] = []
-        weights_list: list[np.ndarray] = []
-        kinds_list: list[np.ndarray] = []
-        arc_ranges: list[tuple[int, int]] = []
-        cursor = 0
-
-        # Stacking: fan ribbons that share a locus
-        stack_bins: dict[int, int] = {}
-        stack_dx = 0.03
-        stack_dh = 0.05
-
-        for ev in chosen:
-            # Determine a base genome index
-            if getattr(ev, "index", None) is not None:
-                idx = int(ev.index)
-            elif getattr(ev, "start", None) is not None:
-                idx = int(ev.start)
-            else:
-                continue
-
-            idx = max(0, min(seq_len - 1, idx))
-            t_pos = idx / denom
-
-            # Stack level for this locus
-            center_idx = idx
-            stack_level = stack_bins.get(center_idx, 0)
-            stack_bins[center_idx] = stack_level + 1
-
-            x_center = (t_pos * 2.0 - 1.0) * 0.8 + stack_level * stack_dx
-
-            if ev is cut_ev:
-                # Short arch above the top rail
-                span = 0.04
-                x0 = x_center - span
-                x1 = x_center + span
-                p0 = np.array([x0, y_top, base_z], dtype="f4")
-                p2 = np.array([x1, y_top, base_z], dtype="f4")
-                base_height = 0.2
-                height = base_height + stack_level * stack_dh
-                mid = np.array([x_center, y_top + height, base_z], dtype="f4")
-                kind_code = 0.0  # "cut"
-                p1 = mid
-            else:
-                # Repair ribbon: from top rail down toward bottom rail, bowed right
-                p0 = np.array([x_center, y_top, base_z], dtype="f4")
-                p2 = np.array([x_center, y_bottom, base_z], dtype="f4")
-                bend = 0.12
-                p1 = np.array([x_center + bend, 0.0, base_z], dtype="f4")
-                kind_code = 2.0  # "repair"
-
-            # Sample quadratic Bezier
-            s = np.linspace(0.0, 1.0, 40, dtype="f4")
-            um = 1.0 - s
-            curve = (
-                (um[:, None] ** 2) * p0
-                + 2.0 * (um[:, None] * s[:, None]) * p1
-                + (s[:, None] ** 2) * p2
-            ).astype("f4")
-
-            verts_list.append(curve)
-            # Use event time as a gating parameter (0..1) for the fragment shader
-            t_evt = float(getattr(ev, "t", 1.0))
-            weights_list.append(np.full((curve.shape[0], 1), t_evt, dtype="f4"))
-            kinds_list.append(np.full((curve.shape[0], 1), kind_code, dtype="f4"))
-
-            count = curve.shape[0]
-            arc_ranges.append((cursor, count))
-            cursor += count
-
-        if not verts_list:
-            return
-
-        # --- Build arrowheads at the end of each ribbon ---
-        head_verts_list: list[np.ndarray] = []
-        head_weights_list: list[np.ndarray] = []
-        head_kinds_list: list[np.ndarray] = []
-
-        arrow_len = 0.04
-        arrow_width = 0.02
-
-        for curve, kind_array, weight_array in zip(verts_list, kinds_list, weights_list):
-            if curve.shape[0] < 2:
-                continue
-            tip = curve[-1]
-            prev = curve[-2]
-            d = tip - prev
-            d_xy = d.copy()
-            d_xy[2] = 0.0
-            norm = float(np.linalg.norm(d_xy))
-            if norm < 1e-6:
-                continue
-            d_xy /= norm
-
-            n_xy = np.array([-d_xy[1], d_xy[0], 0.0], dtype="f4")
-
-            base = tip - d_xy * arrow_len
-            left = base + n_xy * arrow_width
-            right = base - n_xy * arrow_width
-
-            head = np.stack([tip, left, right], axis=0).astype("f4")
-            head_verts_list.append(head)
-
-            kind_val = float(kind_array[0, 0])
-            t_evt = float(weight_array[0, 0])
-            head_weights_list.append(np.full((3, 1), t_evt, dtype="f4"))
-            head_kinds_list.append(np.full((3, 1), kind_val, dtype="f4"))
-
-        verts = np.vstack(verts_list).astype("f4")
-        weights = np.vstack(weights_list).astype("f4")
-        kinds = np.vstack(kinds_list).astype("f4")
-        interleaved = np.hstack([verts, weights, kinds]).astype("f4")
+        self._arc_events = [ev for ev in (cut_ev, repair_ev) if ev is not None]
+        self._arc_cpu = interleaved
 
         if self._arc_vbo is None:
             self._arc_vbo = self.ctx.buffer(interleaved.tobytes())
@@ -508,14 +484,7 @@ class HelixModernWidget(QOpenGLWindow):
         )
 
         # Arrowhead geometry
-        if head_verts_list:
-            head_verts = np.vstack(head_verts_list).astype("f4")
-            head_weights = np.vstack(head_weights_list).astype("f4")
-            head_kinds = np.vstack(head_kinds_list).astype("f4")
-            head_interleaved = np.hstack(
-                [head_verts, head_weights, head_kinds]
-            ).astype("f4")
-
+        if head_interleaved is not None:
             if self._arc_heads_vbo is None:
                 self._arc_heads_vbo = self.ctx.buffer(head_interleaved.tobytes())
             else:
@@ -526,7 +495,7 @@ class HelixModernWidget(QOpenGLWindow):
                 self._arc_program,
                 [(self._arc_heads_vbo, "3f 1f 1f", "in_pos", "in_weight", "in_kind")],
             )
-            self._arc_heads_count = head_verts.shape[0]
+            self._arc_heads_count = head_interleaved.shape[0]
         else:
             self._arc_heads_vao = None
             self._arc_heads_count = 0
@@ -933,6 +902,7 @@ class HelixModernWidget(QOpenGLWindow):
         #version 330
         uniform float u_flap;
         uniform float u_t_gate;
+        uniform float u_selected_kind;
         in float v_weight;
         in float v_kind;
         out vec4 f_color;
@@ -950,9 +920,174 @@ class HelixModernWidget(QOpenGLWindow):
             }
             float alpha = 0.95 * u_flap;
             vec3 color = kind_color(v_kind);
+            if (u_selected_kind > -0.5 && abs(v_kind - u_selected_kind) < 0.5) {
+                color = mix(color, vec3(1.0, 1.0, 1.0), 0.4);
+            }
             f_color = vec4(color, alpha);
         }
         """
+
+    @staticmethod
+    def _build_param_ribbons_from_spec(
+        spec: EditVisualizationSpec,
+    ) -> tuple[np.ndarray, list[tuple[int, int]], np.ndarray | None]:
+        """Pure helper that builds param-space ribbon geometry from a viz spec.
+
+        Returns:
+            interleaved: (N, 5) float32 array [pos.xyz, event_time, kind_code]
+            arc_ranges: list of (first, count) index ranges per ribbon
+            head_interleaved: (M, 5) float32 array for arrowheads, or None
+        """
+        if not getattr(spec, "events", None):
+            return np.zeros((0, 5), dtype="f4"), [], None
+
+        seq_len = len(spec.sequence)
+        if seq_len <= 1:
+            return np.zeros((0, 5), dtype="f4"), [], None
+
+        denom = max(1, seq_len - 1)
+        rail_spacing = 0.3
+        y_top = rail_spacing
+        y_bottom = -rail_spacing
+        base_z = -0.05
+
+        # Pick the first cut-like and repair events
+        cut_ev: Any | None = None
+        repair_ev: Any | None = None
+        for ev in spec.events:
+            if cut_ev is None and ev.type in (EditEventType.NICK_PRIMARY, EditEventType.CUT):
+                cut_ev = ev
+            if repair_ev is None and ev.type is EditEventType.REPAIR_COMPLETE:
+                repair_ev = ev
+
+        chosen = [ev for ev in (cut_ev, repair_ev) if ev is not None]
+        if not chosen:
+            return np.zeros((0, 5), dtype="f4"), [], None
+
+        verts_list: list[np.ndarray] = []
+        weights_list: list[np.ndarray] = []
+        kinds_list: list[np.ndarray] = []
+        arc_ranges: list[tuple[int, int]] = []
+        cursor = 0
+
+        # Stacking: fan ribbons that share a locus
+        stack_bins: dict[int, int] = {}
+        stack_dx = 0.03
+        stack_dh = 0.05
+
+        for ev in chosen:
+            # Determine a base genome index
+            if getattr(ev, "index", None) is not None:
+                idx = int(ev.index)
+            elif getattr(ev, "start", None) is not None:
+                idx = int(ev.start)
+            else:
+                continue
+
+            idx = max(0, min(seq_len - 1, idx))
+            t_pos = idx / denom
+
+            # Stack level for this locus
+            center_idx = idx
+            stack_level = stack_bins.get(center_idx, 0)
+            stack_bins[center_idx] = stack_level + 1
+
+            x_center = (t_pos * 2.0 - 1.0) * 0.8 + stack_level * stack_dx
+
+            if ev is cut_ev:
+                # Short arch above the top rail
+                span = 0.04
+                x0 = x_center - span
+                x1 = x_center + span
+                p0 = np.array([x0, y_top, base_z], dtype="f4")
+                p2 = np.array([x1, y_top, base_z], dtype="f4")
+                base_height = 0.2
+                height = base_height + stack_level * stack_dh
+                mid = np.array([x_center, y_top + height, base_z], dtype="f4")
+                kind_code = 0.0  # "cut"
+                p1 = mid
+            else:
+                # Repair ribbon: from top rail down toward bottom rail, bowed right
+                p0 = np.array([x_center, y_top, base_z], dtype="f4")
+                p2 = np.array([x_center, y_bottom, base_z], dtype="f4")
+                bend = 0.12
+                p1 = np.array([x_center + bend, 0.0, base_z], dtype="f4")
+                kind_code = 2.0  # "repair"
+
+            # Sample quadratic Bezier
+            s = np.linspace(0.0, 1.0, 40, dtype="f4")
+            um = 1.0 - s
+            curve = (
+                (um[:, None] ** 2) * p0
+                + 2.0 * (um[:, None] * s[:, None]) * p1
+                + (s[:, None] ** 2) * p2
+            ).astype("f4")
+
+            verts_list.append(curve)
+            # Use event time as a gating parameter (0..1) for the fragment shader
+            t_evt = float(getattr(ev, "t", 1.0))
+            weights_list.append(np.full((curve.shape[0], 1), t_evt, dtype="f4"))
+            kinds_list.append(np.full((curve.shape[0], 1), kind_code, dtype="f4"))
+
+            count = curve.shape[0]
+            arc_ranges.append((cursor, count))
+            cursor += count
+
+        if not verts_list:
+            return np.zeros((0, 5), dtype="f4"), [], None
+
+        # --- Build arrowheads at the end of each ribbon ---
+        head_verts_list: list[np.ndarray] = []
+        head_weights_list: list[np.ndarray] = []
+        head_kinds_list: list[np.ndarray] = []
+
+        arrow_len = 0.04
+        arrow_width = 0.02
+
+        for curve, kind_array, weight_array in zip(verts_list, kinds_list, weights_list):
+            if curve.shape[0] < 2:
+                continue
+            tip = curve[-1]
+            prev = curve[-2]
+            d = tip - prev
+            d_xy = d.copy()
+            d_xy[2] = 0.0
+            norm = float(np.linalg.norm(d_xy))
+            if norm < 1e-6:
+                continue
+            d_xy /= norm
+
+            n_xy = np.array([-d_xy[1], d_xy[0], 0.0], dtype="f4")
+
+            base = tip - d_xy * arrow_len
+            left = base + n_xy * arrow_width
+            right = base - n_xy * arrow_width
+
+            head = np.stack([tip, left, right], axis=0).astype("f4")
+            head_verts_list.append(head)
+
+            kind_val = float(kind_array[0, 0])
+            t_evt = float(weight_array[0, 0])
+            head_weights_list.append(np.full((3, 1), t_evt, dtype="f4"))
+            head_kinds_list.append(np.full((3, 1), kind_val, dtype="f4"))
+
+        verts = np.vstack(verts_list).astype("f4")
+        weights = np.vstack(weights_list).astype("f4")
+        kinds = np.vstack(kinds_list).astype("f4")
+        interleaved = np.hstack([verts, weights, kinds]).astype("f4")
+
+        head_interleaved: np.ndarray | None
+        if head_verts_list:
+            head_verts = np.vstack(head_verts_list).astype("f4")
+            head_weights = np.vstack(head_weights_list).astype("f4")
+            head_kinds = np.vstack(head_kinds_list).astype("f4")
+            head_interleaved = np.hstack(
+                [head_verts, head_weights, head_kinds]
+            ).astype("f4")
+        else:
+            head_interleaved = None
+
+        return interleaved, arc_ranges, head_interleaved
 
     @staticmethod
     def _bars_vertex_shader() -> str:
@@ -1112,6 +1247,29 @@ class HelixModernWidget(QOpenGLWindow):
         self._show_template = visible
         self.update()
 
+    def set_animate(self, enabled: bool) -> None:
+        self._animate = bool(enabled)
+        self.update()
+
+    def set_rail_mode(self, mode: str | RailViewMode) -> None:
+        if isinstance(mode, RailViewMode):
+            new_mode = mode
+        else:
+            try:
+                new_mode = RailViewMode(str(mode))
+            except ValueError:
+                return
+        if new_mode is self._rail_mode:
+            return
+        self._rail_mode = new_mode
+        # Reset camera and selection when switching rail modes so each
+        # view (flat vs helix) feels like a distinct workspace.
+        self._reset_camera_defaults()
+        self._selected_kind = None
+        if self.ctx is not None and self.engine is not None:
+            self._upload_buffers()
+        self.update()
+
     def set_flap_visible(self, visible: bool) -> None:
         self._show_flap = visible
         self._show_ribbons = visible
@@ -1142,6 +1300,27 @@ class HelixModernWidget(QOpenGLWindow):
         far = max(near + 5.0, cam_dist + radius * 2.5)
         proj = HelixModernWidget._perspective(fov, aspect, near, far)
         return (proj @ view).astype("f4")
+
+    def _helix_mvp(self, aspect: float) -> np.ndarray:
+        """Camera for RailViewMode.HELIX: side-on view of the helix."""
+        center, radius = self._scene_bounds()
+        r = max(radius, 1.0)
+
+        # Camera sits along -Y, a bit above the helix
+        dist = r * 3.0
+        eye = center + np.array([0.0, -dist, r * 0.3], dtype="f4")
+
+        target = center
+        up = np.array([0.0, 0.0, 1.0], dtype="f4")
+
+        view = HelixModernWidget._look_at(eye, target, up)
+
+        near = max(r * 0.2, 0.05)
+        far = r * 8.0
+        proj = HelixModernWidget._perspective(math.radians(40.0), aspect, near, far)
+
+        return (proj @ view).astype("f4")
+
 
     def _reset_camera_defaults(self) -> None:
         self._cam_target = np.array([0.0, 0.0, 0.0], dtype="f4")
@@ -1195,16 +1374,76 @@ class HelixModernWidget(QOpenGLWindow):
             self._spec.metadata = meta
 
     def _scene_bounds(self) -> tuple[np.ndarray, float]:
-        if not self.engine:
-            return np.zeros(3, dtype="f4"), 5.0
-        vertices = getattr(self.engine.helix_geometry, "rail_vertices", None)
-        if vertices is None or not vertices.size:
+        vertices: np.ndarray | None
+        if self._world_rail_vertices is not None:
+            vertices = self._world_rail_vertices
+        elif self.engine is not None:
+            vertices = getattr(self.engine.helix_geometry, "rail_vertices", None)
+            if vertices is None or not vertices.size:
+                return np.zeros(3, dtype="f4"), 5.0
+        else:
             return np.zeros(3, dtype="f4"), 5.0
         mn = vertices.min(axis=0)
         mx = vertices.max(axis=0)
         center = (mn + mx) * 0.5
         radius = float(np.linalg.norm(mx - center))
         return center.astype("f4"), max(radius, 1.0)
+
+    def _pick_ribbon_at(self, pos: QPointF) -> None:
+        if (
+            self._arc_cpu is None
+            or not self._arc_ranges
+            or not self._arc_events
+            or self._arc_cpu.size == 0
+        ):
+            self._selected_kind = None
+            return
+
+        w = max(1, self.width())
+        h = max(1, self.height())
+        aspect = w / h
+        time_value = 0.0
+        if self.engine is not None:
+            time_value = float(getattr(self.engine.state, "time", 0.0))
+        mvp = self._mvp_matrix(aspect, orbit_time=time_value)
+
+        # Click in NDC
+        ndc_x = (pos.x() / w) * 2.0 - 1.0
+        ndc_y = 1.0 - (pos.y() / h) * 2.0
+
+        verts = self._arc_cpu[:, :3].astype("f4")
+        ones = np.ones((verts.shape[0], 1), dtype="f4")
+        hom = np.hstack([verts, ones])
+        clip = hom @ mvp.T.astype("f4")
+        w_comp = np.clip(clip[:, 3:4], 1e-6, None)
+        ndc = clip[:, :2] / w_comp
+
+        dx = (ndc[:, 0] - ndc_x) * (w * 0.5)
+        dy = (ndc[:, 1] - ndc_y) * (h * 0.5)
+        dist2 = dx * dx + dy * dy
+        idx = int(np.argmin(dist2))
+        if dist2[idx] > 10.0 * 10.0:
+            self._selected_kind = None
+            self.update()
+            self.eventPicked.emit(None)
+            return
+
+        arc_index = 0
+        for i, (start, count) in enumerate(self._arc_ranges):
+            if start <= idx < start + count:
+                arc_index = i
+                break
+        if arc_index >= len(self._arc_events):
+            self._selected_kind = None
+            self.update()
+            self.eventPicked.emit(None)
+            return
+
+        ev = self._arc_events[arc_index]
+        # kind codes: 0=cut, 2=repair
+        self._selected_kind = 0.0 if ev.type in (EditEventType.NICK_PRIMARY, EditEventType.CUT) else 2.0
+        self.eventPicked.emit(ev)
+        self.update()
 
     # Interaction events -----------------------------------------------
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
@@ -1215,12 +1454,18 @@ class HelixModernWidget(QOpenGLWindow):
             self._drag_mode = "pan"
         else:
             self._drag_mode = None
+        if (
+            event.button() == Qt.LeftButton
+            and self._mode == "3d"
+            and self._rail_mode is RailViewMode.FLAT
+        ):
+            self._pick_ribbon_at(event.position())
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
-        self._drag_mode = None
-        self._last_mouse_pos = None
-        super().mouseReleaseEvent(event)
+            self._drag_mode = None
+            self._last_mouse_pos = None
+            super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
         if self._last_mouse_pos is None or self._drag_mode is None:
@@ -1303,6 +1548,8 @@ class HelixControlPanel(QWidget):
     playToggled = Signal(bool)
     templateToggled = Signal(bool)
     flapToggled = Signal(bool)
+    railModeChanged = Signal(str)
+    animationToggled = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1324,6 +1571,11 @@ class HelixControlPanel(QWidget):
         self.play_button.toggled.connect(self._on_play_toggled)
         layout.addWidget(self.play_button)
 
+        self.animation_toggle = QCheckBox("Animate", self)
+        self.animation_toggle.setChecked(True)
+        self.animation_toggle.toggled.connect(self.animationToggled.emit)
+        layout.addWidget(self.animation_toggle)
+
         slider_label = QLabel("Time", self)
         layout.addWidget(slider_label)
         self.time_slider = QSlider(Qt.Horizontal, self)
@@ -1340,6 +1592,15 @@ class HelixControlPanel(QWidget):
         self.flap_toggle.setChecked(True)
         self.flap_toggle.toggled.connect(self.flapToggled.emit)
         layout.addWidget(self.flap_toggle)
+
+        mode_label = QLabel("Rail view", self)
+        layout.addWidget(mode_label)
+        self.rail_mode_combo = QComboBox(self)
+        self.rail_mode_combo.addItem("Flat rails", "flat")
+        self.rail_mode_combo.addItem("3D helix", "helix")
+        self.rail_mode_combo.setCurrentIndex(0)
+        self.rail_mode_combo.currentIndexChanged.connect(self._on_rail_mode_changed)
+        layout.addWidget(self.rail_mode_combo)
 
         layout.addStretch(1)
 
@@ -1363,6 +1624,10 @@ class HelixControlPanel(QWidget):
             return
         self.timeScrubbed.emit(value / 1000.0)
 
+    def _on_rail_mode_changed(self, index: int) -> None:
+        mode = self.rail_mode_combo.itemData(index) or "flat"
+        self.railModeChanged.emit(str(mode))
+
     def _on_play_toggled(self, checked: bool) -> None:
         self.play_button.setText("Pause" if checked else "Play")
         self.playToggled.emit(checked)
@@ -1382,8 +1647,11 @@ class HelixModernWindow(QMainWindow):
         self.panel.playToggled.connect(self.viewer.set_playing)
         self.panel.templateToggled.connect(self.viewer.set_template_visible)
         self.panel.flapToggled.connect(self.viewer.set_flap_visible)
+        self.panel.animationToggled.connect(self.viewer.set_animate)
+        self.panel.railModeChanged.connect(self.viewer.set_rail_mode)
         self.viewer.timeUpdated.connect(self._on_time_update)
         self.viewer.phaseChanged.connect(self.panel.set_phase)
+        self.viewer.eventPicked.connect(self._on_event_picked)
 
         main = QWidget(self)
         layout = QHBoxLayout(main)
@@ -1407,6 +1675,16 @@ class HelixModernWindow(QMainWindow):
             return
         norm = time_value / self.viewer.engine.loop_duration
         self.panel.set_time_norm(norm)
+
+    def _on_event_picked(self, ev: EditEvent | None) -> None:
+        if ev is None:
+            self.setWindowTitle("Helix – ModernGL CRISPR Viz")
+            return
+        idx = getattr(ev, "index", getattr(ev, "start", None))
+        label = f"{ev.type.name}"
+        if idx is not None:
+            label += f" @ {idx}"
+        self.setWindowTitle(f"Helix – {label}")
 
 
 def run_modern_viz(spec_source: str | Path | Sequence[EditVisualizationSpec] | None = None) -> None:

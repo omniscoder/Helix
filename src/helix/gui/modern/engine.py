@@ -72,6 +72,9 @@ class HelixVizEngine:
         self.segments_per_base = max(1, segments_per_base)
         self.radius = radius
         self.pitch = pitch
+        # Loop duration controls how long ribbons and phase beats stay
+        # visible in realtime. Keep a reasonably long loop so edits
+        # linger, with a small tail after the last event.
         self.loop_duration = max(12.0, spec.duration + 2.0)
         self.state = AnimationState(time=0.0, phase=AnimationPhase.APPROACH, loop_duration=self.loop_duration)
         self._base_positions: Dict[int, np.ndarray] = {}

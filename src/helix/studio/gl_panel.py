@@ -5,7 +5,15 @@ from typing import Any, Optional
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QStackedLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QStackedLayout,
+    QVBoxLayout,
+    QWidget,
+)
 
 from helix.gui.modern.builders import (
     build_crispr_orbitals_3d_spec,
@@ -14,7 +22,7 @@ from helix.gui.modern.builders import (
     build_prime_scaffold_3d_spec,
     build_prime_viz_spec,
 )
-from helix.gui.modern.dag_adapters import crispr_dag_to_viz_spec
+from helix.gui.modern.dag_adapters import crispr_dag_to_viz_spec, crispr_dag_to_workflow
 from helix.gui.modern.qt import HelixModernWidget
 from helix.gui.railbands.widget import RailBandWidget
 from helix.gui.modern.spec import EditVisualizationSpec, load_viz_spec
@@ -52,6 +60,26 @@ class GLViewport(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+
+        # Local viewport controls (rail view + animation).
+        controls = QWidget(self)
+        controls_layout = QHBoxLayout(controls)
+        controls_layout.setContentsMargins(8, 4, 8, 4)
+        controls_layout.setSpacing(12)
+
+        self._animate_toggle = QCheckBox("Animate", controls)
+        self._animate_toggle.setChecked(True)
+        controls_layout.addWidget(self._animate_toggle)
+
+        controls_layout.addWidget(QLabel("Rail view", controls))
+        self._rail_mode_combo = QComboBox(controls)
+        self._rail_mode_combo.addItem("Flat rails", "flat")
+        self._rail_mode_combo.addItem("3D helix", "helix")
+        self._rail_mode_combo.setCurrentIndex(0)
+        controls_layout.addWidget(self._rail_mode_combo)
+
+        controls_layout.addStretch(1)
+
         self._stack_host = QWidget(self)
         self._stack = QStackedLayout(self._stack_host)
 
@@ -79,7 +107,12 @@ class GLViewport(QWidget):
         self._overlay.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._overlay.hide()
 
+        layout.addWidget(controls)
         layout.addWidget(self._stack_host)
+
+        # Wire controls once the GL widget exists.
+        self._animate_toggle.toggled.connect(self._on_animate_toggled)
+        self._rail_mode_combo.currentIndexChanged.connect(self._on_rail_mode_changed)
 
         self._session.stateChanged.connect(self._on_state_changed)
         self._on_state_changed(self._session.state)
@@ -96,6 +129,17 @@ class GLViewport(QWidget):
             viz_mode = str((settings.get("viz_mode") or "rail_3d")).lower()
             metadata = spec.metadata or {}
             workflow_meta = config.get("workflow_view") or metadata.get("workflow_view")
+
+            # If we have a CRISPR edit DAG but no workflow metadata yet,
+            # derive a 2.5D workflow view directly from the DAG.
+            if workflow_meta is None and isinstance(state.dag_from_runtime, Mapping):
+                try:
+                    wf = crispr_dag_to_workflow(state.dag_from_runtime)
+                except Exception:
+                    wf = None
+                if wf is not None:
+                    workflow_meta = wf
+                    config["workflow_view"] = wf
 
             if viz_mode == "rail_2d":
                 rail_meta = metadata.get("rail_bands")
@@ -221,6 +265,16 @@ class GLViewport(QWidget):
         self._overlay.adjustSize()
         self._overlay.move(12, 12)
         self._overlay.show()
+
+    def _on_animate_toggled(self, enabled: bool) -> None:
+        if self._gl is not None:
+            self._gl.set_animate(enabled)
+
+    def _on_rail_mode_changed(self, index: int) -> None:
+        if self._gl is None:
+            return
+        mode = self._rail_mode_combo.itemData(index) or "flat"
+        self._gl.set_rail_mode(str(mode))
 
 def build_overlay_lines(metrics: RunMetrics | None) -> list[str]:
     if metrics is None:
