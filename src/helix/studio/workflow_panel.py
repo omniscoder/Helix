@@ -32,7 +32,11 @@ class Workflow2p5DPanel(QWidget):
 
         app = QApplication.instance()
         platform = app.platformName().lower() if app else ""
-        is_wayland = "wayland" in platform or bool(os.environ.get("WAYLAND_DISPLAY"))
+        # Treat the reported Qt platform as the source of truth. In
+        # particular, if the user forces X11 via QT_QPA_PLATFORM=xcb,
+        # we should honor that even if WAYLAND_DISPLAY is set in the
+        # environment (common on WSLg).
+        is_wayland = "wayland" in platform
         self._embed_supported = bool(platform) and not is_wayland
 
         if self._embed_supported:
