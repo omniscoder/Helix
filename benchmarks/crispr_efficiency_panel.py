@@ -3,7 +3,8 @@
 This harness treats each panel entry as an endogenous-like target with a
 single guide and an observed edited fraction. It:
 
-  * Computes a physics-based on-target score using CRISPRPhysicsCPU.
+  * Computes an on-target score through the CRISPR simulator API
+    (which calls the underlying physics engine).
   * Compares predicted scores to observed edited fractions.
   * Reports basic correlation / error metrics in a JSON payload.
 
@@ -23,7 +24,10 @@ import yaml
 
 from helix import bioinformatics
 from helix.crispr.model import CasSystem, CasSystemType, GuideRNA
-from helix.crispr.physics import CRISPRPhysicsCPU
+from helix.crispr.simulator import (
+    EfficiencyTargetRequest as EngineEfficiencyTargetRequest,
+    predict_efficiency_for_targets,
+)
 
 PANEL_KIND = "helix.crispr.efficiency_panel.v1"
 
@@ -251,22 +255,6 @@ def _load_edited_fraction_from_file(path: Path, column: str) -> Optional[float]:
         return sum(values) / len(values)
 
 
-def _predict_efficiency_for_target(
-    cas: CasConfigSpec,
-    target: EfficiencyTargetSpec,
-) -> float:
-    genome = bioinformatics.normalize_sequence(target.reference_sequence)
-    if not genome:
-        return 0.0
-    cas_system = _make_cas_system(cas)
-    guide = GuideRNA(sequence=target.guide_sequence)
-    physics = CRISPRPhysicsCPU(cas_system, guide)
-    results = physics.score_sites({"target": genome}, max_sites=1)
-    if not results:
-        return 0.0
-    return float(results[0].score)
-
-
 def _pearson(x: Sequence[float], y: Sequence[float]) -> Optional[float]:
     if len(x) != len(y) or len(x) < 2:
         return None
@@ -290,9 +278,22 @@ def run_panel(panel: EfficiencyPanelSpec) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
     preds: List[float] = []
     obs: List[float] = []
+    cas_system = _make_cas_system(panel.cas)
+    efficiency_targets = [
+        EngineEfficiencyTargetRequest(
+            target_id=target.id,
+            reference_sequence=target.reference_sequence,
+            guide=GuideRNA(sequence=target.guide_sequence, name=target.guide_id),
+        )
+        for target in panel.targets
+    ]
+    prediction_lookup = {
+        prediction.target_id: prediction.predicted_score
+        for prediction in predict_efficiency_for_targets(cas_system, efficiency_targets)
+    }
 
     for target in panel.targets:
-        predicted = _predict_efficiency_for_target(panel.cas, target)
+        predicted = float(prediction_lookup.get(target.id, 0.0))
         meas = target.measurements
 
         if meas.edited_fraction_value is not None:
@@ -380,4 +381,3 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

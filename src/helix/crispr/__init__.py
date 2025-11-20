@@ -11,14 +11,17 @@ from .model import (
     PAMRule,
     TargetSite,
 )
-from .simulator import CutEvent, find_candidate_sites, rank_off_targets, simulate_cuts
-from .dag_api import build_crispr_edit_dag
-from .physics import (
-    CRISPRPhysicsBase,
-    CRISPRPhysicsCPU,
-    CRISPRPhysicsResult,
-    create_crispr_physics,
+from .simulator import (
+    CutEvent,
+    EfficiencyPrediction,
+    EfficiencyTargetRequest,
+    find_candidate_sites,
+    predict_efficiency_for_targets,
+    rank_off_targets,
+    simulate_cuts,
 )
+from .dag_api import build_crispr_edit_dag
+from .physics import create_crispr_physics
 from . import score, simulate
 
 __all__ = [
@@ -35,11 +38,11 @@ __all__ = [
     "TargetSite",
     "DigitalGenome",
     "CutEvent",
-    "CRISPRPhysicsBase",
-    "CRISPRPhysicsCPU",
-    "CRISPRPhysicsResult",
+    "EfficiencyTargetRequest",
+    "EfficiencyPrediction",
     "create_crispr_physics",
     "find_candidate_sites",
+    "predict_efficiency_for_targets",
     "simulate_cuts",
     "rank_off_targets",
     "build_crispr_edit_dag",

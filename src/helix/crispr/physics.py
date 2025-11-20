@@ -1,20 +1,35 @@
 """
-CRISPR physics interfaces and CPU reference implementation.
+CRISPR physics interfaces and backend implementations.
 
-These helpers remain purely computational: they operate on digital sequences,
-compute mismatch/PAM penalties, and feed candidate sites back to higher-level
-simulators. Swapping the backend (CPU vs. GPU) only requires changing the
-physics factory.
+Everything in this module is considered the "engine" side of the CRISPR stack:
+it consumes normalized sequences, scores candidate sites, and returns results
+to the higher-level simulator facade. Keep the public API limited to
+CRISPRPhysicsBase + create_crispr_physics so we can swap the underlying math
+for Numba/C++/Rust implementations without changing callers.
 """
 from __future__ import annotations
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Sequence
+import logging
+from typing import Dict, Iterable, List, Mapping, Sequence, Protocol, runtime_checkable
+
+import numpy as np
 
 from .. import bioinformatics
+from ..config import native_backend_available, resolve_crispr_backend
+from ..engine.encoding import ASCII_TO_BASE, encode_sequence_to_uint8
 from .kmm import k_mismatch_positions
 from .model import CasSystem, GuideRNA, TargetSite
+
+CRISPR_SCORING_VERSION = "1.0.0"
+
+LOGGER = logging.getLogger(__name__)
+
+_LAST_CRISPR_BACKEND: str | None = None
 
 _IUPAC: dict[str, str] = {
     "A": "A",
@@ -35,6 +50,127 @@ _IUPAC: dict[str, str] = {
     "N": "ACGT",
 }
 
+def _encode_sequence_to_uint8(seq: str) -> np.ndarray:
+    """Encode an uppercase DNA sequence into tiny uint8 codes (A/C/G/T/N)."""
+    return encode_sequence_to_uint8(seq)
+
+
+def _gc_penalty_encoded(encoded: np.ndarray, lo: float, hi: float) -> float:
+    if encoded.size == 0:
+        return 0.0
+    gc_count = np.count_nonzero((encoded == 1) | (encoded == 2))
+    gc_frac = float(gc_count) / float(encoded.size)
+    if lo <= gc_frac <= hi:
+        return 0.0
+    delta = min(abs(gc_frac - lo), abs(gc_frac - hi))
+    return delta * 2.0
+
+
+def _mismatch_cost_encoded(
+    guide_encoded: np.ndarray,
+    window_encoded: np.ndarray,
+    weights: np.ndarray,
+    bulge_penalty: float,
+) -> float:
+    overlap = min(len(window_encoded), len(guide_encoded))
+    cost = 0.0
+    if overlap:
+        mismatches = window_encoded[:overlap] != guide_encoded[:overlap]
+        if mismatches.any():
+            weight_slice = weights[:overlap]
+            cost += float(np.dot(mismatches.astype(np.float32), weight_slice))
+    if len(window_encoded) > len(guide_encoded):
+        extra = len(window_encoded) - len(guide_encoded)
+        cost += 2.0 * extra * bulge_penalty
+    elif len(guide_encoded) > len(window_encoded):
+        extra = len(guide_encoded) - len(window_encoded)
+        cost += extra * bulge_penalty
+    return cost
+
+
+def compute_on_target_score_encoded(
+    guide_encoded: np.ndarray,
+    window_encoded: np.ndarray,
+    weights: np.ndarray,
+    *,
+    bulge_penalty: float,
+    gc_range: tuple[float, float],
+    pam_penalty: float,
+    min_score: float,
+) -> float:
+    mismatch_cost = _mismatch_cost_encoded(guide_encoded, window_encoded, weights, bulge_penalty)
+    gc_penalty = _gc_penalty_encoded(window_encoded, *gc_range)
+    return _compute_score(mismatch_cost, gc_penalty, pam_penalty, len(guide_encoded), min_score)
+
+
+def score_pairs_encoded(
+    guides_encoded: np.ndarray,
+    windows_encoded: np.ndarray,
+    physics: CrisprPhysics,
+    *,
+    pam_penalties: np.ndarray | None = None,
+) -> np.ndarray:
+    """Score batches for a single backend (G guides vs N windows)."""
+
+    guides = np.ascontiguousarray(guides_encoded, dtype=np.uint8)
+    windows = np.ascontiguousarray(windows_encoded, dtype=np.uint8)
+    if guides.ndim != 2 or windows.ndim != 2:
+        raise ValueError("guides_encoded and windows_encoded must be 2D arrays.")
+    expected_len = getattr(physics, "_guide_len", None)
+    if expected_len is not None and guides.shape[1] != expected_len:
+        raise ValueError("Guide encoding length does not match physics instance.")
+    if expected_len is not None and windows.shape[1] != expected_len:
+        raise ValueError("Window encoding length does not match physics instance.")
+    if pam_penalties is not None:
+        pam_arr = np.asarray(pam_penalties, dtype=np.float32)
+        if pam_arr.shape != (guides.shape[0], windows.shape[0]):
+            raise ValueError("pam_penalties shape must match (guides, windows).")
+    else:
+        pam_arr = np.zeros((guides.shape[0], windows.shape[0]), dtype=np.float32)
+    batch_method = getattr(physics, "score_pairs_encoded_batch", None)
+    if batch_method is not None:
+        return batch_method(guides, windows, pam_arr)
+    results = np.zeros((guides.shape[0], windows.shape[0]), dtype=np.float32)
+    for row in range(guides.shape[0]):
+        for col in range(windows.shape[0]):
+            results[row, col] = physics.on_target_score_encoded(
+                windows[col],
+                pam_penalty=float(pam_arr[row, col]),
+            )
+    return results
+
+
+def score_pairs_encoded_multi(
+    physics_list: Sequence[CrisprPhysics],
+    guides_encoded: np.ndarray,
+    windows_encoded: np.ndarray,
+    *,
+    pam_penalties: np.ndarray | None = None,
+) -> np.ndarray:
+    """Helper that evaluates multiple guides/backends independently."""
+
+    if not physics_list:
+        raise ValueError("physics_list must be non-empty")
+    guides = np.ascontiguousarray(guides_encoded, dtype=np.uint8)
+    if guides.shape[0] != len(physics_list):
+        raise ValueError("guides rows must match physics_list length")
+    if pam_penalties is not None:
+        pam_arr = np.asarray(pam_penalties, dtype=np.float32)
+        if pam_arr.shape != (guides.shape[0], windows_encoded.shape[0]):
+            raise ValueError("pam_penalties shape must match (guides, windows)")
+    else:
+        pam_arr = np.zeros((guides.shape[0], windows_encoded.shape[0]), dtype=np.float32)
+    rows = []
+    for idx, physics in enumerate(physics_list):
+        row = score_pairs_encoded(
+            guides[idx : idx + 1],
+            windows_encoded,
+            physics,
+            pam_penalties=pam_arr[idx : idx + 1],
+        )
+        rows.append(row)
+    return np.concatenate(rows, axis=0)
+
 
 @dataclass
 class CRISPRPhysicsResult:
@@ -44,7 +180,50 @@ class CRISPRPhysicsResult:
     score: float
 
 
-class CRISPRPhysicsBase(ABC):
+@runtime_checkable
+class CrisprPhysics(Protocol):
+    def score_sites(
+        self,
+        genome_sequences: Mapping[str, str],
+        *,
+        max_sites: int | None = None,
+    ) -> List[CRISPRPhysicsResult]:
+        ...
+
+    def on_target_score_encoded(
+        self,
+        window_encoded: np.ndarray,
+        *,
+        pam_penalty: float = 0.0,
+    ) -> float:
+        ...
+
+
+def _canonical_backend_name(name: str) -> str:
+    lowered = name.lower()
+    if lowered in {"cpu", "cpu-reference"}:
+        return "cpu-reference"
+    if lowered in {"gpu", "gpu-cuda"}:
+        return "gpu"
+    if lowered == "native-cpu":
+        return "native-cpu"
+    return lowered
+
+
+def _record_backend(backend_name: str, physics: CrisprPhysics) -> CrisprPhysics:
+    global _LAST_CRISPR_BACKEND
+    _LAST_CRISPR_BACKEND = backend_name
+    setattr(physics, "backend_name", backend_name)
+    return physics
+
+
+def get_last_crispr_backend() -> str | None:
+    """Return the backend used by the most recent create_crispr_physics call."""
+
+    return _LAST_CRISPR_BACKEND
+
+
+class CRISPRPhysicsBase(CrisprPhysics, ABC):
     """
     Base class for CRISPR physics implementations.
     """
@@ -59,6 +238,7 @@ class CRISPRPhysicsBase(ABC):
         )
         if not self.guide.sequence:
             raise ValueError("Guide sequence must be non-empty.")
+        self.backend_name = "unknown"
 
     @abstractmethod
     def score_sites(
@@ -70,6 +250,17 @@ class CRISPRPhysicsBase(ABC):
         """
         Return candidate sites ranked by physics score.
         """
+
+    def on_target_score_encoded(
+        self,
+        window_encoded: np.ndarray,
+        *,
+        pam_penalty: float = 0.0,
+    ) -> float:
+        """
+        Score a single target window that already satisfies PAM constraints.
+        """
+        raise NotImplementedError
 
 
 def _seed_weight_vector(length: int, seed_length: int) -> Sequence[float]:
@@ -164,13 +355,31 @@ class CRISPRPhysicsCPU(CRISPRPhysicsBase):
         pam_pattern = guide.pam or (cas.pam_rules[0].pattern if cas.pam_rules else "")
         self.pam_pattern = pam_pattern.upper()
         seed_len = min(len(self.guide.sequence), 12)
-        self._weights = tuple(_seed_weight_vector(len(self.guide.sequence), seed_len))
+        weights = tuple(_seed_weight_vector(len(self.guide.sequence), seed_len))
+        self._weights = weights
+        self._weight_array = np.asarray(weights, dtype=np.float32)
+        self._guide_encoded = _encode_sequence_to_uint8(self.guide.sequence)
+        self._guide_len = len(self._guide_encoded)
+        self._window_cache: OrderedDict[str, np.ndarray] = OrderedDict()
+        self._window_cache_limit = 64
         self.seed_length = seed_len
         self.bulge_penalty = max(0.5, cas.weight_mismatch_penalty * 2.0)
         self.pam_weak_penalty = max(0.5, cas.weight_pam_penalty or 1.0)
         self.pam_fail_penalty = max(self.pam_weak_penalty * 2.0, 2.0)
         self.gc_opt_range = (0.4, 0.8)
         self.min_score = 1e-6
+
+    def _encode_window_cached(self, seq: str) -> np.ndarray:
+        cached = self._window_cache.get(seq)
+        if cached is not None:
+            self._window_cache.move_to_end(seq)
+            return cached
+        encoded = _encode_sequence_to_uint8(seq)
+        self._window_cache[seq] = encoded
+        self._window_cache.move_to_end(seq)
+        if len(self._window_cache) > self._window_cache_limit:
+            self._window_cache.popitem(last=False)
+        return encoded
 
     def score_sites(
         self,
@@ -187,6 +396,22 @@ class CRISPRPhysicsCPU(CRISPRPhysicsBase):
         if max_sites is not None:
             results = results[:max_sites]
         return results
+
+    def on_target_score_encoded(
+        self,
+        window_encoded: np.ndarray,
+        *,
+        pam_penalty: float = 0.0,
+    ) -> float:
+        return compute_on_target_score_encoded(
+            self._guide_encoded,
+            window_encoded,
+            self._weight_array,
+            bulge_penalty=self.bulge_penalty,
+            gc_range=self.gc_opt_range,
+            pam_penalty=pam_penalty,
+            min_score=self.min_score,
+        )
 
     def _score_strand(self, chrom: str, seq: str, strand: int) -> List[CRISPRPhysicsResult]:
         guide_len = len(self.guide.sequence)
@@ -208,14 +433,10 @@ class CRISPRPhysicsCPU(CRISPRPhysicsBase):
             if not pam_ok:
                 continue
             target_seq = seq_to_scan[start : start + guide_len]
-            mismatch_cost = self._mismatch_cost(target_seq)
-            gc_penalty = _gc_penalty(target_seq, *self.gc_opt_range)
-            score = _compute_score(
-                mismatch_cost,
-                gc_penalty,
-                pam_penalty_raw * self.pam_weak_penalty,
-                guide_len,
-                self.min_score,
+            target_encoded = self._encode_window_cached(target_seq)
+            score = self.on_target_score_encoded(
+                target_encoded,
+                pam_penalty=pam_penalty_raw * self.pam_weak_penalty,
             )
             if score <= 0:
                 continue
@@ -238,26 +459,110 @@ class CRISPRPhysicsCPU(CRISPRPhysicsBase):
             results.append(
                 CRISPRPhysicsResult(
                     site=site,
-                    mismatch_cost=mismatch_cost,
+                    mismatch_cost=_mismatch_cost_encoded(
+                        self._guide_encoded,
+                        target_encoded,
+                        self._weight_array,
+                        self.bulge_penalty,
+                    ),
                     pam_ok=True,
                     score=score,
                 )
             )
         return results
 
-    def _mismatch_cost(self, target_seq: str) -> float:
-        cost = 0.0
-        for idx, base in enumerate(target_seq):
-            if idx >= len(self.guide.sequence):
-                cost += self.bulge_penalty
-                continue
-            if base != self.guide.sequence[idx]:
-                weight = self._weights[idx] if idx < len(self._weights) else 1.0
-                cost += weight
-        extra = abs(len(target_seq) - len(self.guide.sequence))
-        if extra:
-            cost += extra * self.bulge_penalty
-        return cost
+
+class NativeCrisprPhysics(CRISPRPhysicsCPU):
+    """Bridge to the pybind11-backed native scoring engine."""
+
+    def __init__(self, cas: CasSystem, guide: GuideRNA):
+        from helix_engine import native as native_engine
+
+        if not native_engine.is_available():
+            raise RuntimeError(
+                "helix_engine._native is unavailable. Build the native Helix engine "
+                "to use backend='native-cpu'."
+            )
+        self._native_engine = native_engine
+        super().__init__(cas, guide)
+
+    def on_target_score_encoded(
+        self,
+        window_encoded: np.ndarray,
+        *,
+        pam_penalty: float = 0.0,
+    ) -> float:
+        window_arr = np.ascontiguousarray(window_encoded, dtype=np.uint8)
+        return self._native_engine.compute_on_target_score_encoded(
+            self._guide_encoded,
+            window_arr,
+            self._weight_array,
+            bulge_penalty=self.bulge_penalty,
+            gc_low=self.gc_opt_range[0],
+            gc_high=self.gc_opt_range[1],
+            pam_penalty=pam_penalty,
+            min_score=self.min_score,
+        )
+
+    def score_pairs_encoded_batch(
+        self,
+        guides_encoded: np.ndarray,
+        windows_encoded: np.ndarray,
+        pam_penalties: np.ndarray,
+    ) -> np.ndarray:
+        guides_arr = np.ascontiguousarray(guides_encoded, dtype=np.uint8)
+        windows_arr = np.ascontiguousarray(windows_encoded, dtype=np.uint8)
+        pam_arr = np.ascontiguousarray(pam_penalties, dtype=np.float32)
+        if guides_arr.shape[1] != self._guide_len:
+            raise ValueError("Guide encoding length does not match native physics guide length.")
+        if windows_arr.shape[1] != self._guide_len:
+            raise ValueError("Window encoding length does not match native physics guide length.")
+        return self._native_engine.score_pairs_encoded(
+            guides_arr,
+            windows_arr,
+            self._weight_array,
+            bulge_penalty=self.bulge_penalty,
+            gc_low=self.gc_opt_range[0],
+            gc_high=self.gc_opt_range[1],
+            pam_penalties=pam_arr,
+            min_score=self.min_score,
+        )
+
+
+class CudaCrisprPhysics(CRISPRPhysicsCPU):
+    """GPU-backed CRISPR physics using the native CUDA kernels."""
+
+    def __init__(self, cas: CasSystem, guide: GuideRNA):
+        from helix_engine import native as native_engine
+
+        if not getattr(native_engine, "cuda_available", lambda: False)():
+            raise RuntimeError("Helix CUDA backend is unavailable.")
+        self._native_engine = native_engine
+        super().__init__(cas, guide)
+
+    def score_pairs_encoded_batch(
+        self,
+        guides_encoded: np.ndarray,
+        windows_encoded: np.ndarray,
+        pam_penalties: np.ndarray,
+    ) -> np.ndarray:
+        guides_arr = np.ascontiguousarray(guides_encoded, dtype=np.uint8)
+        windows_arr = np.ascontiguousarray(windows_encoded, dtype=np.uint8)
+        pam_arr = np.ascontiguousarray(pam_penalties, dtype=np.float32)
+        if guides_arr.shape[1] != self._guide_len:
+            raise ValueError("Guide encoding length does not match CUDA physics guide length.")
+        if windows_arr.shape[1] != self._guide_len:
+            raise ValueError("Window encoding length does not match CUDA physics guide length.")
+        return self._native_engine.score_pairs_encoded_cuda(
+            guides_arr,
+            windows_arr,
+            self._weight_array,
+            bulge_penalty=self.bulge_penalty,
+            gc_low=self.gc_opt_range[0],
+            gc_high=self.gc_opt_range[1],
+            pam_penalties=pam_arr,
+            min_score=self.min_score,
+        )
 
 
 def create_crispr_physics(
@@ -265,11 +570,40 @@ def create_crispr_physics(
     guide: GuideRNA,
     *,
     use_gpu: bool = False,
-) -> CRISPRPhysicsBase:
-    if use_gpu:
-        try:
-            from .physics_gpu import CRISPRPhysicsGPU  # pragma: no cover - optional
-        except Exception as exc:  # pragma: no cover - GPU optional
-            raise RuntimeError("GPU backend requested, but CUDA/Numba is unavailable.") from exc
-        return CRISPRPhysicsGPU(cas, guide)
-    return CRISPRPhysicsCPU(cas, guide)
+    backend: str | None = None,
+) -> CrisprPhysics:
+    backend, allow_fallback = resolve_crispr_backend(backend, use_gpu)
+    requested_backend = _canonical_backend_name(backend)
+    choice = backend
+    while True:
+        if choice in {"gpu", "gpu-cuda"}:
+            try:
+                physics = CudaCrisprPhysics(cas, guide)
+            except RuntimeError as exc:
+                if not allow_fallback:
+                    raise
+                LOGGER.warning(
+                    "Falling back from backend='%s' to cpu-reference: %s",
+                    requested_backend,
+                    exc,
+                )
+                choice = "cpu-reference"
+                continue
+            return _record_backend("gpu", physics)
+        if choice == "native-cpu":
+            if not native_backend_available():
+                if allow_fallback:
+                    LOGGER.warning(
+                        "Falling back from backend='%s' to cpu-reference: native engine unavailable.",
+                        requested_backend,
+                    )
+                    choice = "cpu-reference"
+                    continue
+                raise RuntimeError(
+                    "Native CRISPR engine is unavailable. Build helix_engine._native or choose "
+                    "backend='cpu-reference'."
+                )
+            return _record_backend("native-cpu", NativeCrisprPhysics(cas, guide))
+        if choice in {"cpu-reference", "cpu"}:
+            return _record_backend("cpu-reference", CRISPRPhysicsCPU(cas, guide))
+        raise ValueError(f"Unknown CRISPR physics backend: {choice}")

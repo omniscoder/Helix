@@ -111,6 +111,13 @@ def test_cli_viz_schema_command():
     assert "properties" in result.stdout
 
 
+def test_cli_engine_info_outputs_json():
+    result = run_cli("engine", "info")
+    payload = json.loads(result.stdout)
+    assert "selected_backend" in payload
+    assert "native_available" in payload
+
+
 def test_cli_workflows_runner(tmp_path: Path):
     pytest.importorskip("yaml")
     config = tmp_path / "workflow.yaml"

@@ -7,6 +7,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import random
 import re
 import sys
@@ -57,7 +58,18 @@ from .motif import discover_motifs
 from .prime.model import PegRNA, PrimeEditOutcome, PrimeEditor
 from .prime.simulator import locate_prime_target_site, simulate_prime_edit
 from .prime.priors import resolve_prime_priors
+from .prime.physics import PRIME_SCORING_VERSION
 from .crispr.pam import build_prime_pam_mask
+from .crispr.physics import CRISPR_SCORING_VERSION, get_last_crispr_backend
+from .config import (
+    _BACKEND_ENV as ENGINE_BACKEND_ENV,
+    _ALLOW_FALLBACK_ENV as ENGINE_FALLBACK_ENV,
+    _PRIME_BACKEND_ENV,
+    _PRIME_ALLOW_FALLBACK_ENV,
+    native_backend_available,
+    resolve_crispr_backend,
+    resolve_prime_backend,
+)
 from .genome.digital import DigitalGenome as CoreDigitalGenome
 from .crispr.dag_api import build_crispr_edit_dag
 from .prime.dag_api import build_prime_edit_dag
@@ -1865,7 +1877,9 @@ def command_crispr_simulate(args: argparse.Namespace) -> None:
         seed=args.seed,
         emit_sequence=args.emit_sequences,
     )
-    result.setdefault("meta", {})["helix_version"] = HELIX_VERSION
+    meta = result.setdefault("meta", {})
+    meta["helix_version"] = HELIX_VERSION
+    _attach_crispr_engine_meta(meta)
     validated = validate_viz_payload("crispr.sim", result)
     text = json.dumps(validated, indent=2)
     if args.json:
@@ -1917,6 +1931,7 @@ def command_crispr_genome_sim(args: argparse.Namespace) -> None:
     }
     if params:
         payload["params"] = params
+    _attach_crispr_engine_meta(payload.setdefault("meta", {}))
     validated = validate_viz_payload("crispr.cut_events", payload)
     _write_json_output(validated, args.json)
     if not events:
@@ -2012,6 +2027,7 @@ def command_crispr_dag(args: argparse.Namespace) -> None:
         if args.guides_file:
             metadata["guides_file"] = str(args.guides_file)
         metadata["physics_backend"] = "gpu" if getattr(args, "use_gpu", False) else "cpu"
+        _attach_crispr_engine_meta(metadata, use_gpu=bool(getattr(args, "use_gpu", False)))
 
         payload = _edit_dag_to_payload(
             dag,
@@ -2062,13 +2078,15 @@ def command_prime_simulate(args: argparse.Namespace) -> None:
         emit_sequence=True,
         pam_mask=pam_mask,
     )
-    payload.setdefault("meta", {}).update(
+    meta = payload.setdefault("meta", {})
+    meta.update(
         {
             "helix_version": HELIX_VERSION,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "command": current_command_str(),
         }
     )
+    _attach_prime_engine_meta(meta)
     payload["params"] = {
         "draws": args.draws,
         "seed": args.seed,
@@ -2135,6 +2153,13 @@ def command_prime_dag(args: argparse.Namespace) -> None:
                 handle.write(json.dumps(payload) + "\n")
                 handle.flush()
 
+        metadata: Dict[str, Any] = {
+            "helix_version": HELIX_VERSION,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "genome_source": str(args.genome),
+            "peg_name": peg.name or f"peg_{idx}",
+        }
+        _attach_prime_engine_meta(metadata)
         dag = build_prime_edit_dag(
             genome,
             editor,
@@ -2155,12 +2180,6 @@ def command_prime_dag(args: argparse.Namespace) -> None:
                         "coding_source": str(args.coding_json),
                     }
                 )
-        metadata: Dict[str, Any] = {
-            "helix_version": HELIX_VERSION,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "genome_source": str(args.genome),
-            "peg_name": peg.name or f"peg_{idx}",
-        }
         if region:
             metadata["region"] = region
         if args.pegs_file:
@@ -4117,6 +4136,22 @@ def build_parser() -> argparse.ArgumentParser:
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument(
+        "--engine-backend",
+        choices=["cpu-reference", "native-cpu", "gpu"],
+        help=(
+            "Override the CRISPR physics backend (defaults to native-cpu when available)."
+            f" Can also be set via {ENGINE_BACKEND_ENV}."
+        ),
+    )
+    parser.add_argument(
+        "--engine-allow-fallback",
+        action="store_true",
+        help=(
+            "Permit automatic fallback to cpu-reference if the requested backend is unavailable. "
+            f"Equivalent to setting {ENGINE_FALLBACK_ENV}=1."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     dna = subparsers.add_parser("dna", help="Summarize GC, windows, and k-mer hotspots.")
@@ -4300,6 +4335,16 @@ def build_parser() -> argparse.ArgumentParser:
     live_dev.add_argument("--sync-dt", type=float, default=0.25, help="Synchronization Δt (default: 0.25).")
     live_dev.add_argument("--default-dt", type=float, default=0.1, help="Default island Δt (default: 0.1).")
     live_dev.set_defaults(func=command_live_dev)
+
+    engine = subparsers.add_parser("engine", help="Engine diagnostics and helpers.")
+    engine_sub = engine.add_subparsers(dest="engine_command", required=True)
+    engine_info = engine_sub.add_parser("info", help="Show resolved CRISPR engine backend.")
+    engine_info.add_argument(
+        "--use-gpu",
+        action="store_true",
+        help="Resolve backend as if GPU workloads are requested.",
+    )
+    engine_info.set_defaults(func=command_engine_info)
 
     crispr = subparsers.add_parser("crispr", help="CRISPR design helpers.")
     crispr_sub = crispr.add_subparsers(dest="crispr_command", required=True)
@@ -5132,10 +5177,46 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_engine_backend_overrides(args: argparse.Namespace) -> None:
+    backend = getattr(args, "engine_backend", None)
+    if backend:
+        os.environ[ENGINE_BACKEND_ENV] = backend
+    if getattr(args, "engine_allow_fallback", False):
+        os.environ[ENGINE_FALLBACK_ENV] = "1"
+
+
+def _attach_crispr_engine_meta(meta: Dict[str, Any], *, use_gpu: bool = False) -> None:
+    backend = get_last_crispr_backend()
+    if backend is None:
+        backend, _ = resolve_crispr_backend(None, use_gpu=use_gpu)
+    meta["crispr_engine_backend"] = backend
+    meta["crispr_scoring_version"] = CRISPR_SCORING_VERSION
+
+
+def _attach_prime_engine_meta(meta: Dict[str, Any], *, use_gpu: bool = False) -> None:
+    backend, _ = resolve_prime_backend(None, use_gpu=use_gpu)
+    meta["prime_engine_backend"] = backend
+    meta["prime_scoring_version"] = PRIME_SCORING_VERSION
+
+
+def command_engine_info(args: argparse.Namespace) -> None:
+    backend, allow = resolve_crispr_backend(None, use_gpu=args.use_gpu)
+    native_ok = native_backend_available()
+    payload = {
+        "selected_backend": backend,
+        "allow_fallback": allow,
+        "native_available": native_ok,
+        "env_backend": os.getenv(ENGINE_BACKEND_ENV),
+        "env_allow_fallback": os.getenv(ENGINE_FALLBACK_ENV),
+    }
+    print(json.dumps(payload, indent=2))
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
+        _apply_engine_backend_overrides(args)
         args.func(args)
     except ValueError as exc:
         parser.error(str(exc))

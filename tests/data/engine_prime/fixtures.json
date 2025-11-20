@@ -1,0 +1,44 @@
+{
+  "targets": [
+    {
+      "id": "prime_fixture_1",
+      "genome": {
+        "chr": "ACCCAGGAAACCCGGGTTTTAAACCCGG"
+      },
+      "peg": {
+        "spacer": "ACCCAGGAAACCCGG",
+        "pbs": "GAAAC",
+        "rtt": "TTTTAA"
+      },
+      "editor": {
+        "name": "pe-demo",
+        "nick_to_edit_offset": 1,
+        "efficiency_scale": 0.8,
+        "indel_bias": 0.15,
+        "mismatch_tolerance": 3,
+        "flap_balance": 0.5,
+        "reanneal_bias": 0.1
+      }
+    },
+    {
+      "id": "prime_fixture_2",
+      "genome": {
+        "chr": "TTTACGTACGTACGTACGTACGTACGT"
+      },
+      "peg": {
+        "spacer": "ACGTACGTACGTACG",
+        "pbs": "ACGTA",
+        "rtt": "TACGTA"
+      },
+      "editor": {
+        "name": "pe-demo",
+        "nick_to_edit_offset": 2,
+        "efficiency_scale": 0.7,
+        "indel_bias": 0.12,
+        "mismatch_tolerance": 2,
+        "flap_balance": 0.4,
+        "reanneal_bias": 0.2
+      }
+    }
+  ]
+}

@@ -31,10 +31,9 @@ python -m benchmarks.crispr_efficiency_panel \
 The harness:
 
 - Builds a `CasSystem` + `GuideRNA` from the panel's `cas` and per-target `guide`.
-- Uses `helix.crispr.physics.CRISPRPhysicsCPU.score_sites` to obtain a physics-based on-target score for the best matching site in each reference window.
+- Uses `helix.crispr.simulator.predict_efficiency_for_targets` (the public CRISPR engine batch API) to obtain physics-based on-target scores for each reference window.
 - Compares predicted scores to observed edited fractions and reports:
   - Per-target status and absolute error.
   - Panel-level mean absolute error (MAE) and Pearson correlation (when at least two observations are available).
 
 The JSON output (`crispr_efficiency_panel` schema) is suitable for CI drift tracking or methods-text calibration summaries.
-

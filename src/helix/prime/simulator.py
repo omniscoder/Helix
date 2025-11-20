@@ -14,16 +14,34 @@ import random
 import uuid
 from bisect import bisect_left
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from helix import bioinformatics
 from helix.crispr.model import DigitalGenome, TargetSite
 
-from .model import PegRNA
+from .model import PegRNA, PrimeEditor
+from .physics import PrimePhysics
 from .priors import resolve_prime_priors
 
 LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PrimeTargetRequest:
+    target_id: str
+    genome: DigitalGenome
+    peg: PegRNA
+    editor: PrimeEditor
+    search_window: int = 200
+
+
+@dataclass(frozen=True)
+class PrimePrediction:
+    target_id: str
+    site: TargetSite | None
+    predicted_efficiency: float
 
 
 def _normalize_sequence(value: str, *, allow_ambiguous: bool = True) -> str:
@@ -379,3 +397,21 @@ def simulate_prime_edit(
         run_id,
     )
     return json.loads(json.dumps(payload))
+def predict_prime_outcomes_for_targets(requests: Sequence[PrimeTargetRequest]) -> List[PrimePrediction]:
+    predictions: List[PrimePrediction] = []
+    for request in requests:
+        site = locate_prime_target_site(request.genome, request.peg, search_window=request.search_window)
+        physics = PrimePhysics(editor=request.editor, peg=request.peg)
+        if site is not None:
+            mismatches = physics.mismatch_count(site.sequence)
+        else:
+            mismatches = physics.mismatch_count(request.peg.spacer)
+        efficiency = physics.binding_efficiency(mismatches)
+        predictions.append(
+            PrimePrediction(
+                target_id=request.target_id,
+                site=site,
+                predicted_efficiency=efficiency,
+            )
+        )
+    return predictions

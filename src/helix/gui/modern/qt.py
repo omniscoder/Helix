@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..theme import apply_helix_theme
+from ...config import native_backend_available, resolve_crispr_backend
 from .engine import AnimationPhase, HelixVizEngine
 from .spec import EditVisualizationSpec, load_viz_spec, load_viz_specs
 
@@ -965,6 +966,9 @@ class HelixControlPanel(QWidget):
         self.flap_toggle.toggled.connect(self.flapToggled.emit)
         layout.addWidget(self.flap_toggle)
 
+        self.backend_label = QLabel("CRISPR engine: --", self)
+        layout.addWidget(self.backend_label)
+
         layout.addStretch(1)
 
     def set_specs(self, labels: Sequence[str]) -> None:
@@ -981,6 +985,9 @@ class HelixControlPanel(QWidget):
 
     def set_phase(self, phase: str) -> None:
         self.phase_label.setText(f"Phase: {phase}")
+
+    def set_backend_status(self, text: str) -> None:
+        self.backend_label.setText(text)
 
     def _on_slider(self, value: int) -> None:
         if self._block_slider:
@@ -1019,6 +1026,12 @@ class HelixModernWindow(QMainWindow):
         self.specs = list(specs)
         labels = [spec.metadata.get("label") or spec.metadata.get("name") or spec.edit_type for spec in self.specs]
         self.panel.set_specs(labels)
+        backend, allow = resolve_crispr_backend(None, use_gpu=False)
+        native_ok = native_backend_available()
+        status_parts = [f"CRISPR engine: {backend}"]
+        status_parts.append(f"native {'available' if native_ok else 'missing'}")
+        status_parts.append(f"fallback {'on' if allow else 'off'}")
+        self.panel.set_backend_status(" | ".join(status_parts))
         if self.specs:
             self.viewer.set_spec(self.specs[0])
 

@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 
+import numpy as np
+import pytest
+
 from helix import bioinformatics
 from helix.crispr.model import (
     CasSystem,
@@ -9,10 +12,22 @@ from helix.crispr.model import (
     GuideRNA,
     PAMRule,
 )
-from helix.crispr.simulator import find_candidate_sites, rank_off_targets, simulate_cuts
+from helix.crispr.simulator import (
+    EfficiencyTargetRequest,
+    find_candidate_sites,
+    predict_efficiency_for_targets,
+    rank_off_targets,
+    simulate_cuts,
+)
 from helix.prime.model import PegRNA, PrimeEditor
 from helix.prime.simulator import locate_prime_target_site, simulate_prime_edit
 from helix.crispr.pam import build_prime_pam_mask
+from helix.crispr.physics import (
+    _encode_sequence_to_uint8,
+    create_crispr_physics,
+    score_pairs_encoded,
+    score_pairs_encoded_multi,
+)
 from helix.crispr.dag_api import build_crispr_edit_dag
 from helix.prime.dag_api import build_prime_edit_dag
 
@@ -119,6 +134,106 @@ def test_seed_weight_penalizes_pam_proximal_mismatch():
     assert scores["far_chr"] > scores["near_chr"]
 
 
+def test_predict_efficiency_batch_matches_single():
+    genome, guide_seq = _demo_genome()
+    cas = _demo_cas()
+    requests = [
+        EfficiencyTargetRequest(
+            target_id=chrom,
+            reference_sequence=sequence,
+            guide=GuideRNA(sequence=guide_seq, name=f"{chrom}_guide"),
+        )
+        for chrom, sequence in genome.sequences.items()
+    ]
+    predictions = predict_efficiency_for_targets(cas, requests)
+    lookup = {pred.target_id: pred.predicted_score for pred in predictions}
+    for chrom, sequence in genome.sequences.items():
+        manual_genome = DigitalGenome({"target": sequence})
+        manual_sites = find_candidate_sites(manual_genome, cas, GuideRNA(sequence=guide_seq), max_sites=1)
+        expected = float(manual_sites[0].on_target_score or 0.0) if manual_sites else 0.0
+        assert chrom in lookup
+        assert lookup[chrom] == expected
+
+
+def test_crispr_physics_encoded_scoring_matches_sites():
+    genome, guide_seq = _demo_genome()
+    cas = _demo_cas()
+    guide = GuideRNA(sequence=guide_seq)
+    physics = create_crispr_physics(cas, guide)
+    sites = find_candidate_sites(genome, cas, guide, max_sites=1)
+    assert sites
+    encoded = _encode_sequence_to_uint8(sites[0].sequence)
+    direct = physics.on_target_score_encoded(encoded)
+    assert direct == sites[0].on_target_score
+
+
+def test_crispr_physics_instances_isolated_caches():
+    genome, guide_seq = _demo_genome()
+    cas = _demo_cas()
+    guide = GuideRNA(sequence=guide_seq)
+    sites = find_candidate_sites(genome, cas, guide, max_sites=1)
+    assert sites
+    encoded = _encode_sequence_to_uint8(sites[0].sequence)
+    physics_a = create_crispr_physics(cas, guide)
+    physics_b = create_crispr_physics(cas, guide)
+    score_a1 = physics_a.on_target_score_encoded(encoded)
+    score_a2 = physics_a.on_target_score_encoded(encoded)
+    score_b = physics_b.on_target_score_encoded(encoded)
+    assert score_a1 == score_a2 == score_b
+
+
+def test_score_pairs_encoded_matches_single_site():
+    genome, guide_seq = _demo_genome()
+    cas = _demo_cas()
+    guide = GuideRNA(sequence=guide_seq)
+    physics = create_crispr_physics(cas, guide)
+    sites = find_candidate_sites(genome, cas, guide, max_sites=3)
+    assert sites
+    windows = np.stack([_encode_sequence_to_uint8(site.sequence) for site in sites])
+    guides = np.expand_dims(_encode_sequence_to_uint8(guide_seq), axis=0)
+    matrix = score_pairs_encoded(guides, windows, physics)
+    assert matrix.shape == (1, len(windows))
+    for idx, window in enumerate(windows):
+        expected = physics.on_target_score_encoded(window)
+        assert matrix[0, idx] == pytest.approx(expected, rel=0, abs=1e-9)
+
+
+def test_score_pairs_encoded_multiple_guides():
+    guides = ["ACCCAGGAAACCCGGGTTTT", "TGGGGAAACCCGGGTTTACC"]
+    windows = ["ACCCAGGAAACCCGGGTTTT", "ACCCAGGAAACCCGGGTTTA", "TGGGGAAACCCGGGTTTACC"]
+    cas = _demo_cas()
+    physics_list = [create_crispr_physics(cas, GuideRNA(sequence=seq)) for seq in guides]
+    guides_enc = np.stack([_encode_sequence_to_uint8(seq) for seq in guides])
+    windows_enc = np.stack([_encode_sequence_to_uint8(seq) for seq in windows])
+    pam = np.zeros((len(guides), len(windows)))
+    matrix = score_pairs_encoded_multi(physics_list, guides_enc, windows_enc, pam_penalties=pam)
+    assert matrix.shape == (len(guides), len(windows))
+    for idx, phys in enumerate(physics_list):
+        solo = score_pairs_encoded(
+            guides_enc[idx : idx + 1],
+            windows_enc,
+            phys,
+            pam_penalties=pam[idx : idx + 1],
+        )
+        assert np.allclose(matrix[idx : idx + 1], solo)
+
+
+def test_native_backend_requires_extension():
+    genome, guide_seq = _demo_genome()
+    cas = _demo_cas()
+    guide = GuideRNA(sequence=guide_seq)
+    try:
+        from helix_engine import native as native_engine
+    except Exception:
+        native_engine = None
+    if native_engine and native_engine.is_available():
+        physics = create_crispr_physics(cas, guide, backend="native-cpu")
+        assert physics.on_target_score_encoded(_encode_sequence_to_uint8(guide_seq)) >= 0.0
+    else:
+        with pytest.raises(RuntimeError):
+            create_crispr_physics(cas, guide, backend="native-cpu")
+
+
 def test_prime_locate_and_simulate_outcomes():
     genome, guide_seq = _demo_genome()
     peg = PegRNA(spacer=guide_seq[:15], pbs="GAAAC", rtt="TTTTAA")
@@ -150,6 +265,8 @@ def test_cli_crispr_genome_sim(tmp_path: Path):
     payload = json.loads(out_path.read_text())
     assert payload["schema"]["kind"] == "crispr.cut_events"
     assert payload["events"]
+    assert payload["meta"]["crispr_scoring_version"]
+    assert payload["meta"]["crispr_engine_backend"]
 
 
 def test_cli_prime_simulate(tmp_path: Path):
@@ -214,6 +331,8 @@ def test_cli_prime_simulate(tmp_path: Path):
     assert payload["draws"] == 200
     spec_payload = json.loads(viz_spec.read_text())
     assert spec_payload["edit_events"]
+    assert payload["meta"]["prime_scoring_version"]
+    assert payload["meta"]["prime_engine_backend"]
 
 
 def test_cli_crispr_dag(tmp_path: Path):

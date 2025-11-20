@@ -20,6 +20,7 @@ from .physics import (
     _gc_penalty,
     _pam_filter_positions,
     _pam_ok,
+    compute_on_target_score_encoded,
 )
 from .model import CasSystem, GuideRNA, TargetSite
 
@@ -75,6 +76,8 @@ class CRISPRPhysicsGPU(CRISPRPhysicsBase):
             [1.5 if idx >= len(self.guide.sequence) - seed_len else 1.0 for idx in range(len(self.guide.sequence))],
             dtype=np.float32,
         )
+        self.bulge_penalty = max(0.5, cas.weight_mismatch_penalty * 2.0)
+        self.pam_weak_penalty = max(0.5, cas.weight_pam_penalty or 1.0)
         self.gc_opt_range = (0.4, 0.8)
         self.min_score = 1e-6
         self._guide_int = _encode_sequence(self.guide.sequence)
@@ -123,7 +126,7 @@ class CRISPRPhysicsGPU(CRISPRPhysicsBase):
             score = _compute_score(
                 mismatch_cost,
                 gc_penalty,
-                pam_penalty_raw,
+                pam_penalty_raw * self.pam_weak_penalty,
                 guide_len,
                 self.min_score,
             )
@@ -154,6 +157,22 @@ class CRISPRPhysicsGPU(CRISPRPhysicsBase):
                 )
             )
         return results
+
+    def on_target_score_encoded(
+        self,
+        window_encoded: np.ndarray,
+        *,
+        pam_penalty: float = 0.0,
+    ) -> float:
+        return compute_on_target_score_encoded(
+            self._guide_int,
+            window_encoded,
+            self._weights,
+            bulge_penalty=self.bulge_penalty,
+            gc_range=self.gc_opt_range,
+            pam_penalty=pam_penalty,
+            min_score=self.min_score,
+        )
 
     def _gpu_scores(self, sequence: str, positions: List[int]) -> np.ndarray:
         seq_int = _encode_sequence(sequence)

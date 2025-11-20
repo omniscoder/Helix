@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Sequence, Tuple
 
-from helix.crispr.model import CasSystem, CasSystemType, GuideRNA, PAMRule
-from helix.crispr.physics import CRISPRPhysicsCPU
+from helix.crispr.model import CasSystem, CasSystemType, DigitalGenome, GuideRNA, PAMRule
+from helix.crispr.simulator import find_candidate_sites
 
 GUIDE_SEQUENCE = "ACGTACGTACGTACGTACGT"
 GENOME_PATH = Path("tests/data/crispr_micro.fna")
@@ -229,18 +229,18 @@ def score_candidate_sites(genome: Mapping[str, str]) -> List[CandidateSite]:
         weight_pam_penalty=PAM_WEIGHT,
     )
     guide = GuideRNA(sequence=GUIDE_SEQUENCE)
-    physics = CRISPRPhysicsCPU(cas, guide)
-    results = physics.score_sites(genome, max_sites=MAX_SITES)
+    genome_view = DigitalGenome(sequences=dict(genome))
+    sites = find_candidate_sites(genome_view, cas, guide, max_sites=MAX_SITES)
     return [
         CandidateSite(
-            chrom=result.site.chrom,
-            start=result.site.start,
-            end=result.site.end,
-            strand=result.site.strand,
-            sequence=result.site.sequence,
-            score=result.score,
+            chrom=site.chrom,
+            start=site.start,
+            end=site.end,
+            strand=site.strand,
+            sequence=site.sequence,
+            score=site.on_target_score or 0.0,
         )
-        for result in results
+        for site in sites
     ]
 
 

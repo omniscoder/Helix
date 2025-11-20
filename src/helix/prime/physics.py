@@ -15,6 +15,8 @@ from typing import Dict, Optional, Tuple
 from .. import bioinformatics
 from .model import PegRNA, PrimeEditor
 
+PRIME_SCORING_VERSION = "1.0.0"
+
 
 @dataclass(frozen=True)
 class PrimeBranchDistribution:

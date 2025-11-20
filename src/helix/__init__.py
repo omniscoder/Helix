@@ -12,7 +12,15 @@ from .crispr.model import (
     PAMRule,
     TargetSite,
 )
-from .crispr.simulator import CutEvent, find_candidate_sites, rank_off_targets, simulate_cuts
+from .crispr.simulator import (
+    CutEvent,
+    EfficiencyPrediction,
+    EfficiencyTargetRequest,
+    find_candidate_sites,
+    predict_efficiency_for_targets,
+    rank_off_targets,
+    simulate_cuts,
+)
 from .prime.model import PegRNA, PrimeEditOutcome, PrimeEditor
 from .prime.simulator import locate_prime_target_site, simulate_prime_edit
 
@@ -42,7 +50,10 @@ __all__ = [
     "TargetSite",
     "DigitalGenome",
     "CutEvent",
+    "EfficiencyTargetRequest",
+    "EfficiencyPrediction",
     "find_candidate_sites",
+    "predict_efficiency_for_targets",
     "simulate_cuts",
     "rank_off_targets",
     "prime",
