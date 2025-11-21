@@ -147,7 +147,11 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev,viz,protein,schema]"
       - name: Run engine benchmark
-        run: helix engine benchmark --backends native-cpu --json benchmark.json || helix engine benchmark --backends cpu-reference --json benchmark.json
+        run: |
+          HELIX_CRISPR_BACKEND=native-cpu helix engine benchmark --backends native-cpu --json benchmark.json
+      - name: Check benchmark regression
+        run: |
+          python scripts/check_benchmark_regression.py benchmark.json benchmarks/benchmark_baseline.json
       - uses: actions/upload-artifact@v4
         with:
           name: engine-benchmark-json

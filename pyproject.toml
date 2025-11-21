@@ -82,3 +82,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 addopts = "-ra"
+markers = [
+    "slow: long running benchmarks/fuzz tests",
+]

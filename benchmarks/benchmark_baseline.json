@@ -1,0 +1,92 @@
+{
+  "helix_version": "0.3.0",
+  "scoring_versions": {
+    "crispr": "1.0.0",
+    "prime": "1.0.0"
+  },
+  "env": {
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "python_version": "3.12.3",
+    "cuda_available": true,
+    "gpu_name": "NVIDIA GeForce RTX 5070",
+    "native_backend_available": true,
+    "backends_built": [
+      "cpu-reference",
+      "gpu",
+      "native-cpu"
+    ]
+  },
+  "seed": 0,
+  "config": {
+    "backends": [
+      "native-cpu"
+    ],
+    "crispr_shapes": [
+      "1x512x20",
+      "96x4096x20",
+      "256x16384x20"
+    ],
+    "prime_workloads": [
+      "32x2000x20",
+      "64x4000x20"
+    ]
+  },
+  "benchmarks": {
+    "crispr": [
+      {
+        "backend_requested": "native-cpu",
+        "backend_used": "native-cpu",
+        "g": 1,
+        "n": 512,
+        "l": 20,
+        "shape": "1x512x20",
+        "mpairs_per_s": 1.216345615255324,
+        "elapsed_seconds": 0.0004209329927107319
+      },
+      {
+        "backend_requested": "native-cpu",
+        "backend_used": "native-cpu",
+        "g": 96,
+        "n": 4096,
+        "l": 20,
+        "shape": "96x4096x20",
+        "mpairs_per_s": 2.7785874594283624,
+        "elapsed_seconds": 0.1415165100042941
+      },
+      {
+        "backend_requested": "native-cpu",
+        "backend_used": "native-cpu",
+        "g": 256,
+        "n": 16384,
+        "l": 20,
+        "shape": "256x16384x20",
+        "mpairs_per_s": 2.908432649125349,
+        "elapsed_seconds": 1.4421183180093067
+      }
+    ],
+    "prime": [
+      {
+        "backend_requested": "native-cpu",
+        "backend_used": "native-cpu",
+        "workload": "32x2000x20",
+        "targets": 32,
+        "genome_len": 2000,
+        "spacer_len": 20,
+        "predictions": 32,
+        "predictions_per_s": 7648.132395388446,
+        "elapsed_seconds": 0.00418402798823081
+      },
+      {
+        "backend_requested": "native-cpu",
+        "backend_used": "native-cpu",
+        "workload": "64x4000x20",
+        "targets": 64,
+        "genome_len": 4000,
+        "spacer_len": 20,
+        "predictions": 64,
+        "predictions_per_s": 3539.9365690191044,
+        "elapsed_seconds": 0.018079419998684898
+      }
+    ]
+  }
+}
