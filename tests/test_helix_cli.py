@@ -118,6 +118,27 @@ def test_cli_engine_info_outputs_json():
     assert "native_available" in payload
 
 
+def test_cli_engine_benchmark_json(tmp_path: Path):
+    out_path = tmp_path / "bench.json"
+    run_cli(
+        "engine",
+        "benchmark",
+        "--backends",
+        "cpu-reference",
+        "--crispr-shapes",
+        "1x16x10",
+        "--prime-workloads",
+        "4x200x12",
+        "--seed",
+        "2",
+        "--json",
+        str(out_path),
+    )
+    data = json.loads(out_path.read_text())
+    assert "benchmarks" in data
+    assert data["benchmarks"]["crispr"]
+    assert data["benchmarks"]["prime"]
+
 def test_cli_workflows_runner(tmp_path: Path):
     pytest.importorskip("yaml")
     config = tmp_path / "workflow.yaml"

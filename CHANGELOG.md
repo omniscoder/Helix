@@ -1,17 +1,22 @@
 # Changelog
 
 ## [Unreleased]
-- Added prime engine scaffolding (batch API, golden fixtures, perf harness) with
-  matching scoring-version metadata.
-- CRISPR artifacts now record `crispr_scoring_version` and
-  `crispr_engine_backend`; Prime outputs expose `prime_scoring_version` and
-  `prime_engine_backend`.
-- Shared `helix.engine.encoding` helper guarantees consistent DNA encoding for
-  CRISPR, Prime, native, and future CUDA backends. Added
-  `docs/engine_cuda_plan.md` describing the first CUDA milestone.
-- Added a native CUDA backend for CRISPR scoring. Building with
-  `-DHELIX_ENGINE_ENABLE_CUDA=ON` enables the GPU kernel exposed via
-  `backend="gpu"`; falls back cleanly when CUDA is unavailable.
+-
+
+## [0.4.0] - 2025-11-20
+- Locked the CRISPR physics architecture around three interchangeable backends
+  (`cpu-reference`, `native-cpu`, `gpu`), added CLI/env knobs plus Studio status
+  wiring, and stamped every CRISPR artifact with
+  `crispr_engine_backend`/`crispr_scoring_version` for provenance.
+- Brought the Prime engine up to parity with batch APIs, golden fixtures,
+  scoring-version metadata, and perf harnesses so CRISPR/Prime outputs share
+  the same guarantees.
+- Published `docs/engine_architecture.md` + CUDA plan updates covering backend
+  behavior, throughput tables (backend × G × N × L), and the shared encoding
+  helpers that let CRISPR, Prime, and native/CUDA kernels stay in sync.
+- Added an optional CUDA build of `helix_engine._native`
+  (`-DHELIX_ENGINE_ENABLE_CUDA=ON`) with GPU harnesses/tests; falls back to
+  CPU reference automatically when CUDA hardware is missing.
 
 ## [0.2.0] - 2024-12-30
 - Added schema manifest exports/diffs plus CLI helpers for schema inspection and workflow provenance.

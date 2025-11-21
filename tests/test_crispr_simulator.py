@@ -324,11 +324,13 @@ def test_cli_prime_simulate(tmp_path: Path):
         str(out_path),
         "--viz-spec",
         str(viz_spec),
+        "--physics-score",
     )
     payload = json.loads(out_path.read_text())
     assert payload["schema"]["kind"] == "prime.edit_sim"
     assert payload["outcomes"]
     assert payload["draws"] == 200
+    assert payload["meta"]["physics_score"]["E_pred"] >= 0
     spec_payload = json.loads(viz_spec.read_text())
     assert spec_payload["edit_events"]
     assert payload["meta"]["prime_scoring_version"]

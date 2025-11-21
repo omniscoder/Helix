@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -56,11 +56,23 @@ from .graphs import (
 from .sketch import compute_minhash, mash_distance, compute_hll, union_hll
 from .motif import discover_motifs
 from .prime.model import PegRNA, PrimeEditOutcome, PrimeEditor
-from .prime.simulator import locate_prime_target_site, simulate_prime_edit
+from .prime.simulator import (
+    locate_prime_target_site,
+    simulate_prime_edit,
+    PrimeTargetRequest,
+    predict_prime_outcomes_for_targets,
+)
 from .prime.priors import resolve_prime_priors
-from .prime.physics import PRIME_SCORING_VERSION
+from .prime.physics import PRIME_SCORING_VERSION, PrimePhysicsScore, score_prime_design
 from .crispr.pam import build_prime_pam_mask
-from .crispr.physics import CRISPR_SCORING_VERSION, get_last_crispr_backend
+from .engine.encoding import encode_sequence_to_uint8
+from .engine.benchmark import BenchmarkConfig, run_benchmark
+from .crispr.physics import (
+    CRISPR_SCORING_VERSION,
+    get_last_crispr_backend,
+    score_pairs_encoded_multi,
+    create_crispr_physics,
+)
 from .config import (
     _BACKEND_ENV as ENGINE_BACKEND_ENV,
     _ALLOW_FALLBACK_ENV as ENGINE_FALLBACK_ENV,
@@ -2087,6 +2099,10 @@ def command_prime_simulate(args: argparse.Namespace) -> None:
         }
     )
     _attach_prime_engine_meta(meta)
+    physics_score: PrimePhysicsScore | None = None
+    if args.physics_score:
+        physics_score = score_prime_design(peg, site_seq, editor)
+        meta["physics_score"] = asdict(physics_score)
     payload["params"] = {
         "draws": args.draws,
         "seed": args.seed,
@@ -2108,6 +2124,8 @@ def command_prime_simulate(args: argparse.Namespace) -> None:
             print("Unable to derive a visualization spec from prime.edit_sim output.", file=sys.stderr)
         else:
             _write_viz_spec_output(spec, args.viz_spec)
+    if args.physics_score and physics_score is not None:
+        _print_prime_physics_score(physics_score)
 
 
 def command_prime_dag(args: argparse.Namespace) -> None:
@@ -4346,6 +4364,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     engine_info.set_defaults(func=command_engine_info)
 
+    engine_bench = engine_sub.add_parser("benchmark", help="Run standard CRISPR/Prime perf benchmarks.")
+    engine_bench.add_argument(
+        "--backends",
+        nargs="+",
+        default=["cpu-reference", "native-cpu", "gpu"],
+        help="CRISPR backends to benchmark (default: cpu-reference native-cpu gpu).",
+    )
+    engine_bench.add_argument(
+        "--crispr-shapes",
+        nargs="+",
+        default=["1x512x20", "96x4096x20", "256x16384x20"],
+        help="List of GxNxL shapes to benchmark (default: 1x512x20 96x4096x20 256x16384x20).",
+    )
+    engine_bench.add_argument(
+        "--prime-workloads",
+        nargs="+",
+        default=["32x2000x20", "64x4000x20"],
+        help="Prime workloads targetsxgenome_lenxspacer (default: 32x2000x20 64x4000x20).",
+    )
+    engine_bench.add_argument("--seed", type=int, default=0, help="Random seed for benchmark data (default: 0).")
+    engine_bench.add_argument("--json", type=Path, help="Optional path to write benchmark JSON output.")
+    engine_bench.set_defaults(func=command_engine_benchmark)
+
     crispr = subparsers.add_parser("crispr", help="CRISPR design helpers.")
     crispr_sub = crispr.add_subparsers(dest="crispr_command", required=True)
 
@@ -4530,6 +4571,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--viz-spec",
         type=Path,
         help="Optional path to write a ModernGL viz spec for helix viz modern.",
+    )
+    prime_sim.add_argument(
+        "--physics-score",
+        action="store_true",
+        help="Compute experimental physics metrics (ΔG, probabilities) for the pegRNA design.",
     )
     prime_sim.set_defaults(func=command_prime_simulate)
 
@@ -5197,6 +5243,88 @@ def _attach_prime_engine_meta(meta: Dict[str, Any], *, use_gpu: bool = False) ->
     backend, _ = resolve_prime_backend(None, use_gpu=use_gpu)
     meta["prime_engine_backend"] = backend
     meta["prime_scoring_version"] = PRIME_SCORING_VERSION
+
+
+def _print_prime_physics_score(score: PrimePhysicsScore) -> None:
+    print("Prime physics score (experimental):")
+    print(f"  PBS ΔG:        {score.pbs_dG:8.2f} kcal/mol")
+    if score.rt_cum_dG:
+        print(f"  RTT ΔG final:  {score.rt_cum_dG[-1]:8.2f} kcal/mol")
+    else:
+        print("  RTT ΔG final:     0.00 kcal/mol")
+    print(f"  Flap ΔΔG:      {score.flap_ddG:8.2f}")
+    print(f"  Microhomology: {score.microhomology:8d} nt")
+    print(f"  Nick distance: {score.nick_distance:8d} nt")
+    print(f"  P_RT:          {score.P_RT:8.3f}")
+    print(f"  P_flap:        {score.P_flap:8.3f}")
+    print(f"  E_pred:        {score.E_pred:8.3f}")
+
+
+def _parse_crispr_shape(token: str) -> tuple[int, int, int]:
+    parts = token.lower().split("x")
+    if len(parts) != 3:
+        raise ValueError(f"Invalid CRISPR shape '{token}'. Expected format GxNxL.")
+    g, n, l = (int(part) for part in parts)
+    if g <= 0 or n <= 0 or l <= 0:
+        raise ValueError("CRISPR shapes must have positive G, N, and L values.")
+    return g, n, l
+
+
+def _parse_prime_workload(token: str) -> tuple[int, int, int]:
+    parts = token.lower().split("x")
+    if len(parts) != 3:
+        raise ValueError(f"Invalid prime workload '{token}'. Expected format targetsxgenome_lenxspacer.")
+    targets, genome_len, spacer_len = (int(part) for part in parts)
+    if targets <= 0 or genome_len <= 0 or spacer_len <= 0:
+        raise ValueError("Prime workloads require positive targets, genome length, and spacer length.")
+    if spacer_len > genome_len:
+        raise ValueError("Prime workload spacer length cannot exceed genome length.")
+    return targets, genome_len, spacer_len
+
+def _print_crispr_benchmark_table(entries: Sequence[Mapping[str, Any]]) -> None:
+    if not entries:
+        print("No CRISPR benchmarks were run.")
+        return
+    print("\nCRISPR throughput (MPairs/s)")
+    header = f"{'requested':<14}{'actual':<12}{'G':>6}{'N':>8}{'L':>6}{'MPairs/s':>12}"
+    print(header)
+    for entry in entries:
+        requested = entry.get("backend_requested", "-")
+        actual = entry.get("backend_used") or "-"
+        if "error" in entry:
+            print(f"{requested:<14}{'-':<12}{entry['g']:>6}{entry['n']:>8}{entry['l']:>6}    {entry['error']}")
+            continue
+        print(f"{requested:<14}{actual:<12}{entry['g']:>6}{entry['n']:>8}{entry['l']:>6}{entry['mpairs_per_s']:>12.2f}")
+
+
+def _print_prime_benchmark_table(entries: Sequence[Mapping[str, Any]]) -> None:
+    if not entries:
+        print("No prime benchmarks were run.")
+        return
+    print("\nPrime throughput (predictions/sec)")
+    header = f"{'backend':<12}{'targets':>8}{'genome':>10}{'spacer':>8}{'preds/sec':>12}"
+    print(header)
+    for entry in entries:
+        backend = entry.get("backend_used") or entry.get("backend_requested") or "-"
+        print(
+            f"{backend:<12}{entry['targets']:>8}{entry['genome_len']:>10}{entry['spacer_len']:>8}{entry['predictions_per_s']:>12.2f}"
+        )
+
+
+def command_engine_benchmark(args: argparse.Namespace) -> None:
+    try:
+        shapes = [_parse_crispr_shape(token) for token in args.crispr_shapes]
+        workloads = [_parse_prime_workload(token) for token in args.prime_workloads]
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    backends = list(args.backends) if args.backends else ["cpu-reference", "native-cpu", "gpu"]
+    payload = run_benchmark(BenchmarkConfig(backends=backends, crispr_shapes=shapes, prime_workloads=workloads, seed=args.seed))
+    _print_crispr_benchmark_table(payload["benchmarks"]["crispr"])
+    _print_prime_benchmark_table(payload["benchmarks"]["prime"])
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(f"Benchmark JSON saved to {args.json}.")
 
 
 def command_engine_info(args: argparse.Namespace) -> None:

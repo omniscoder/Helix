@@ -137,6 +137,182 @@ helix seed index seq.fna --method minimizer --k 15 --plot seeds.png
 helix string search seqs.fna --pattern GATTACA --k 1
 ```
 
+## Engine Backends
+
+CRISPR and Prime editing share the same encoded physics boundary, so every
+simulator and CLI call can swap kernels without touching call sites. Pick one of
+the following backends per run (details + throughput numbers live in
+[`docs/engine_architecture.md`](docs/engine_architecture.md)):
+
+- `cpu-reference` – pure Python reference implementation, always available.
+- `native-cpu` – pybind11 extension from `src/helix_engine`, fastest on CPUs.
+- `gpu` – CUDA build of the same kernels for machines compiled with
+  `HELIX_ENGINE_ENABLE_CUDA=ON`.
+
+Prime editing mirrors the same backend preference automatically so both engines
+emit consistent artifacts.
+
+## Selecting a Backend
+
+Set the backend globally with environment variables:
+
+- `HELIX_CRISPR_BACKEND` / `HELIX_PRIME_BACKEND` → `cpu-reference`, `native-cpu`, or `gpu`.
+- `HELIX_CRISPR_ALLOW_FALLBACK` / `HELIX_PRIME_ALLOW_FALLBACK` → `1` enables automatic fallback to the Python reference backend when the requested engine is unavailable; `0` keeps failures loud.
+
+CLI helpers accept the same knobs:
+
+```
+helix crispr dag \
+  --engine-backend gpu \
+  --engine-allow-fallback \
+  --genome genome.fna \
+  --guide-sequence GGGGTTTAGAGCTATGCT \
+  --json crispr_dag.json
+```
+
+Studio inherits the process environment, so the same settings power live viz.
+Use `helix engine info` (or `python -m helix.cli engine info`) to see the
+resolved backend + fallback behavior that will be stamped into artifacts:
+
+```
+$ helix engine info
+{
+  "selected_backend": "native-cpu",
+  "allow_fallback": false,
+  "native_available": true,
+  "env_backend": null,
+  "env_allow_fallback": null
+}
+```
+
+## Performance Benchmark
+
+`helix engine benchmark` reproduces the CRISPR/Prime workloads from
+`docs/engine_architecture.md`. It prints a human-readable table and can emit
+JSON when you want to compare against CI/doc baselines.
+
+```
+helix engine benchmark
+helix engine benchmark --backends cpu-reference native-cpu --json helix_benchmark.json
+```
+
+Sample output:
+
+```
+CRISPR throughput (MPairs/s)
+requested     actual           G       N     L    MPairs/s
+cpu-reference cpu-reference     1     512    20        0.06
+native-cpu    native-cpu        1     512    20        0.90
+
+Prime throughput (predictions/sec)
+backend      targets    genome  spacer   preds/sec
+cpu-reference      32     2000      20     5634.48
+```
+
+JSON schema (v1) excerpt:
+
+```json
+{
+  "helix_version": "0.4.0",
+  "scoring_versions": {"crispr": "1.0.0", "prime": "1.0.0"},
+  "env": {"platform": "...", "python_version": "3.12.3", "cuda_available": false},
+  "seed": 1,
+  "config": {"backends": ["cpu-reference"], "crispr_shapes": ["1x512x20"]},
+  "benchmarks": {
+    "crispr": [{"backend_requested": "cpu-reference", "shape": "1x512x20", "mpairs_per_s": 0.06}],
+    "prime": [{"workload": "32x2000x20", "predictions_per_s": 5634.48}]
+  }
+}
+```
+The full schema is documented in `docs/engine_architecture.md`.
+
+## GPU Backend (Experimental)
+
+Helix ships CPU-only wheels on PyPI. To try the CUDA backend locally:
+
+1. Install CUDA toolkit + drivers (12.x tested).
+2. Build the native extension:
+   ```bash
+   ./scripts/build_native_cuda.sh
+   ```
+3. Verify it works:
+   ```bash
+   HELIX_CRISPR_BACKEND=gpu helix engine benchmark --backends gpu --json gpu_benchmark.json
+   ```
+
+If `_native*.so` is missing, the CLI automatically falls back to the Python
+reference backend and records the actual backend that ran.
+
+## Prime Physics Scoring
+
+Prime simulations can surface physics heuristics (PBS ΔG, microhomology, flap
+competition) by enabling `--physics-score`:
+
+```
+helix prime simulate --physics-score --json prime.json \
+  --genome genome.fna \
+  --peg-config peg.json \
+  --editor-config editor.json
+```
+
+Each payload now carries a `physics_score` block:
+
+```json
+"physics_score": {
+  "pbs_dG": 2.50,
+  "flap_ddG": 2.30,
+  "microhomology": 1,
+  "P_RT": 0.182,
+  "P_flap": 0.373,
+  "E_pred": 0.054
+}
+```
+
+See `docs/prime_physics.md` for a deep dive on each term and how to interpret
+them when ranking peg designs.
+
+## Building with CUDA (Optional)
+
+The CUDA backend ships in `src/helix_engine`. Build it with CMake and enable the
+toggle mentioned in [`docs/engine_cuda_plan.md`](docs/engine_cuda_plan.md):
+
+```
+cmake -S src/helix_engine -B build/helix_engine -DHELIX_ENGINE_ENABLE_CUDA=ON \
+      -DPython_EXECUTABLE="$(which python)"
+cmake --build build/helix_engine --target helix_engine_py
+cp build/helix_engine/helix_engine_py.*.so \
+   src/helix_engine/_native$(python3-config --extension-suffix)
+```
+
+Once `_native*.so` is on `PYTHONPATH`, `HELIX_CRISPR_BACKEND=gpu helix ...` will
+exercise the CUDA kernels; `helix_engine.native.cuda_available()` reports the
+hardware status.
+
+## Scoring Versioning & Metadata
+
+Helix freezes its physics numerics via `CRISPR_SCORING_VERSION` and
+`PRIME_SCORING_VERSION`. Every artifact stamped by the simulators or CLI exports
+carries:
+
+- `crispr_engine_backend` / `prime_engine_backend`
+- `crispr_scoring_version` / `prime_scoring_version`
+- runtime fields such as `helix_version`, timestamps, command replay
+
+Example snippet:
+
+```
+"meta": {
+  "helix_version": "0.4.0",
+  "crispr_engine_backend": "gpu",
+  "crispr_scoring_version": "1.0.0",
+  "prime_engine_backend": "cpu-reference",
+  "prime_scoring_version": "1.0.0"
+}
+```
+
+If you deliberately change scoring math, bump the scoring version, refresh the
+golden fixtures, and update the release notes.
+
 ## Reproducible Viz (Spec 1.x)
 Every plot:
 - stamps a provenance footer (Helix version, SHA-256, viz kind)

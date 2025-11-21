@@ -10,17 +10,20 @@ from typing import Sequence, Any, Mapping
 import moderngl
 import numpy as np
 from OpenGL import GL
-from PySide6.QtCore import Qt, QTimer, Signal, QPointF
+from PySide6.QtCore import Qt, QTimer, Signal, QPointF, QThread
 from PySide6.QtGui import QSurfaceFormat, QWindow
 from PySide6.QtOpenGL import QOpenGLWindow
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QPushButton,
+    QTextBrowser,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -28,8 +31,28 @@ from PySide6.QtWidgets import (
 
 from ..theme import apply_helix_theme
 from ...config import native_backend_available, resolve_crispr_backend
+from ...engine.benchmark import BenchmarkConfig, run_benchmark
+from ...crispr.physics import CRISPR_SCORING_VERSION
+from ...prime.physics import PRIME_SCORING_VERSION
 from .engine import AnimationPhase, HelixVizEngine
 from .spec import EditVisualizationSpec, load_viz_spec, load_viz_specs
+
+
+class BenchmarkWorker(QThread):
+    completed = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, config: BenchmarkConfig, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._config = config
+
+    def run(self) -> None:
+        try:
+            payload = run_benchmark(self._config)
+        except Exception as exc:  # pragma: no cover - UI helper
+            self.failed.emit(str(exc))
+            return
+        self.completed.emit(payload)
 
 
 class HelixModernWidget(QOpenGLWindow):
@@ -932,6 +955,13 @@ class HelixControlPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._block_slider = False
+        self._benchmark_worker: BenchmarkWorker | None = None
+        self._benchmark_config = BenchmarkConfig(
+            backends=["cpu-reference", "native-cpu", "gpu"],
+            crispr_shapes=[(1, 512, 20), (96, 4096, 20), (256, 16384, 20)],
+            prime_workloads=[(32, 2000, 20), (64, 4000, 20)],
+            seed=0,
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
@@ -966,8 +996,45 @@ class HelixControlPanel(QWidget):
         self.flap_toggle.toggled.connect(self.flapToggled.emit)
         layout.addWidget(self.flap_toggle)
 
-        self.backend_label = QLabel("CRISPR engine: --", self)
-        layout.addWidget(self.backend_label)
+        self.engine_box = QGroupBox("Engine Health", self)
+        engine_layout = QVBoxLayout(self.engine_box)
+        self.backend_label = QLabel("CRISPR engine: --", self.engine_box)
+        engine_layout.addWidget(self.backend_label)
+        self.scoring_label = QLabel("Scoring versions: -- / --", self.engine_box)
+        engine_layout.addWidget(self.scoring_label)
+        self.benchmark_status = QLabel("Benchmark not run", self.engine_box)
+        engine_layout.addWidget(self.benchmark_status)
+        self.run_benchmark_button = QPushButton("Run Benchmark", self.engine_box)
+        self.run_benchmark_button.clicked.connect(self._on_run_benchmark)
+        engine_layout.addWidget(self.run_benchmark_button)
+        self.benchmark_output = QTextBrowser(self.engine_box)
+        self.benchmark_output.setReadOnly(True)
+        self.benchmark_output.setMinimumHeight(120)
+        engine_layout.addWidget(self.benchmark_output)
+        layout.addWidget(self.engine_box)
+
+        self.physics_box = QGroupBox("Prime Physics Score", self)
+        phys_layout = QFormLayout(self.physics_box)
+        self.pbs_label = QLabel("--", self.physics_box)
+        self.pbs_hint_label = QLabel("", self.physics_box)
+        phys_layout.addRow("PBS ΔG", self.pbs_label)
+        phys_layout.addRow("PBS hint", self.pbs_hint_label)
+        self.rtt_label = QLabel("--", self.physics_box)
+        phys_layout.addRow("RT path ΔG", self.rtt_label)
+        self.flap_label = QLabel("--", self.physics_box)
+        phys_layout.addRow("Flap ΔΔG", self.flap_label)
+        self.micro_label = QLabel("--", self.physics_box)
+        phys_layout.addRow("Microhomology", self.micro_label)
+        self.nick_label = QLabel("--", self.physics_box)
+        phys_layout.addRow("Nick distance", self.nick_label)
+        self.p_rt_label = QLabel("--", self.physics_box)
+        phys_layout.addRow("P_RT", self.p_rt_label)
+        self.p_flap_label = QLabel("--", self.physics_box)
+        phys_layout.addRow("P_flap", self.p_flap_label)
+        self.e_pred_label = QLabel("--", self.physics_box)
+        phys_layout.addRow("E_pred", self.e_pred_label)
+        layout.addWidget(self.physics_box)
+        self.physics_box.hide()
 
         layout.addStretch(1)
 
@@ -986,8 +1053,35 @@ class HelixControlPanel(QWidget):
     def set_phase(self, phase: str) -> None:
         self.phase_label.setText(f"Phase: {phase}")
 
-    def set_backend_status(self, text: str) -> None:
+    def set_engine_status(self, text: str) -> None:
         self.backend_label.setText(text)
+
+    def set_scoring_versions(self, crispr: str, prime: str) -> None:
+        self.scoring_label.setText(f"Scoring versions: CRISPR {crispr} | Prime {prime}")
+
+    def set_prime_physics_score(self, score: Mapping[str, Any] | None) -> None:
+        if not score:
+            self.physics_box.hide()
+            return
+        self.physics_box.show()
+        pbs_dg = float(score.get("pbs_dG", 0.0))
+        self.pbs_label.setText(f"{pbs_dg:.2f} kcal/mol")
+        self.pbs_hint_label.setText(self._pbs_hint(pbs_dg))
+        rt_cum = score.get("rt_cum_dG") or []
+        rt_final = float(rt_cum[-1]) if rt_cum else 0.0
+        self.rtt_label.setText(f"{rt_final:.2f} kcal/mol")
+        flap_ddg = float(score.get("flap_ddG", 0.0))
+        self.flap_label.setText(f"{flap_ddg:.2f}")
+        micro = int(score.get("microhomology", 0))
+        self.micro_label.setText(f"{micro} nt")
+        self.nick_label.setText(str(int(score.get("nick_distance", 0))))
+        p_rt = float(score.get("P_RT", 0.0))
+        p_flap = float(score.get("P_flap", 0.0))
+        self.p_rt_label.setText(f"{p_rt:.3f}")
+        self.p_flap_label.setText(f"{p_flap:.3f}")
+        e_pred = float(score.get("E_pred", 0.0))
+        self.e_pred_label.setText(f"{e_pred:.3f}")
+        self.e_pred_label.setStyleSheet(f"color: {self._score_color(e_pred)};")
 
     def _on_slider(self, value: int) -> None:
         if self._block_slider:
@@ -997,6 +1091,60 @@ class HelixControlPanel(QWidget):
     def _on_play_toggled(self, checked: bool) -> None:
         self.play_button.setText("Pause" if checked else "Play")
         self.playToggled.emit(checked)
+
+    def _on_run_benchmark(self) -> None:
+        if self._benchmark_worker is not None:
+            return
+        self.run_benchmark_button.setEnabled(False)
+        self.benchmark_status.setText("Running benchmark…")
+        self.benchmark_output.clear()
+        self._benchmark_worker = BenchmarkWorker(self._benchmark_config, self)
+        self._benchmark_worker.completed.connect(self._on_benchmark_complete)
+        self._benchmark_worker.failed.connect(self._on_benchmark_failed)
+        self._benchmark_worker.finished.connect(self._on_benchmark_finished)
+        self._benchmark_worker.start()
+
+    def _on_benchmark_complete(self, payload: Mapping[str, Any]) -> None:
+        self.benchmark_status.setText("Benchmark complete")
+        self._update_benchmark_output(payload)
+
+    def _on_benchmark_failed(self, message: str) -> None:
+        self.benchmark_status.setText(f"Benchmark failed: {message}")
+
+    def _on_benchmark_finished(self) -> None:
+        self.run_benchmark_button.setEnabled(True)
+        self._benchmark_worker = None
+
+    def _update_benchmark_output(self, payload: Mapping[str, Any]) -> None:
+        lines = ["CRISPR:"]
+        for entry in payload.get("benchmarks", {}).get("crispr", []):
+            if "error" in entry:
+                lines.append(
+                    f"  {entry.get('backend_requested')}: {entry['error']}"
+                )
+            else:
+                lines.append(
+                    f"  {entry.get('backend_used') or entry.get('backend_requested')}: {entry.get('mpairs_per_s', 0):.2f} MPairs/s"
+                )
+        lines.append("Prime:")
+        for entry in payload.get("benchmarks", {}).get("prime", []):
+            lines.append(
+                f"  {entry.get('backend_used') or entry.get('backend_requested')}: {entry.get('predictions_per_s', 0):.2f} preds/sec"
+            )
+        self.benchmark_output.setPlainText("\n".join(lines))
+
+    def _pbs_hint(self, dg: float) -> str:
+        if dg <= -10:
+            return "Strong binding"
+        if dg <= -3:
+            return "Within target"
+        return "Weak binding"
+
+    def _score_color(self, value: float) -> str:
+        clamped = max(0.0, min(1.0, value))
+        red = int((1.0 - clamped) * 200 + 55)
+        green = int(clamped * 200 + 55)
+        return f"rgb({red},{green},90)"
 
 
 class HelixModernWindow(QMainWindow):
@@ -1031,19 +1179,28 @@ class HelixModernWindow(QMainWindow):
         status_parts = [f"CRISPR engine: {backend}"]
         status_parts.append(f"native {'available' if native_ok else 'missing'}")
         status_parts.append(f"fallback {'on' if allow else 'off'}")
-        self.panel.set_backend_status(" | ".join(status_parts))
+        self.panel.set_engine_status(" | ".join(status_parts))
+        self.panel.set_scoring_versions(CRISPR_SCORING_VERSION, PRIME_SCORING_VERSION)
         if self.specs:
             self.viewer.set_spec(self.specs[0])
+            self._update_prime_physics(self.specs[0])
 
     def _on_spec_selected(self, index: int) -> None:
         if 0 <= index < len(self.specs):
-            self.viewer.set_spec(self.specs[index])
+            spec = self.specs[index]
+            self.viewer.set_spec(spec)
+            self._update_prime_physics(spec)
 
     def _on_time_update(self, time_value: float) -> None:
         if not self.viewer.engine:
             return
         norm = time_value / self.viewer.engine.loop_duration
         self.panel.set_time_norm(norm)
+
+    def _update_prime_physics(self, spec: EditVisualizationSpec) -> None:
+        metadata = getattr(spec, "metadata", {}) or {}
+        score = metadata.get("physics_score")
+        self.panel.set_prime_physics_score(score if isinstance(score, Mapping) else None)
 
 
 def run_modern_viz(spec_source: str | Path | Sequence[EditVisualizationSpec] | None = None) -> None:

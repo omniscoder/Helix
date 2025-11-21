@@ -36,6 +36,11 @@ jobs:
         run: pip install -e ".[dev,viz,protein,schema]"
       - name: Run pytest
         run: pytest -q
+      - name: Run engine-critical tests
+        run: |
+          pytest tests/test_crispr_engine_fixtures.py tests/test_prime_engine.py
+          pytest tests/test_helix_cli.py -k benchmark_json
+          pytest tests/test_benchmark_schema.py
 
   visualization-suite:
     needs: tests
@@ -130,3 +135,37 @@ jobs:
             benchmarks/out/bench-${{ github.sha }}.md
             benchmarks/out/latest.json
             benchmarks/out/latest.md
+
+  benchmark-json:
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -e ".[dev,viz,protein,schema]"
+      - name: Run engine benchmark
+        run: helix engine benchmark --backends native-cpu --json benchmark.json || helix engine benchmark --backends cpu-reference --json benchmark.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-benchmark-json
+          path: benchmark.json
+
+  gpu-tests:
+    if: false  # Enable when a CUDA runner is available.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -e ".[dev,viz,protein,schema]"
+      - name: Build native CUDA module
+        run: ./scripts/build_native_cuda.sh
+      - name: Run CUDA parity tests
+        env:
+          HELIX_CRISPR_BACKEND: gpu
+        run: pytest tests/test_crispr_engine_cuda.py

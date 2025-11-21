@@ -31,7 +31,8 @@ inside `create_crispr_physics` with no API changes.
   panel so users immediately see which engine is powering the visualization.
 - All CRISPR artifacts now carry `crispr_scoring_version` (currently 1.0.0) and
   `crispr_engine_backend` metadata. Any deliberate scoring change must bump the
-  version, refresh the fixtures, and document the change.
+  version, refresh the fixtures, and document the change (see
+  `docs/scoring_version.md`).
 - Backend behavior matrix (requested backend vs availability):
 
   | Requested | Native built? | CUDA available? | Fallback allowed? | Result backend | Behavior |
@@ -45,9 +46,119 @@ inside `create_crispr_physics` with no API changes.
   | cpu-reference| n/a        | n/a             | n/a               | cpu-reference  | Pure Python reference implementation, always available. |
 
   `use_gpu=True` in helper APIs simply selects the `gpu` row above.
-- Prime editing respects the same knobs: by default it mirrors the CRISPR
-  backend choice, but you can override it via `HELIX_PRIME_BACKEND` and
-  `HELIX_PRIME_ALLOW_FALLBACK` if needed.
+
+### GPU Backend (Experimental)
+
+The CUDA path is available when you build `helix_engine._native` with
+`HELIX_ENGINE_ENABLE_CUDA=ON`. PyPI wheels remain CPU-only; build locally via:
+
+```
+./scripts/build_native_cuda.sh
+HELIX_CRISPR_BACKEND=gpu helix engine benchmark --backends gpu --json gpu_benchmark.json
+```
+
+If CUDA is unavailable the CLI falls back to `cpu-reference` and records the
+fallback in both tables and JSON.
+
+### CRISPR Engine Throughput (Example Dev Machine)
+
+Measured on a CUDA-enabled dev container (RTX A4000, Python 3.12, build `-O3`).
+Run `helix engine benchmark` (or `python -m helix.cli engine benchmark`) to
+collect the same metrics locally and compare against this table.
+
+| Backend        | G   | N      | L  | MPairs/s |
+|----------------|-----|--------|----|---------:|
+| cpu-reference  | 1   | 512    | 20 |     0.06 |
+| native-cpu     | 1   | 512    | 20 |     0.90 |
+| gpu            | 1   | 512    | 20 |    <0.01 |
+| cpu-reference  | 96  | 4096   | 20 |     0.07 |
+| native-cpu     | 96  | 4096   | 20 |     7.53 |
+| gpu            | 96  | 4096   | 20 |     3.31 |
+| cpu-reference  | 256 | 16384  | 20 |     0.09 |
+| native-cpu     | 256 | 16384  | 20 |    11.05 |
+| gpu            | 256 | 16384  | 20 |    12.17 |
+
+Tiny GPU workloads (1×512×20) are dominated by kernel launch overhead and settle around 0.002 MPairs/s even though they quantize to 0.00 at two decimal places. Larger batches amortize the cost and reach parity/speedups vs native.
+
+Prime editing respects the same knobs: by default it mirrors the CRISPR backend choice, but you can override it via `HELIX_PRIME_BACKEND` and `HELIX_PRIME_ALLOW_FALLBACK` if needed. Prime physics scoring terminology is documented in `docs/prime_physics.md`.
+
+### Prime Engine Throughput (Example Dev Machine)
+
+| Backend       | Targets | Genome nt | Spacer | Predictions/sec |
+|---------------|---------|-----------|--------|----------------:|
+| cpu-reference | 32      | 2,000     | 20     |          5634.48 |
+| cpu-reference | 64      | 4,000     | 20     |          3037.36 |
+
+### Benchmark JSON Schema (v1)
+
+`helix engine benchmark --json` emits a structured payload so CI/doc tooling can
+track regressions. Schema v1 fields:
+
+- `helix_version` – package version string.
+- `scoring_versions.crispr` / `.prime` – scoring-version identifiers.
+- `env.platform`, `env.python_version`, `env.cuda_available`, `env.gpu_name`,
+  `env.native_backend_available`, `env.backends_built`.
+- `seed` – RNG seed used for the synthetic data.
+- `config.backends`, `config.crispr_shapes`, `config.prime_workloads`.
+- `benchmarks.crispr[]` entries contain `backend_requested`, `backend_used`,
+  `shape` (`GxNxL`), raw `g/n/l`, `mpairs_per_s`, and `elapsed_seconds`.
+- `benchmarks.prime[]` entries contain `backend_requested`, `backend_used`,
+  `workload` (`targetsxgenome_lenxspacer`), `predictions`/`predictions_per_s`,
+  and `elapsed_seconds`.
+
+Example (trimmed) JSON:
+
+```json
+{
+  "helix_version": "0.4.0",
+  "scoring_versions": {"crispr": "1.0.0", "prime": "1.0.0"},
+  "env": {
+    "platform": "Linux-6.6.87-x86_64",
+    "python_version": "3.12.3",
+    "cuda_available": false,
+    "gpu_name": null,
+    "native_backend_available": false,
+    "backends_built": ["cpu-reference"]
+  },
+  "seed": 1,
+  "config": {
+    "backends": ["cpu-reference"],
+    "crispr_shapes": ["1x512x20"],
+    "prime_workloads": ["32x2000x20"]
+  },
+  "benchmarks": {
+    "crispr": [
+      {
+        "backend_requested": "cpu-reference",
+        "backend_used": "cpu-reference",
+        "shape": "1x512x20",
+        "mpairs_per_s": 0.06,
+        "elapsed_seconds": 0.53
+      }
+    ],
+    "prime": [
+      {
+        "workload": "32x2000x20",
+        "predictions": 32,
+        "predictions_per_s": 5634.48,
+        "elapsed_seconds": 0.006
+      }
+    ]
+  }
+}
+```
+Future versions of the schema will only add fields; existing keys remain stable.
+
+## Remote Engine Contract
+
+Remote runners (OGN) reuse the same JSON contracts as the CLI:
+
+- Performance endpoints must emit the benchmark schema above.
+- Prime scoring endpoints must include the `physics_score` block defined in
+  `docs/prime_physics.md`.
+
+See `docs/ogn_integration.md` for the exact fields expected from remote
+benchmarks and scoring services.
 
 ## Kernel Contract
 

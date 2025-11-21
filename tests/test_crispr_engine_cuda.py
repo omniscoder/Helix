@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from helix.crispr.model import CasSystem, CasSystemType, GuideRNA, PAMRule
-from helix.crispr.physics import create_crispr_physics, score_pairs_encoded
+from helix.crispr.physics import create_crispr_physics, score_pairs_encoded, _encode_sequence_to_uint8
 
 from tests.test_helix_cli import run_cli
 
@@ -55,8 +55,9 @@ def test_cuda_backend_matches_random_microbatch(monkeypatch):
     guide = GuideRNA(sequence=GUIDE_SEQ)
     gpu_physics = create_crispr_physics(CAS, guide, backend="gpu")
     cpu_physics = create_crispr_physics(CAS, guide, backend="cpu-reference")
+    guide_encoded = _encode_sequence_to_uint8(GUIDE_SEQ)
+    guides = np.repeat(guide_encoded[None, :], 3, axis=0)
     rng = np.random.default_rng(1337)
-    guides = rng.integers(0, 4, size=(3, len(GUIDE_SEQ)), dtype=np.uint8)
     windows = rng.integers(0, 4, size=(5, len(GUIDE_SEQ)), dtype=np.uint8)
     scores_gpu = score_pairs_encoded(guides, windows, gpu_physics)
     scores_cpu = score_pairs_encoded(guides, windows, cpu_physics)

@@ -244,6 +244,9 @@ def build_prime_viz_spec(
         "site": {"start": site.start, "end": site.end, "strand": site.strand},
         "best_outcome": best,
     }
+    physics_meta = (sim_payload.get("meta") or {}).get("physics_score")
+    if physics_meta:
+        metadata["physics_score"] = physics_meta
     prime_meta = _build_prime_scaffold_metadata(
         sequence=window_seq,
         guide_range=(guide_start, guide_end),
